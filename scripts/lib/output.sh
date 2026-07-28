@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# shellcheck shell=bash
+# Shell-facing output: env exports, which, quoting.
+
+# POSIX-safe single-quoting for eval.
+cp_shquote() {
+  local s="$1" q="'"
+  printf "'%s'\n" "$(printf '%s' "$s" | sed "s/$q/'\\\\''/g")"
+}
+
+cp_unset_line() {
+  printf 'unset CLAUDE_CONFIG_DIR\n'
+}
+
+# Always prints exactly one assignment line. Always returns 0.
+cp_cmd_env() {
+  local cfg line name reason dir
+  if ! cfg="$(cp_config_read)"; then
+    cp_unset_line
+    return 0
+  fi
+  line="$(printf '%s' "$cfg" | cp_resolve)"
+  name="$(printf '%s' "$line" | cut -f1)"
+  reason="$(printf '%s' "$line" | cut -f2)"
+
+  if [ -z "$name" ]; then
+    cp_unset_line
+    cp_warn 'no profile matched; using stock configuration'
+    return 0
+  fi
+  if cp_profile_is_native "$cfg" "$name"; then
+    cp_unset_line
+    cp_warn "profile $name (native) - $reason"
+    return 0
+  fi
+  dir="$(cp_profile_dir "$cfg" "$name")"
+  if [ -z "$dir" ] || [ ! -d "$dir" ]; then
+    cp_unset_line
+    cp_warn "profile $name directory missing (${dir:-unset}); using stock configuration"
+    return 0
+  fi
+  printf 'export CLAUDE_CONFIG_DIR=%s\n' "$(cp_shquote "$dir")"
+  cp_warn "profile $name - $reason"
+  return 0
+}
+
+cp_cmd_which() {
+  local cfg line name reason dir
+  cfg="$(cp_config_read)" || return 1
+  line="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null)"
+  name="$(printf '%s' "$line" | cut -f1)"
+  reason="$(printf '%s' "$line" | cut -f2)"
+  if [ -z "$name" ]; then
+    printf 'no profile matched (%s)\n' "$reason"
+    return 0
+  fi
+  if cp_profile_is_native "$cfg" "$name"; then
+    printf '%s\tnative (keychain)\t%s\n' "$name" "$reason"
+  else
+    dir="$(cp_profile_dir "$cfg" "$name")"
+    printf '%s\t%s\t%s\n' "$name" "$dir" "$reason"
+  fi
+}
