@@ -43,6 +43,62 @@ cp_refresh_ms_left() {
   printf '%s\n' "$(( exp - now ))"
 }
 
+cp_keychain_read() {
+  "$CP_SECURITY_BIN" find-generic-password -s "$CP_KEYCHAIN_SERVICE" -a "${USER:-$(id -un)}" -w 2>/dev/null
+}
+
+cp_keychain_write() {
+  "$CP_SECURITY_BIN" add-generic-password -U \
+    -a "${USER:-$(id -un)}" -s "$CP_KEYCHAIN_SERVICE" -w "$1" >/dev/null 2>&1
+}
+
+cp_cmd_login() {
+  local name="${1:-}" cfg dir backup before after rc
+  [ -n "$name" ] || { cp_warn 'login: missing profile name'; return 2; }
+  cfg="$(cp_config_read)" || return 1
+  cp_profile_exists "$cfg" "$name" || { cp_warn "unknown profile $name"; return 1; }
+  if cp_profile_is_native "$cfg" "$name"; then
+    cp_warn "profile $name is native; log in with a plain 'claude auth login' (no CLAUDE_CONFIG_DIR)"
+    return 1
+  fi
+  dir="$(cp_profile_dir "$cfg" "$name")"
+  [ -n "$dir" ] || { cp_warn "profile $name has no directory"; return 1; }
+  mkdir -p "$dir" || return 1
+  chmod 700 "$dir" || return 1
+
+  mkdir -p "$CP_STATE_DIR" || return 1
+  chmod 700 "$CP_STATE_DIR" || return 1
+  backup="$CP_STATE_DIR/keychain.bak"
+  before="$(cp_keychain_read)"
+  if [ -n "$before" ]; then
+    ( umask 077; printf '%s' "$before" > "$backup" ) || return 1
+    chmod 600 "$backup" || return 1
+  fi
+
+  CLAUDE_CONFIG_DIR="$dir" "$CP_CLAUDE_BIN" auth login --claudeai
+  rc=$?
+
+  after="$(cp_keychain_read)"
+  if [ -n "$before" ] && [ "$after" != "$before" ]; then
+    cp_warn 'login wrote to the shared keychain item instead of the profile directory'
+    if cp_keychain_write "$before"; then
+      cp_warn "keychain restored from $backup"
+    else
+      cp_warn "COULD NOT RESTORE THE KEYCHAIN. Recover manually from $backup"
+    fi
+    cp_warn 'per-profile logins are unsafe on this Claude Code version; aborting'
+    return 1
+  fi
+
+  if [ ! -f "$dir/.credentials.json" ]; then
+    cp_warn "login did not produce $dir/.credentials.json (claude exited $rc)"
+    return 1
+  fi
+  chmod 600 "$dir/.credentials.json" 2>/dev/null
+  printf 'logged in: %s\n' "$name"
+  return 0
+}
+
 cp_cmd_doctor() {
   local cfg names name st logged active ms left_days status=0
   cfg="$(cp_config_read)" || return 1
