@@ -8,6 +8,10 @@ CP_T_NAME="$(basename "${0}")"
 
 cp_t_setup() {
   CP_T_TMP="$(mktemp -d "${TMPDIR:-/tmp}/cptest.XXXXXX")"
+  # Physical path: on macOS mktemp hands back /var/... while pwd -P reports
+  # /private/var/... . Production always stores normalised paths (pin and rule
+  # both run them through cp_path_normalize), so fixtures must too.
+  CP_T_TMP="$(cd "$CP_T_TMP" && pwd -P)"
   CP_T_HOME="$CP_T_TMP/home"
   mkdir -p "$CP_T_HOME" "$CP_T_TMP/bin"
   export HOME="$CP_T_HOME"
