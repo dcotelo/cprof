@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -u
+
+CP_VERSION='0.1.0'
+
+CP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
+if [ -z "$CP_LIB_DIR" ]; then
+  printf 'unset CLAUDE_CONFIG_DIR\n'
+  printf 'claudeprofile: cannot locate lib directory\n' >&2
+  exit 0
+fi
+# shellcheck source=lib/config.sh
+. "$CP_LIB_DIR/config.sh"
+# shellcheck source=lib/resolve.sh
+. "$CP_LIB_DIR/resolve.sh"
+# shellcheck source=lib/profiles.sh
+. "$CP_LIB_DIR/profiles.sh"
+# shellcheck source=lib/auth.sh
+. "$CP_LIB_DIR/auth.sh"
+# shellcheck source=lib/output.sh
+. "$CP_LIB_DIR/output.sh"
+
+cp_usage() {
+  cat >&2 <<'USAGE'
+claudeprofile - choose which Claude account a session uses
+
+usage:
+  claudeprofile list                       profiles, identities, markers
+  claudeprofile which                      profile resolved for this directory
+  claudeprofile env                        export statements for eval
+  claudeprofile add <name> [--dir P] [--native] [--note S]
+  claudeprofile default <name>
+  claudeprofile pin [<name>] | pin --clear
+  claudeprofile rule add <path> <name> | rule rm <path> | rule list
+  claudeprofile login <name>
+  claudeprofile doctor
+  claudeprofile remove <name> [--purge]
+  claudeprofile version
+
+shell setup (~/.zshrc):
+  claude() { eval "$(claudeprofile env)"; command claude "$@"; }
+USAGE
+}
+
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift
+
+case "$cmd" in
+  env)     cp_cmd_env; exit 0 ;;
+  which)   cp_cmd_which ;;
+  list)    cp_cmd_list "$@" ;;
+  add)     cp_cmd_add "$@" ;;
+  default) cp_cmd_default "$@" ;;
+  pin)     cp_cmd_pin "$@" ;;
+  rule)    cp_cmd_rule "$@" ;;
+  login)   cp_cmd_login "$@" ;;
+  doctor)  cp_cmd_doctor "$@" ;;
+  remove)  cp_cmd_remove "$@" ;;
+  version|--version|-v) printf 'claudeprofile %s\n' "$CP_VERSION" ;;
+  help|--help|-h) cp_usage ;;
+  *)       cp_usage; exit 2 ;;
+esac
