@@ -44,6 +44,38 @@ cp_cmd_env() {
   return 0
 }
 
+cp_cmd_list() {
+  local cfg names name active default_name st email sub markers dir
+  cfg="$(cp_config_read)" || return 1
+  active="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null | cut -f1)"
+  default_name="$(printf '%s' "$cfg" | jq -r '.default // empty')"
+  names="$(printf '%s' "$cfg" | jq -r '.profiles[]?.name')"
+  if [ -z "$names" ]; then
+    printf 'no profiles saved\n'
+    return 0
+  fi
+  for name in $names; do
+    st="$(cp_auth_status "$cfg" "$name")"
+    if [ "$(printf '%s' "$st" | jq -r '.loggedIn // false')" = 'true' ]; then
+      email="$(printf '%s' "$st" | jq -r '.email // "unknown"')"
+      sub="$(printf '%s' "$st" | jq -r '.subscriptionType // "unknown"')"
+    else
+      email='not logged in'
+      sub='-'
+    fi
+    markers=''
+    [ "$name" = "$default_name" ] && markers="$markers (default)"
+    [ "$name" = "$active" ] && markers="$markers (active)"
+    if cp_profile_is_native "$cfg" "$name"; then
+      markers="$markers native"
+    else
+      dir="$(cp_profile_dir "$cfg" "$name")"
+      [ -d "$dir" ] || markers="$markers [dir missing]"
+    fi
+    printf '%-12s %-8s %-28s%s\n' "$name" "$sub" "$email" "$markers"
+  done
+}
+
 cp_cmd_which() {
   local cfg line name reason dir
   cfg="$(cp_config_read)" || return 1
