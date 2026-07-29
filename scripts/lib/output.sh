@@ -100,16 +100,29 @@ cp_cmd_env() {
 # 'unknown' (config dir belongs to no profile), or 'stock' (no config dir and no
 # native profile).
 cp_cmd_status() {
-  local cfg name
+  local cfg dir name
   cfg="$(cp_config_read)" || return 1
   if [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
-    name="$(printf '%s' "$cfg" | jq -r 'first(.profiles[]? | select(.native == true) | .name) // empty')"
-    printf '%s\n' "${name:-stock}"
+    printf '%s\n' "$(cp_native_name "$cfg" 'stock')"
     return 0
   fi
-  name="$(printf '%s' "$cfg" | jq -r --arg d "$(cp_path_normalize "$CLAUDE_CONFIG_DIR")" \
+  dir="$(cp_path_normalize "$CLAUDE_CONFIG_DIR")"
+  name="$(printf '%s' "$cfg" | jq -r --arg d "$dir" \
     'first(.profiles[]? | select((.dir // "") != "") | select((.dir | sub("^~"; env.HOME)) == $d) | .name) // empty')"
+  # A native profile is stored without a dir, because native means "runs when
+  # CLAUDE_CONFIG_DIR is unset". Something else exporting the stock path is
+  # still that profile, so match it explicitly rather than reporting unknown.
+  if [ -z "$name" ] && [ "$dir" = "$(cp_path_normalize "$(cp_share_source)")" ]; then
+    name="$(cp_native_name "$cfg" '')"
+  fi
   printf '%s\n' "${name:-unknown}"
+}
+
+# The native profile's name, or $2 when no profile is marked native.
+cp_native_name() {
+  local name
+  name="$(printf '%s' "$1" | jq -r 'first(.profiles[]? | select(.native == true) | .name) // empty')"
+  printf '%s\n' "${name:-$2}"
 }
 
 cp_cmd_list() {

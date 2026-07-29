@@ -214,7 +214,10 @@ ignore it. The line is omitted only when there is no profile to name: no config,
 or a config with no native profile and no `CLAUDE_CONFIG_DIR` set.
 
 A session on a config directory that belongs to no profile reads `⚑ unknown` —
-worth seeing, since it means something else set `CLAUDE_CONFIG_DIR`.
+worth seeing, since it means something else set `CLAUDE_CONFIG_DIR`. The stock
+`~/.claude` is not one of those cases: a native profile is registered without a
+directory, but an exported `CLAUDE_CONFIG_DIR` pointing there is still the
+native profile, and is named as such.
 
 Plugin manifests cannot declare a statusline, so wire it in `~/.claude/settings.json`
 yourself, pointing at a small script of your own.
