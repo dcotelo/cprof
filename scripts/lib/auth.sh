@@ -33,20 +33,53 @@ cp_auth_status() {
   printf '%s\n' "$out"
 }
 
-# Milliseconds until the refresh token expires, or empty when unknown.
-cp_refresh_ms_left() {
-  local file="$1" exp now
-  if [ -z "$file" ] || [ ! -f "$file" ]; then
+# cp_keychain_service <dir> -> the keychain service Claude Code uses for <dir>.
+# It derives the name as "Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[0:8]>"
+# whenever CLAUDE_CONFIG_DIR is set, and the bare service when it is not, so a
+# native profile and each config dir get their own item. The hash covers the
+# directory string as exported, not its resolved target.
+cp_keychain_service() {
+  local dir="${1:-}"
+  if [ -z "$dir" ]; then
+    printf '%s\n' "$CP_KEYCHAIN_SERVICE"
     return 0
   fi
-  exp="$(jq -r '.claudeAiOauth.refreshTokenExpiresAt // empty' "$file" 2>/dev/null)"
-  [ -n "$exp" ] || return 0
-  now="$(( $(date +%s) * 1000 ))"
-  printf '%s\n' "$(( exp - now ))"
+  printf '%s-%s\n' "$CP_KEYCHAIN_SERVICE" \
+    "$(printf '%s' "$dir" | shasum -a 256 | cut -c1-8)"
 }
 
 cp_keychain_read() {
-  "$CP_SECURITY_BIN" find-generic-password -s "$CP_KEYCHAIN_SERVICE" -a "${USER:-$(id -un)}" -w 2>/dev/null
+  "$CP_SECURITY_BIN" find-generic-password -s "${1:-$CP_KEYCHAIN_SERVICE}" -a "${USER:-$(id -un)}" -w 2>/dev/null
+}
+
+# cp_creds_read <cfg> <name> -> the profile's credential JSON, or nothing.
+# Claude Code before 2.1 wrote $CLAUDE_CONFIG_DIR/.credentials.json; 2.1 keeps
+# the blob in a per-config-dir keychain item instead. Prefer the file, fall back
+# to the keychain. Callers must pipe this straight into jq: letting the blob
+# reach a variable would put a live OAuth token in the shell's environment.
+cp_creds_read() {
+  local file
+  file="$(cp_creds_file "$1" "$2")"
+  if [ -n "$file" ] && [ -f "$file" ]; then
+    cat "$file"
+    return 0
+  fi
+  if cp_profile_is_native "$1" "$2"; then
+    cp_keychain_read
+  else
+    cp_keychain_read "$(cp_keychain_service "$(cp_profile_dir "$1" "$2")")"
+  fi
+}
+
+# Milliseconds until the refresh token expires, or empty when unknown. An
+# unreadable store is indistinguishable from one with no expiry recorded, and
+# both stay silent rather than inventing a warning.
+cp_refresh_ms_left() {
+  local exp now
+  exp="$(cp_creds_read "$1" "$2" | jq -r '.claudeAiOauth.refreshTokenExpiresAt // empty' 2>/dev/null)"
+  case "$exp" in ''|*[!0-9]*) return 0 ;; esac
+  now="$(( $(date +%s) * 1000 ))"
+  printf '%s\n' "$(( exp - now ))"
 }
 
 cp_keychain_write() {
@@ -92,11 +125,14 @@ cp_cmd_login() {
     return 1
   fi
 
-  if [ ! -f "$dir/.credentials.json" ]; then
-    cp_warn "login did not produce $dir/.credentials.json (claude exited $rc)"
+  # Where the credentials land depends on the Claude Code version: older ones
+  # write $CLAUDE_CONFIG_DIR/.credentials.json, 2.1+ writes a keychain item
+  # keyed by a hash of the config dir. Ask claude instead of guessing storage.
+  if [ "$(cp_auth_status "$cfg" "$name" | jq -r '.loggedIn // false')" != 'true' ]; then
+    cp_warn "login did not authenticate profile $name (claude exited $rc)"
     return 1
   fi
-  chmod 600 "$dir/.credentials.json" 2>/dev/null
+  [ -f "$dir/.credentials.json" ] && chmod 600 "$dir/.credentials.json" 2>/dev/null
   printf 'logged in: %s\n' "$name"
   return 0
 }
@@ -118,7 +154,7 @@ cp_cmd_doctor() {
       status=1
       continue
     fi
-    ms="$(cp_refresh_ms_left "$(cp_creds_file "$cfg" "$name")")"
+    ms="$(cp_refresh_ms_left "$cfg" "$name")"
     if [ -n "$ms" ] && [ "$ms" -lt 1209600000 ]; then
       left_days="$(( ms / 86400000 ))"
       printf '%s: refresh token expires in %s day(s) - re-run: cprof login %s\n' \

@@ -13,8 +13,9 @@
 
 # Assets shared between profiles: configuration and customisation, nothing that
 # says who you are or what you did. Anything absent from this list stays
-# per-profile, which is what keeps two accounts apart: .credentials.json,
-# .claude.json, projects, sessions, history.jsonl, todos, and the various caches.
+# per-profile, which is what keeps two accounts apart: the credentials (a
+# per-config-dir keychain item since Claude Code 2.1, .credentials.json before
+# it), .claude.json, projects, sessions, history.jsonl, todos, and the caches.
 CP_SHARED_ASSETS='settings.json keybindings.json CLAUDE.md plugins skills agents commands hooks'
 
 # The directory the shared assets come from. Stock Claude Code always reads this
