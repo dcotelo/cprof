@@ -57,24 +57,27 @@ claude plugin install claudeprofile
 ```
 
 Installing the plugin puts nothing on `PATH` — the CLI lives inside a versioned
-cache directory. Add both functions to `~/.zshrc`: one to reach the CLI, one to
-launch `claude` with the resolved profile.
+cache directory. Two shell functions close the gap: one to reach the CLI, one to
+launch `claude` with the resolved profile. Paste this, then `exec zsh`:
 
 ```bash
+cat >> ~/.zshrc <<'RC'
 claudeprofile() {
   local cli
-  cli=$(ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/scripts/claudeprofile 2>/dev/null | tail -1)
+  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/scripts/claudeprofile ; } 2>/dev/null | sort -V | tail -1)
   [ -x "$cli" ] || { print -u2 'claudeprofile: plugin not installed'; return 127; }
   "$cli" "$@"
 }
 claude() { eval "$(claudeprofile env)"; command claude "$@"; }
+RC
 ```
 
-Resolving at call time means plugin updates need no edit here. Then
-`exec zsh` and check it:
+Resolving at call time means plugin updates need no edit here. `sort -V` keeps
+`0.10.0` ahead of `0.9.0`, and the braces around `ls` put zsh's own
+"no matches found" on the suppressed stream when nothing is installed.
 
 ```console
-$ claudeprofile list
+$ exec zsh && claudeprofile list
 work         team     you@<company>.com           native
 ```
 
@@ -155,39 +158,47 @@ A session on a config directory that belongs to no profile reads `⚑ unknown` �
 worth seeing, since it means something else set `CLAUDE_CONFIG_DIR`.
 
 Plugin manifests cannot declare a statusline, so wire it in `~/.claude/settings.json`
-yourself, pointing at a small script of your own:
+yourself, pointing at a small script of your own.
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "bash \"$HOME/.claude/statusline.sh\"",
-    "refreshInterval": 5
-  }
-}
-```
+**Check what you already have first** — the next step replaces it:
 
 ```bash
-#!/usr/bin/env bash
-# ~/.claude/statusline.sh — profile badge, then whatever else you already run.
-seg=$(ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/statusline/segment.sh 2>/dev/null | tail -1)
-[ -r "$seg" ] && bash "$seg" </dev/null
-exit 0   # a test as the last command would exit non-zero and fail the statusline
+jq -r '.statusLine.command // "none"' ~/.claude/settings.json
 ```
 
-The `ls | tail -1` resolves the newest installed version, so plugin updates do not
-break the statusline. The segment finds its own CLI relative to itself; no
+If that says `none`, write the script and point `settings.json` at it:
+
+```bash
+cat > ~/.claude/statusline.sh <<'SL'
+#!/usr/bin/env bash
+# Profile badge, then whatever else you already run.
+seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
+[ -r "$seg" ] && bash "$seg" </dev/null
+exit 0   # a test as the last command would exit non-zero and fail the statusline
+SL
+chmod +x ~/.claude/statusline.sh
+
+f=~/.claude/settings.json; [ -f "$f" ] || printf '{}\n' > "$f"
+cp "$f" "$f.bak" && jq '.statusLine = {type:"command",command:"bash \"$HOME/.claude/statusline.sh\"",refreshInterval:5}' "$f" > "$f.new" && mv "$f.new" "$f"
+```
+
+Your other settings survive — `jq` sets one key and the previous file is kept at
+`settings.json.bak`. Resolving the segment at call time means plugin updates do
+not break the statusline; the segment finds its own CLI relative to itself, so no
 environment variable is required.
 
 <details>
 <summary><strong>Already running a statusline?</strong> Compose them.</summary>
 
-Add the badge above whatever you already run. The segment deliberately does not
-read stdin, so Claude Code's JSON payload stays unconsumed for the next
-component — `</dev/null` keeps it that way even if that ever changes:
+Point `settings.json` at a wrapper that prints the badge first and hands the
+payload on. The segment deliberately does not read stdin, so Claude Code's JSON
+stays unconsumed for the next component — `</dev/null` keeps it that way even if
+that ever changes:
 
 ```bash
+#!/usr/bin/env bash
 payload="$(cat)"
+seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
 [ -r "$seg" ] && bash "$seg" </dev/null
 printf '%s' "$payload" | your-existing-statusline
 ```
