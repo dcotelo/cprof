@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/claudeprofile"
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
 
 # Stub claude: reports identity based on CLAUDE_CONFIG_DIR, and records whether
 # the variable was set at all.

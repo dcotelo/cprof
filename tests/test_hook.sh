@@ -29,7 +29,7 @@ case "$out" in *Relaunch*) assert_eq ok ok 'mismatch says to relaunch' ;;
 # hook must never fail a session
 ( cd "$CP_T_TMP/dev/crowder" && CLAUDE_CONFIG_DIR="$CP_T_TMP/p" bash "$HOOK" >/dev/null 2>&1 )
 assert_eq '0' "$?" 'hook exits 0 on mismatch'
-printf 'not json' > "$CLAUDEPROFILE_CONFIG"
+printf 'not json' > "$CPROF_CONFIG"
 ( cd "$CP_T_TMP" && bash "$HOOK" >/dev/null 2>&1 )
 assert_eq '0' "$?" 'hook exits 0 on malformed config'
 
