@@ -33,21 +33,59 @@ cp_t_write_config <<JSON
  "rules":[],"repos":{}}
 JSON
 
-# --- well-behaved login: writes the credentials file, leaves keychain alone ---
+# --- file-backed login (Claude Code < 2.1): writes .credentials.json ----------
 cat > "$CP_CLAUDE_BIN" <<'STUB'
 #!/usr/bin/env bash
-if [ "${1:-}" = auth ] && [ "${2:-}" = login ]; then
-  printf '{"claudeAiOauth":{"accessToken":"x"}}' > "$CLAUDE_CONFIG_DIR/.credentials.json"
-  exit 0
-fi
+case "${1:-} ${2:-}" in
+  'auth login')
+    printf '{"claudeAiOauth":{"accessToken":"x"}}' > "$CLAUDE_CONFIG_DIR/.credentials.json"
+    exit 0 ;;
+  'auth status')
+    [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ] || { printf '{"loggedIn":false}\n'; exit 0; }
+    printf '{"loggedIn":true,"authMethod":"claudeai"}\n'; exit 0 ;;
+esac
 exit 1
 STUB
 chmod +x "$CP_CLAUDE_BIN"
 
 assert_ok "$CLI" login personal
 assert_eq 'true' "$([ -f "$CP_T_TMP/p/.credentials.json" ] && echo true)" 'credentials file created'
+assert_eq '600' "$(stat -f '%Lp' "$CP_T_TMP/p/.credentials.json")" 'credentials file is mode 600'
 assert_eq 'ORIGINAL-BLOB' "$(cat "$KC")" 'keychain untouched by a well-behaved login'
 assert_eq '600' "$(stat -f '%Lp' "$CPROF_STATE_DIR/keychain.bak")" 'keychain backup is mode 600'
+
+# --- keychain-backed login (Claude Code >= 2.1) ------------------------------
+# Credentials land in a per-config-dir keychain item, never in the profile dir,
+# so success must be judged by `claude auth status`, not by a file on disk.
+rm -f "$CP_T_TMP/p/.credentials.json"
+cat > "$CP_CLAUDE_BIN" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  'auth login') exit 0 ;;
+  'auth status') printf '{"loggedIn":true,"authMethod":"claudeai"}\n'; exit 0 ;;
+esac
+exit 1
+STUB
+chmod +x "$CP_CLAUDE_BIN"
+
+out="$("$CLI" login personal 2>&1)"
+rc=$?
+assert_eq '0' "$rc" 'login succeeds when creds go to the keychain, not the dir'
+assert_eq 'logged in: personal' "$out" 'success is reported, not a missing-file warning'
+assert_eq 'ORIGINAL-BLOB' "$(cat "$KC")" 'shared keychain item untouched'
+
+# --- login that really did not authenticate ----------------------------------
+cat > "$CP_CLAUDE_BIN" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  'auth login') exit 0 ;;
+  'auth status') printf '{"loggedIn":false,"authMethod":"none"}\n'; exit 0 ;;
+esac
+exit 1
+STUB
+chmod +x "$CP_CLAUDE_BIN"
+
+assert_fail "$CLI" login personal
 
 # --- misbehaving login: clobbers the keychain -> detected and restored --------
 rm -f "$CP_T_TMP/p/.credentials.json"
