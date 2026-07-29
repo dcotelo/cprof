@@ -31,6 +31,16 @@ assert_eq 'work' "$(env -u CLAUDE_CONFIG_DIR "$CLI" status 2>/dev/null)" \
 assert_eq 'unknown' "$(CLAUDE_CONFIG_DIR="$CP_T_TMP/nowhere" "$CLI" status 2>/dev/null)" \
   'unrecognised config dir reports unknown'
 
+# A native profile is stored without a dir, since native means "runs on unset".
+# But something else may export CLAUDE_CONFIG_DIR pointing at the stock
+# directory the native profile already uses, and that is still the native
+# profile, not an unknown one.
+mkdir -p "$HOME/.claude"
+assert_eq 'work' "$(CLAUDE_CONFIG_DIR="$HOME/.claude" "$CLI" status 2>/dev/null)" \
+  'config dir set to the stock directory reports the native profile'
+assert_eq 'work' "$(CLAUDE_CONFIG_DIR="$HOME/.claude/" "$CLI" status 2>/dev/null)" \
+  'trailing slash on the stock directory still reports the native profile'
+
 # with no native profile and no env, nothing is claimed
 cp_t_write_config <<JSON
 {"default":"personal","profiles":[{"name":"personal","dir":"$CP_T_TMP/p"}],"rules":[],"repos":{}}
