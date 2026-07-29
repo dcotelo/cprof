@@ -2,9 +2,19 @@ name: release
 
 # Tag convention matches `claude plugin tag`, which validates plugin.json against
 # the marketplace entry before creating cprof--v<version>.
+#
+# Two ways in, one path through: pushing a tag by hand, or tag.yml calling this
+# after a version bump lands on main. `inputs.tag` is empty for the push event,
+# so both resolve to the same tag name.
 on:
   push:
     tags: ['cprof--v*']
+  workflow_call:
+    inputs:
+      tag:
+        description: The cprof--v<version> tag to release.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,12 +24,19 @@ jobs:
     runs-on: macos-latest
     outputs:
       version: ${{ steps.tag.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - name: version from tag
         id: tag
-        run: echo "version=${GITHUB_REF_NAME#cprof--v}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "${TAG#cprof--v}" >> "$GITHUB_OUTPUT"
 
       # A tag that disagrees with the manifests would publish a release nobody can
       # install: the marketplace serves whatever the manifest claims.
@@ -51,6 +68,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify.outputs.tag }}
 
       - name: notes from CHANGELOG
         env:
@@ -71,8 +90,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.verify.outputs.version }}
+          TAG: ${{ needs.verify.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             --title "cprof $VERSION" \
             --notes-file notes.md \
             --verify-tag

@@ -5,6 +5,8 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.4.1]
+
 ### Fixed
 
 - `cprof login` failed on a successful sign-in, reporting `login did not produce
