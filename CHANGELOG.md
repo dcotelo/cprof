@@ -3,6 +3,16 @@
 Notable changes per release. Versions follow [semver](https://semver.org); the
 release workflow reads its notes from the section matching the tag.
 
+## [Unreleased]
+
+### Fixed
+
+- `cprof status` (and so the statusline badge) reported `unknown` for a native
+  profile whenever `CLAUDE_CONFIG_DIR` was exported pointing at the stock
+  `~/.claude`. A native profile is stored without a `dir`, because native means
+  "runs when the variable is unset", so the directory matched nothing. The stock
+  path now resolves to the native profile.
+
 ## [0.4.0]
 
 ### Changed
