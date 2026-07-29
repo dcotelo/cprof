@@ -18,5 +18,8 @@ switch requires relaunching `claude`.
   state that a relaunch is required for it to take effect.
 - `rule <path> <name>`: run
   `${CLAUDE_PLUGIN_ROOT}/scripts/claudeprofile rule add <path> <name>`.
+- `rules`: run `${CLAUDE_PLUGIN_ROOT}/scripts/claudeprofile rules`. Rules are
+  listed longest-path-first, which is the order resolution consults them; a rule
+  marked `(unknown profile)` never matches anything.
 - `doctor`: run `${CLAUDE_PLUGIN_ROOT}/scripts/claudeprofile doctor`.
 - Anything else: run `${CLAUDE_PLUGIN_ROOT}/scripts/claudeprofile help`.

@@ -15,10 +15,10 @@
 
 ```console
 $ cd ~/dev/<company>/api && claudeprofile which
-work        native (keychain)              rule ~/dev/<company>
+work  native (keychain)  rule ~/dev/<company>
 
 $ cd ~/dev/side-project && claudeprofile which
-personal    ~/.claude-profiles/personal    default
+personal  ~/.claude-profiles/personal  default
 ```
 
 `claudeprofile` stores your Claude accounts as profiles, then picks one for each
@@ -78,7 +78,8 @@ Resolving at call time means plugin updates need no edit here. `sort -V` keeps
 
 ```console
 $ exec zsh && claudeprofile list
-work         team     you@<company>.com           native
+PROFILE  PLAN  ACCOUNT            FLAGS
+work     team  you@<company>.com  native
 ```
 
 `command claude` bypasses the wrapper. Without the wrapper, `claude` ignores
@@ -98,9 +99,18 @@ claudeprofile rule add ~/dev/<company> work
 
 ```console
 $ claudeprofile list
-personal     max      you@personal.dev            (default) (active)
-work         team     you@<company>.com           native
+PROFILE   PLAN  ACCOUNT            FLAGS
+personal  max   you@personal.dev   (default) (active)
+work      team  you@<company>.com  native
+
+$ claudeprofile rules
+PATH             PROFILE
+~/dev/<company>  work
+~/dev/oss        personal
 ```
+
+Columns size themselves to their contents, so a long profile name widens the
+table instead of breaking the alignment. Paths under your home print as `~`.
 
 ## Resolution order
 
@@ -115,6 +125,9 @@ First match wins.
 | 5 | nothing matched — stock `~/.claude` behaviour | — |
 
 `claudeprofile which` reports both the winner and the rule that produced it.
+`claudeprofile rules` lists rules longest-first — the order they are consulted —
+and flags any that name a profile you have since removed, since resolution skips
+those without a word.
 
 Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 `~/dev/workshop`. There is no glob support.
@@ -131,7 +144,8 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `claudeprofile default <name>` | Set the default profile |
 | `claudeprofile pin [<name>] \| pin --clear` | Pin or unpin this repository |
 | `claudeprofile rule add <path> <name>` | Route a directory tree to a profile |
-| `claudeprofile rule rm <path>` / `rule list` | Manage rules |
+| `claudeprofile rules` / `rule list` | Rules in the order resolution consults them |
+| `claudeprofile rule rm <path>` | Drop a rule |
 | `claudeprofile login <name>` | Sign a profile in, with keychain protection |
 | `claudeprofile doctor` | Report unauthenticated profiles and expiring tokens |
 | `claudeprofile remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
