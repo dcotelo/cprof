@@ -3,6 +3,38 @@
 Notable changes per release. Versions follow [semver](https://semver.org); the
 release workflow reads its notes from the section matching the tag.
 
+## [0.3.0]
+
+### Fixed
+
+- A profile no longer starts without your customisations. `CLAUDE_CONFIG_DIR`
+  relocates the entire configuration directory, not just its credentials, so a
+  profile pointed elsewhere had no plugins, skills, agents, commands, hooks,
+  settings, or `CLAUDE.md` — switching account silently switched away every
+  customisation too.
+
+### Added
+
+- `claudeprofile share <name>` links the shared assets — `settings.json`,
+  `keybindings.json`, `CLAUDE.md`, `plugins`, `skills`, `agents`, `commands`,
+  `hooks` — from `~/.claude` into a profile. Symlinks, so installing a plugin or
+  editing settings once applies everywhere, with nothing to re-sync. Content the
+  profile already had is moved aside, never deleted.
+- `claudeprofile unshare <name>` removes those links, and only those: a real file
+  in the profile and a link pointing anywhere else are both left alone.
+- `add` shares by default; `add --isolated` opts out.
+
+Identity and history stay per-profile, which is what keeps the accounts apart:
+`.credentials.json`, `.claude.json`, `projects`, `sessions`, `history.jsonl`,
+`todos`, and the caches are never linked.
+
+### Changed
+
+- `claudeprofile version` reads 0.3.0. It reported 0.1.0 through the 0.2.0
+  release: the constant was never bumped, and the test that should have caught it
+  hardcoded the same stale literal. Both the test and a manifest check now compare
+  against `plugin.json`.
+
 ## [0.2.0]
 
 ### Added

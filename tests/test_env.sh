@@ -61,6 +61,9 @@ case "$out" in
   *)           assert_eq 'work + rule' "$out" 'which names profile and rule' ;;
 esac
 
-assert_eq "claudeprofile 0.1.0" "$("$CLI" version)" 'version output'
+# Read the expected version rather than hardcoding it: a literal here went stale
+# at the 0.2.0 bump and reported the old version as correct.
+manifest_version="$(jq -r .version "$(dirname "$0")/../.claude-plugin/plugin.json")"
+assert_eq "claudeprofile $manifest_version" "$("$CLI" version)" 'version matches the manifest'
 
 cp_t_summary

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.1.0'
+CP_VERSION='0.3.0'
 
 CP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
 if [ -z "$CP_LIB_DIR" ]; then
@@ -19,6 +19,8 @@ fi
 . "$CP_LIB_DIR/auth.sh"
 # shellcheck source=lib/output.sh
 . "$CP_LIB_DIR/output.sh"
+# shellcheck source=lib/share.sh
+. "$CP_LIB_DIR/share.sh"
 
 cp_usage() {
   cat >&2 <<'USAGE'
@@ -29,7 +31,9 @@ usage:
   claudeprofile which                      profile resolved for this directory
   claudeprofile status                     profile this process is running as
   claudeprofile env                        export statements for eval
-  claudeprofile add <name> [--dir P] [--native] [--note S]
+  claudeprofile add <name> [--dir P] [--native] [--note S] [--isolated]
+  claudeprofile share <name>               plugins, skills, settings from ~/.claude
+  claudeprofile unshare <name>             drop those links
   claudeprofile default <name>
   claudeprofile pin [<name>] | pin --clear
   claudeprofile rules                      rules in the order they are consulted
@@ -57,6 +61,8 @@ case "$cmd" in
   pin)     cp_cmd_pin "$@" ;;
   rule)    cp_cmd_rule "$@" ;;
   rules)   cp_cmd_rule list ;;
+  share)   cp_cmd_share "$@" ;;
+  unshare) cp_cmd_unshare "$@" ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
