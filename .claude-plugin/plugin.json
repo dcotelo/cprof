@@ -1,6 +1,6 @@
 {
   "name": "cprof",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Select which Claude account a session uses, by default profile, per-repo pin, or directory rule.",
   "author": {
     "name": "Diego Cotelo",
@@ -19,6 +19,5 @@
   ],
   "commands": [
     "./commands/profile.md"
-  ],
-  "hooks": "./hooks/hooks.json"
+  ]
 }

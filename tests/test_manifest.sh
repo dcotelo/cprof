@@ -40,10 +40,21 @@ assert_eq "$(pj .name)" "$(mj '.plugins[0].name')"  'marketplace names the same 
 assert_eq './'    "$(mj '.plugins[0].source')"      'plugin source is the repository root'
 
 # --- referenced files exist --------------------------------------------------
+# Claude Code loads hooks/hooks.json on its own. Naming it in the manifest as
+# well is a duplicate registration, and the whole plugin then fails to load, so
+# manifest.hooks may only point at additional files. `plugin validate` does not
+# catch this.
 hooks="$(pj '.hooks // empty')"
+case "${hooks#./}" in
+  hooks/hooks.json)
+    assert_eq 'not set' "$hooks" 'manifest does not re-declare the standard hooks/hooks.json' ;;
+  *)
+    assert_eq ok ok 'manifest does not re-declare the standard hooks/hooks.json' ;;
+esac
 if [ -n "$hooks" ]; then
   assert_ok test -f "$ROOT/${hooks#./}"
 fi
+assert_ok test -f "$ROOT/hooks/hooks.json"
 for cmd in $(pj '.commands[]? // empty'); do
   assert_ok test -f "$ROOT/${cmd#./}"
 done
