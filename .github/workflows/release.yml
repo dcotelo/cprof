@@ -38,14 +38,11 @@ jobs:
           done
           printf 'version %s agrees across manifests\n' "$VERSION"
 
+      # No shellcheck here: ci.yml lints every push to main with a pinned
+      # version, so a tag already points at a linted commit. Installing it from
+      # brew would also unpin the version this repo checks against.
       - name: suite
         run: bash tests/run.sh
-
-      - name: shellcheck
-        run: |
-          brew install shellcheck
-          shellcheck -x -P scripts -P tests \
-            scripts/claudeprofile scripts/lib/*.sh hooks/*.sh statusline/*.sh tests/*.sh
 
   publish:
     needs: verify
