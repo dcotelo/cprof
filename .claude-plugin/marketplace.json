@@ -2,13 +2,28 @@
   "name": "claudeprofile",
   "description": "Per-repository Claude account switching: keep personal and work subscriptions separate.",
   "owner": {
-    "name": "Diego Cotelo"
+    "name": "Diego Cotelo",
+    "url": "https://github.com/dcotelo"
+  },
+  "metadata": {
+    "description": "Per-repository Claude account switching: keep personal and work subscriptions separate.",
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "claudeprofile",
       "source": "./",
-      "description": "Select which Claude account a session uses, by default profile, per-repo pin, or directory rule."
+      "version": "0.2.0",
+      "description": "Select which Claude account a session uses, by default profile, per-repo pin, or directory rule. Each profile is its own config directory, so a work subscription and a personal one never share credentials.",
+      "category": "workflow",
+      "keywords": [
+        "accounts",
+        "profiles",
+        "subscription",
+        "keychain",
+        "statusline",
+        "workspace"
+      ]
     }
   ]
 }

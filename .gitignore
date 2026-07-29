@@ -1,2 +1,4 @@
 *.tmp.*
 .DS_Store
+# per-machine tool permissions, not part of the plugin
+.claude/settings.local.json
