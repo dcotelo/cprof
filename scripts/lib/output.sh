@@ -2,6 +2,57 @@
 # shellcheck shell=bash
 # Shell-facing output: env exports, which, quoting.
 
+# Shortens $HOME to ~ for display only. Never feed the result back to a command
+# that resolves paths: rules and pins are stored and compared absolute.
+#
+# Both spellings of home are tried, because stored paths are physical while $HOME
+# may be reached through a symlink — matching only the literal $HOME would print
+# rule paths in full while profile directories shortened.
+cp_path_display() {
+  local p="$1" home_phys
+  home_phys="$(cd "$HOME" 2>/dev/null && pwd -P)" || home_phys=''
+  case "$p" in
+    "$HOME")   printf '~\n'; return 0 ;;
+    "$HOME"/*) printf '~%s\n' "${p#"$HOME"}"; return 0 ;;
+  esac
+  if [ -n "$home_phys" ]; then
+    case "$p" in
+      "$home_phys")   printf '~\n'; return 0 ;;
+      "$home_phys"/*) printf '~%s\n' "${p#"$home_phys"}"; return 0 ;;
+    esac
+  fi
+  printf '%s\n' "$p"
+}
+
+# Aligns tab-separated rows into columns two spaces apart, sizing each column to
+# its widest cell so a long profile name cannot push a row out of alignment. A
+# ragged row is fine: missing cells produce no padding, and no line keeps
+# trailing whitespace.
+cp_table() {
+  awk -F'\t' '
+    {
+      nf[NR] = NF
+      for (i = 1; i <= NF; i++) {
+        cell[NR, i] = $i
+        if (length($i) > w[i]) w[i] = length($i)
+      }
+    }
+    END {
+      for (r = 1; r <= NR; r++) {
+        line = ""
+        for (i = 1; i <= nf[r]; i++) {
+          line = line cell[r, i]
+          if (i < nf[r]) {
+            pad = w[i] - length(cell[r, i]) + 2
+            while (pad-- > 0) line = line " "
+          }
+        }
+        sub(/[ \t]+$/, "", line)
+        print line
+      }
+    }'
+}
+
 # POSIX-safe single-quoting for eval.
 cp_shquote() {
   local s="$1" q="'"
@@ -71,26 +122,29 @@ cp_cmd_list() {
     printf 'no profiles saved\n'
     return 0
   fi
-  for name in $names; do
-    st="$(cp_auth_status "$cfg" "$name")"
-    if [ "$(printf '%s' "$st" | jq -r '.loggedIn // false')" = 'true' ]; then
-      email="$(printf '%s' "$st" | jq -r '.email // "unknown"')"
-      sub="$(printf '%s' "$st" | jq -r '.subscriptionType // "unknown"')"
-    else
-      email='not logged in'
-      sub='-'
-    fi
-    markers=''
-    [ "$name" = "$default_name" ] && markers="$markers (default)"
-    [ "$name" = "$active" ] && markers="$markers (active)"
-    if cp_profile_is_native "$cfg" "$name"; then
-      markers="$markers native"
-    else
-      dir="$(cp_profile_dir "$cfg" "$name")"
-      [ -d "$dir" ] || markers="$markers [dir missing]"
-    fi
-    printf '%-12s %-8s %-28s%s\n' "$name" "$sub" "$email" "$markers"
-  done
+  {
+    printf 'PROFILE\tPLAN\tACCOUNT\tFLAGS\n'
+    for name in $names; do
+      st="$(cp_auth_status "$cfg" "$name")"
+      if [ "$(printf '%s' "$st" | jq -r '.loggedIn // false')" = 'true' ]; then
+        email="$(printf '%s' "$st" | jq -r '.email // "unknown"')"
+        sub="$(printf '%s' "$st" | jq -r '.subscriptionType // "unknown"')"
+      else
+        email='not logged in'
+        sub='-'
+      fi
+      markers=''
+      [ "$name" = "$default_name" ] && markers="$markers (default)"
+      [ "$name" = "$active" ] && markers="$markers (active)"
+      if cp_profile_is_native "$cfg" "$name"; then
+        markers="$markers native"
+      else
+        dir="$(cp_profile_dir "$cfg" "$name")"
+        [ -d "$dir" ] || markers="$markers [dir missing]"
+      fi
+      printf '%s\t%s\t%s\t%s\n' "$name" "$sub" "$email" "${markers# }"
+    done
+  } | cp_table
 }
 
 cp_cmd_which() {
@@ -103,10 +157,16 @@ cp_cmd_which() {
     printf 'no profile matched (%s)\n' "$reason"
     return 0
   fi
+  # The reason carries an absolute path for rule and pin matches; shorten the
+  # path only, so the leading keyword still reads as one word.
+  case "$reason" in
+    'rule '*) reason="rule $(cp_path_display "${reason#rule }")" ;;
+    'pin '*)  reason="pin $(cp_path_display "${reason#pin }")" ;;
+  esac
   if cp_profile_is_native "$cfg" "$name"; then
-    printf '%s\tnative (keychain)\t%s\n' "$name" "$reason"
+    printf '%s\tnative (keychain)\t%s\n' "$name" "$reason" | cp_table
   else
     dir="$(cp_profile_dir "$cfg" "$name")"
-    printf '%s\t%s\t%s\n' "$name" "$dir" "$reason"
+    printf '%s\t%s\t%s\n' "$name" "$(cp_path_display "$dir")" "$reason" | cp_table
   fi
 }

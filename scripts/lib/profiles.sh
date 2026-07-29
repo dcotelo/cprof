@@ -81,6 +81,27 @@ cp_cmd_pin() {
   printf '%s' "$cfg" | jq --arg r "$root" --arg n "$name" '.repos[$r] = $n' | cp_config_write
 }
 
+# Rules in the order resolution consults them: longest path prefix first. A rule
+# naming a profile that no longer exists is flagged rather than dropped, since
+# resolution skips it silently and the config still carries it.
+cp_rule_list() {
+  local cfg="$1" rows path name note
+  rows="$(printf '%s' "$cfg" | jq -r '.rules[]? | [.path, .profile] | @tsv' \
+    | awk -F'\t' '{ print length($1) "\t" $0 }' | sort -rn | cut -f2-)"
+  if [ -z "$rows" ]; then
+    printf 'no rules\n'
+    return 0
+  fi
+  {
+    printf 'PATH\tPROFILE\n'
+    printf '%s\n' "$rows" | while IFS="$(printf '\t')" read -r path name; do
+      note=''
+      cp_profile_exists "$cfg" "$name" || note='(unknown profile)'
+      printf '%s\t%s\t%s\n' "$(cp_path_display "$path")" "$name" "$note"
+    done
+  } | cp_table
+}
+
 cp_cmd_rule() {
   local sub="${1:-}" path name cfg
   [ -n "$sub" ] && shift
@@ -101,8 +122,7 @@ cp_cmd_rule() {
       printf '%s' "$cfg" | jq --arg p "$path" '.rules = [.rules[]? | select(.path != $p)]' | cp_config_write
       ;;
     list)
-      printf '%s' "$cfg" | jq -r '.rules[]? | [.path, .profile] | @tsv' \
-        | awk '{ print length($1) "\t" $0 }' | sort -rn | cut -f2-
+      cp_rule_list "$cfg"
       ;;
     *)
       cp_warn 'rule: expected add, rm, or list'
