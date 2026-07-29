@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/claudeprofile"
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
 SEG="$(cd "$(dirname "$0")/.." && pwd -P)/statusline/segment.sh"
 
 mkdir -p "$CP_T_TMP/p" "$CP_T_TMP/c"
@@ -66,11 +66,11 @@ leftover="$(printf '%s' "$payload" | { bash "$SEG" >/dev/null 2>&1; cat; })"
 assert_eq "$payload" "$leftover" 'segment leaves stdin unconsumed'
 
 # never fails the statusline
-( CLAUDEPROFILE_CONFIG=/dev/null bash "$SEG" </dev/null >/dev/null 2>&1 )
+( CPROF_CONFIG=/dev/null bash "$SEG" </dev/null >/dev/null 2>&1 )
 assert_eq '0' "$?" 'segment exits 0 on unusable config'
 
 # and prints nothing rather than noise when there is no config at all
-rm -f "$CLAUDEPROFILE_CONFIG"
+rm -f "$CPROF_CONFIG"
 assert_eq '' "$(env -u CLAUDE_CONFIG_DIR bash "$SEG" </dev/null 2>/dev/null)" \
   'segment is silent when no profiles are configured'
 

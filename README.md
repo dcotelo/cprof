@@ -1,4 +1,4 @@
-<h1 align="center">⚑ claudeprofile</h1>
+<h1 align="center">⚑ cprof</h1>
 
 <p align="center">
   <em>One personal Claude subscription, one for work.<br>
@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dcotelo/claudeprofile/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/dcotelo/claudeprofile/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/dcotelo/cprof/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/dcotelo/cprof/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
@@ -15,14 +15,14 @@
 </p>
 
 ```console
-$ cd ~/dev/<company>/api && claudeprofile which
+$ cd ~/dev/<company>/api && cprof which
 work  native (keychain)  rule ~/dev/<company>
 
-$ cd ~/dev/side-project && claudeprofile which
+$ cd ~/dev/side-project && cprof which
 personal  ~/.claude-profiles/personal  default
 ```
 
-`claudeprofile` stores your Claude accounts as profiles, then picks one for each
+`cprof` stores your Claude accounts as profiles, then picks one for each
 session based on a default, a per-repository pin, or a directory rule — so repos
 under `~/dev/<company>` use the work account and everything else uses personal.
 
@@ -37,43 +37,43 @@ Five steps, about two minutes. Needs macOS and `jq` (`brew install jq`).
 
 ```bash
 # 1. install the plugin
-claude plugin marketplace add dcotelo/claudeprofile
-claude plugin install claudeprofile
+claude plugin marketplace add dcotelo/cprof
+claude plugin install cprof
 
 # 2. reach the CLI, and route `claude` through it
 cat >> ~/.zshrc <<'RC'
-claudeprofile() {
+cprof() {
   local cli
-  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/scripts/claudeprofile ; } 2>/dev/null | sort -V | tail -1)
-  [ -x "$cli" ] || { print -u2 'claudeprofile: plugin not installed'; return 127; }
+  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/scripts/cprof ; } 2>/dev/null | sort -V | tail -1)
+  [ -x "$cli" ] || { print -u2 'cprof: plugin not installed'; return 127; }
   "$cli" "$@"
 }
-claude() { eval "$(claudeprofile env)"; command claude "$@"; }
+claude() { eval "$(cprof env)"; command claude "$@"; }
 RC
 exec zsh
 
 # 3. keep the account you already use, then add a second one
-claudeprofile add work --native        # adopts your current keychain login
-claudeprofile add personal             # ~/.claude-profiles/personal, sharing
+cprof add work --native        # adopts your current keychain login
+cprof add personal             # ~/.claude-profiles/personal, sharing
                                        # your plugins, skills and settings
-claudeprofile login personal           # interactive, opens a browser
+cprof login personal           # interactive, opens a browser
 
 # 4. choose which one is the fallback, and route one tree to the other
-claudeprofile default personal
-claudeprofile rule add ~/dev/<company> work
+cprof default personal
+cprof rule add ~/dev/<company> work
 
 # 5. confirm
-claudeprofile list
-claudeprofile which
+cprof list
+cprof which
 ```
 
 ```console
-$ claudeprofile list
+$ cprof list
 PROFILE   PLAN  ACCOUNT            FLAGS
 work      team  you@<company>.com  native
 personal  max   you@personal.dev   (default) (active)
 
-$ cd ~/dev/<company>/api && claudeprofile which
+$ cd ~/dev/<company>/api && cprof which
 work  native (keychain)  rule ~/dev/<company>
 ```
 
@@ -89,7 +89,7 @@ profile's own directory.
 
 Claude Code reads the macOS keychain **only when `CLAUDE_CONFIG_DIR` is unset**.
 Set it, and credentials come solely from `$CLAUDE_CONFIG_DIR/.credentials.json`.
-`claudeprofile` uses this: each profile is its own config directory with its own
+`cprof` uses this: each profile is its own config directory with its own
 credentials, and a shell function points `CLAUDE_CONFIG_DIR` at the right one
 before launching.
 
@@ -110,11 +110,11 @@ credentials in it — plugins, skills, agents, commands, hooks, `settings.json` 
 of them, and switching account would silently mean switching away every
 customisation.
 
-So `add` links them, and `claudeprofile share <name>` does it for a profile that
+So `add` links them, and `cprof share <name>` does it for a profile that
 predates this behaviour:
 
 ```console
-$ claudeprofile share personal
+$ cprof share personal
 ASSET          RESULT
 settings.json  linked (previous kept as settings.json.moved-20260729-103012)
 CLAUDE.md      linked
@@ -150,7 +150,7 @@ own "no matches found" on the suppressed stream when nothing is installed.
 
 Skipping the wrapper is always available: `command claude` ignores profiles and
 uses stock keychain behaviour. That is also the silent failure mode worth knowing
-— if `claudeprofile` cannot be reached, `eval` of a failed command is a no-op, so
+— if `cprof` cannot be reached, `eval` of a failed command is a no-op, so
 `claude` starts stock with only one line on stderr to say so.
 
 ## Resolution order
@@ -160,13 +160,13 @@ First match wins.
 | # | Source | Set with |
 | --- | --- | --- |
 | 1 | environment override, one session | `CLAUDE_PROFILE=work claude` |
-| 2 | repository pin, keyed on the git top level | `claudeprofile pin work` |
-| 3 | directory rule, longest matching prefix | `claudeprofile rule add ~/dev/<company> work` |
-| 4 | default profile | `claudeprofile default personal` |
+| 2 | repository pin, keyed on the git top level | `cprof pin work` |
+| 3 | directory rule, longest matching prefix | `cprof rule add ~/dev/<company> work` |
+| 4 | default profile | `cprof default personal` |
 | 5 | nothing matched — stock `~/.claude` behaviour | — |
 
-`claudeprofile which` reports both the winner and the rule that produced it.
-`claudeprofile rules` lists rules longest-first — the order they are consulted —
+`cprof which` reports both the winner and the rule that produced it.
+`cprof rules` lists rules longest-first — the order they are consulted —
 and flags any that name a profile you have since removed, since resolution skips
 those without a word.
 
@@ -177,20 +177,20 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 
 | Command | Description |
 | --- | --- |
-| `claudeprofile list` | Profiles with identity and subscription; marks default, active, native |
-| `claudeprofile which` | Profile resolved here, and the rule that produced it |
-| `claudeprofile status` | Profile this process is actually running as |
-| `claudeprofile env` | `export`/`unset` statements for `eval` |
-| `claudeprofile add <name> [--dir P] [--native] [--note S] [--isolated]` | Register a profile |
-| `claudeprofile share <name>` / `unshare <name>` | Link `~/.claude` customisations into a profile, or drop the links |
-| `claudeprofile default <name>` | Set the default profile |
-| `claudeprofile pin [<name>] \| pin --clear` | Pin or unpin this repository |
-| `claudeprofile rule add <path> <name>` | Route a directory tree to a profile |
-| `claudeprofile rules` / `rule list` | Rules in the order resolution consults them |
-| `claudeprofile rule rm <path>` | Drop a rule |
-| `claudeprofile login <name>` | Sign a profile in, with keychain protection |
-| `claudeprofile doctor` | Report unauthenticated profiles and expiring tokens |
-| `claudeprofile remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
+| `cprof list` | Profiles with identity and subscription; marks default, active, native |
+| `cprof which` | Profile resolved here, and the rule that produced it |
+| `cprof status` | Profile this process is actually running as |
+| `cprof env` | `export`/`unset` statements for `eval` |
+| `cprof add <name> [--dir P] [--native] [--note S] [--isolated]` | Register a profile |
+| `cprof share <name>` / `unshare <name>` | Link `~/.claude` customisations into a profile, or drop the links |
+| `cprof default <name>` | Set the default profile |
+| `cprof pin [<name>] \| pin --clear` | Pin or unpin this repository |
+| `cprof rule add <path> <name>` | Route a directory tree to a profile |
+| `cprof rules` / `rule list` | Rules in the order resolution consults them |
+| `cprof rule rm <path>` | Drop a rule |
+| `cprof login <name>` | Sign a profile in, with keychain protection |
+| `cprof doctor` | Report unauthenticated profiles and expiring tokens |
+| `cprof remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
 
 In a session, `/profile` shows status, `/profile pin <name>` pins the repository.
 
@@ -231,7 +231,7 @@ If that says `none`, write the script and point `settings.json` at it:
 cat > ~/.claude/statusline.sh <<'SL'
 #!/usr/bin/env bash
 # Profile badge, then whatever else you already run.
-seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
+seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
 [ -r "$seg" ] && bash "$seg" </dev/null
 exit 0   # a test as the last command would exit non-zero and fail the statusline
 SL
@@ -257,7 +257,7 @@ that ever changes:
 ```bash
 #!/usr/bin/env bash
 payload="$(cat)"
-seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
+seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
 [ -r "$seg" ] && bash "$seg" </dev/null
 printf '%s' "$payload" | your-existing-statusline
 ```
@@ -269,13 +269,13 @@ missing CLI prints nothing and exits 0.
 
 ## Safety
 
-`claudeprofile login` snapshots the keychain to `~/.claudeprofile/keychain.bak`
+`cprof login` snapshots the keychain to `~/.cprof/keychain.bak`
 (mode 600) before signing in, then verifies that the profile's
 `.credentials.json` appeared and the keychain went untouched. If a login writes
 to the shared keychain item instead, it is restored from the snapshot and the
 command fails loudly. Your working account cannot be lost to a profile login.
 
-`claudeprofile env` never exits non-zero and always prints one assignment. A
+`cprof env` never exits non-zero and always prints one assignment. A
 missing `jq`, a malformed config, or a missing profile directory degrades to
 stock Claude Code behaviour rather than a broken shell.
 
@@ -283,7 +283,7 @@ stock Claude Code behaviour rather than a broken shell.
 
 ```bash
 bash tests/run.sh                    # run the suite
-shellcheck -x -P scripts -P tests scripts/claudeprofile scripts/lib/*.sh hooks/*.sh \
+shellcheck -x -P scripts -P tests scripts/cprof scripts/lib/*.sh hooks/*.sh \
   statusline/*.sh tests/*.sh
 claude plugin validate .             # check the manifests
 ```
@@ -312,15 +312,15 @@ claude plugin tag . --dry-run
 claude plugin tag . --push
 ```
 
-Pushing a `claudeprofile--v<version>` tag runs the release workflow, which
+Pushing a `cprof--v<version>` tag runs the release workflow, which
 re-verifies that the tag matches the manifests, runs the suite on macOS, then
 publishes a GitHub release with that CHANGELOG section as its notes.
 
 Installs track the marketplace, so consumers update with:
 
 ```bash
-claude plugin marketplace update claudeprofile
-claude plugin update claudeprofile     # restart Claude Code to apply
+claude plugin marketplace update cprof
+claude plugin update cprof     # restart Claude Code to apply
 ```
 
 The plugin cache is keyed by version, so a release without a version bump gives

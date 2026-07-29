@@ -17,7 +17,7 @@ trap cp_t_teardown EXIT
 . "$(dirname "$0")/../scripts/lib/auth.sh"
 # shellcheck source=/dev/null
 . "$(dirname "$0")/../scripts/lib/output.sh"
-CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/claudeprofile"
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
 
 # --- cp_path_display: home shortens to ~ -------------------------------------
 assert_eq '~'          "$(cp_path_display "$HOME")"            'home alone is ~'

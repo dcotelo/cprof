@@ -3,6 +3,34 @@
 Notable changes per release. Versions follow [semver](https://semver.org); the
 release workflow reads its notes from the section matching the tag.
 
+## [0.4.0]
+
+### Changed
+
+- Renamed from `claudeprofile` to `cprof`, everywhere: the CLI, the plugin, the
+  marketplace entry, the release tag prefix (`cprof--v*`), and the repository.
+  Twelve characters was a lot to type for a command you reach for whenever you
+  change directory.
+- Config lives at `~/.cprof.json` and state at `~/.cprof/`. An existing
+  `~/.claudeprofile.json` is **moved** to the new path on first run, with a line
+  saying so; moved rather than copied, because two files would drift and a write
+  landing in the one no longer read is a silently lost change.
+- `CPROF_CONFIG` and `CPROF_STATE_DIR` are the environment overrides.
+  `CLAUDEPROFILE_CONFIG` and `CLAUDEPROFILE_STATE_DIR` are still honoured, and an
+  explicit path under either name is taken literally — never migrated.
+
+Reinstall under the new name, since the plugin name is part of its cache path:
+
+```bash
+claude plugin uninstall claudeprofile
+claude plugin marketplace add dcotelo/cprof
+claude plugin install cprof
+```
+
+Then update the shell functions to call `cprof`. Earlier entries in this file use
+the current name for readability, though those releases shipped as
+`claudeprofile`.
+
 ## [0.3.0]
 
 ### Fixed
@@ -15,12 +43,12 @@ release workflow reads its notes from the section matching the tag.
 
 ### Added
 
-- `claudeprofile share <name>` links the shared assets — `settings.json`,
+- `cprof share <name>` links the shared assets — `settings.json`,
   `keybindings.json`, `CLAUDE.md`, `plugins`, `skills`, `agents`, `commands`,
   `hooks` — from `~/.claude` into a profile. Symlinks, so installing a plugin or
   editing settings once applies everywhere, with nothing to re-sync. Content the
   profile already had is moved aside, never deleted.
-- `claudeprofile unshare <name>` removes those links, and only those: a real file
+- `cprof unshare <name>` removes those links, and only those: a real file
   in the profile and a link pointing anywhere else are both left alone.
 - `add` shares by default; `add --isolated` opts out.
 
@@ -30,7 +58,7 @@ Identity and history stay per-profile, which is what keeps the accounts apart:
 
 ### Changed
 
-- `claudeprofile version` reads 0.3.0. It reported 0.1.0 through the 0.2.0
+- `cprof version` reads 0.3.0. It reported 0.1.0 through the 0.2.0
   release: the constant was never bumped, and the test that should have caught it
   hardcoded the same stale literal. Both the test and a manifest check now compare
   against `plugin.json`.
@@ -39,13 +67,13 @@ Identity and history stay per-profile, which is what keeps the accounts apart:
 
 ### Added
 
-- `claudeprofile status` names the profile the running process is signed in as,
+- `cprof status` names the profile the running process is signed in as,
   derived from the live `CLAUDE_CONFIG_DIR` rather than from resolution — the two
   disagree after a pin or rule lands without a relaunch.
 - `statusline/segment.sh`, a one-line statusline badge (`⚑ work`). Reads no stdin,
   so it composes ahead of another statusline, and never fails one: any problem
   prints nothing and exits 0.
-- `claudeprofile rules`, an alias for `rule list`.
+- `cprof rules`, an alias for `rule list`.
 - `/profile` leads with `status` and calls out a `status` vs `which` mismatch.
 
 ### Changed

@@ -15,8 +15,8 @@ cp_t_setup() {
   CP_T_HOME="$CP_T_TMP/home"
   mkdir -p "$CP_T_HOME" "$CP_T_TMP/bin"
   export HOME="$CP_T_HOME"
-  export CLAUDEPROFILE_CONFIG="$CP_T_TMP/config.json"
-  export CLAUDEPROFILE_STATE_DIR="$CP_T_TMP/state"
+  export CPROF_CONFIG="$CP_T_TMP/config.json"
+  export CPROF_STATE_DIR="$CP_T_TMP/state"
   export CP_CLAUDE_BIN="$CP_T_TMP/bin/claude"
   export CP_SECURITY_BIN="$CP_T_TMP/bin/security"
   unset CLAUDE_PROFILE
@@ -31,8 +31,8 @@ cp_t_teardown() {
 }
 
 cp_t_write_config() {
-  mkdir -p "$(dirname "$CLAUDEPROFILE_CONFIG")"
-  cat > "$CLAUDEPROFILE_CONFIG"
+  mkdir -p "$(dirname "$CPROF_CONFIG")"
+  cat > "$CPROF_CONFIG"
 }
 
 assert_eq() {

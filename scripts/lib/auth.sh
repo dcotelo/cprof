@@ -114,14 +114,14 @@ cp_cmd_doctor() {
     st="$(cp_auth_status "$cfg" "$name")"
     logged="$(printf '%s' "$st" | jq -r '.loggedIn // false')"
     if [ "$logged" != 'true' ]; then
-      printf '%s: not logged in - run: claudeprofile login %s\n' "$name" "$name"
+      printf '%s: not logged in - run: cprof login %s\n' "$name" "$name"
       status=1
       continue
     fi
     ms="$(cp_refresh_ms_left "$(cp_creds_file "$cfg" "$name")")"
     if [ -n "$ms" ] && [ "$ms" -lt 1209600000 ]; then
       left_days="$(( ms / 86400000 ))"
-      printf '%s: refresh token expires in %s day(s) - re-run: claudeprofile login %s\n' \
+      printf '%s: refresh token expires in %s day(s) - re-run: cprof login %s\n' \
         "$name" "$left_days" "$name"
       status=1
     else

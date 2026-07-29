@@ -1,10 +1,10 @@
 name: release
 
 # Tag convention matches `claude plugin tag`, which validates plugin.json against
-# the marketplace entry before creating claudeprofile--v<version>.
+# the marketplace entry before creating cprof--v<version>.
 on:
   push:
-    tags: ['claudeprofile--v*']
+    tags: ['cprof--v*']
 
 permissions:
   contents: read
@@ -19,7 +19,7 @@ jobs:
 
       - name: version from tag
         id: tag
-        run: echo "version=${GITHUB_REF_NAME#claudeprofile--v}" >> "$GITHUB_OUTPUT"
+        run: echo "version=${GITHUB_REF_NAME#cprof--v}" >> "$GITHUB_OUTPUT"
 
       # A tag that disagrees with the manifests would publish a release nobody can
       # install: the marketplace serves whatever the manifest claims.
@@ -73,6 +73,6 @@ jobs:
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            --title "claudeprofile $VERSION" \
+            --title "cprof $VERSION" \
             --notes-file notes.md \
             --verify-tag
