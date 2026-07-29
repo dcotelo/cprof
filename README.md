@@ -87,11 +87,18 @@ profile's own directory.
 
 ## How it works
 
-Claude Code reads the macOS keychain **only when `CLAUDE_CONFIG_DIR` is unset**.
-Set it, and credentials come solely from `$CLAUDE_CONFIG_DIR/.credentials.json`.
-`cprof` uses this: each profile is its own config directory with its own
-credentials, and a shell function points `CLAUDE_CONFIG_DIR` at the right one
-before launching.
+Claude Code keys its credentials to `CLAUDE_CONFIG_DIR`. `cprof` uses this: each
+profile is its own config directory with its own credentials, and a shell
+function points `CLAUDE_CONFIG_DIR` at the right one before launching.
+
+Where those credentials physically live depends on the Claude Code version, and
+`cprof` deliberately does not care. Versions before 2.1 wrote
+`$CLAUDE_CONFIG_DIR/.credentials.json`. Since 2.1 they go to the macOS keychain
+under a service name derived from the directory —
+`Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[0:8]>`, against the plain
+`Claude Code-credentials` used when the variable is unset. Either way each
+profile gets its own store, and `cprof` asks `claude auth status` whether a
+profile is signed in rather than looking for a file.
 
 Your existing setup stays exactly as it is, as a `native` profile — the launcher
 exports nothing for it, so the keychain and `~/.claude.json` are used unchanged.
@@ -129,7 +136,7 @@ aside rather than deleted, and `unshare` removes only the links this created.
 
 | Shared | Per-profile |
 | --- | --- |
-| `settings.json`, `keybindings.json` | `.credentials.json` |
+| `settings.json`, `keybindings.json` | credentials (keychain item, or `.credentials.json` before Claude Code 2.1) |
 | `CLAUDE.md` | `.claude.json` |
 | `plugins`, `skills`, `agents`, `commands`, `hooks` | `projects`, `sessions`, `history.jsonl`, `todos`, caches |
 
@@ -272,11 +279,16 @@ missing CLI prints nothing and exits 0.
 
 ## Safety
 
-`cprof login` snapshots the keychain to `~/.cprof/keychain.bak`
-(mode 600) before signing in, then verifies that the profile's
-`.credentials.json` appeared and the keychain went untouched. If a login writes
-to the shared keychain item instead, it is restored from the snapshot and the
-command fails loudly. Your working account cannot be lost to a profile login.
+`cprof login` snapshots the shared keychain item to `~/.cprof/keychain.bak`
+(mode 600) before signing in, then verifies that `claude auth status` reports the
+profile signed in and that the shared item went untouched. If a login overwrites
+the shared item instead of the profile's own, it is restored from the snapshot
+and the command fails loudly. Your working account cannot be lost to a profile
+login.
+
+`cprof doctor` reads credentials only to extract the refresh token's expiry, and
+pipes them straight into `jq` so a live token never lands in a shell variable. If
+the store cannot be read, the expiry is reported as unknown rather than guessed.
 
 `cprof env` never exits non-zero and always prints one assignment. A
 missing `jq`, a malformed config, or a missing profile directory degrades to

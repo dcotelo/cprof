@@ -7,6 +7,16 @@ release workflow reads its notes from the section matching the tag.
 
 ### Fixed
 
+- `cprof login` failed on a successful sign-in, reporting `login did not produce
+  <dir>/.credentials.json`. Claude Code 2.1 stopped writing that file: with
+  `CLAUDE_CONFIG_DIR` set it stores credentials in a keychain item named after a
+  hash of the directory. Success is now judged by `claude auth status`, which is
+  indifferent to where the credentials landed.
+- `cprof doctor` never warned about an expiring refresh token, for any profile.
+  It read the expiry from `.credentials.json`, so on Claude Code 2.1 it found
+  nothing and silently reported `ok` until the token died. It now reads whichever
+  store the version in use actually keeps, file or keychain, and distinguishes an
+  unknown expiry from a healthy one.
 - `cprof status` (and so the statusline badge) reported `unknown` for a native
   profile whenever `CLAUDE_CONFIG_DIR` was exported pointing at the stock
   `~/.claude`. A native profile is stored without a `dir`, because native means
