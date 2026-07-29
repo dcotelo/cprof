@@ -2,6 +2,23 @@
   "name": "claudeprofile",
   "version": "0.2.0",
   "description": "Select which Claude account a session uses, by default profile, per-repo pin, or directory rule.",
-  "author": { "name": "Diego Cotelo" },
+  "author": {
+    "name": "Diego Cotelo",
+    "url": "https://github.com/dcotelo"
+  },
+  "homepage": "https://github.com/dcotelo/claudeprofile",
+  "repository": "https://github.com/dcotelo/claudeprofile",
+  "license": "MIT",
+  "keywords": [
+    "accounts",
+    "profiles",
+    "subscription",
+    "keychain",
+    "statusline",
+    "workspace"
+  ],
+  "commands": [
+    "./commands/profile.md"
+  ],
   "hooks": "./hooks/hooks.json"
 }
