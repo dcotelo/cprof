@@ -5,6 +5,30 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Changed
+
+- The marketplace is named `dcotelo` rather than `cprof`, so the plugin installs
+  as `cprof@dcotelo`. Installs are addressed as `plugin@marketplace`, and a
+  marketplace named after its only plugin made `cprof@cprof` say nothing about
+  where the plugin came from; every other marketplace in common use is named for
+  its owner.
+
+  The install id is part of the plugin's identity, so an existing install has to
+  be replaced rather than updated:
+
+  ```bash
+  claude plugin uninstall cprof@cprof
+  claude plugin marketplace remove cprof
+  claude plugin marketplace add dcotelo/cprof
+  claude plugin install cprof@dcotelo
+  ```
+
+  Nothing in `~/.cprof.json` or any profile directory is touched — profiles,
+  rules, pins and logins all survive, because they live outside the plugin cache.
+  The shell functions need no edit either: they glob the marketplace directory.
+
 ## [0.4.2]
 
 ### Fixed
