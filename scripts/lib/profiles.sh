@@ -109,7 +109,10 @@ cp_cmd_rule() {
   case "$sub" in
     add)
       path="${1:-}"; name="${2:-}"
-      [ -n "$path" ] && [ -n "$name" ] || { cp_warn 'rule add: need <path> <profile>'; return 2; }
+      if [ -z "$path" ] || [ -z "$name" ]; then
+        cp_warn 'rule add: need <path> <profile>'
+        return 2
+      fi
       cp_profile_exists "$cfg" "$name" || { cp_warn "unknown profile $name"; return 1; }
       path="$(cp_path_normalize "$path")"
       printf '%s' "$cfg" | jq --arg p "$path" --arg n "$name" \

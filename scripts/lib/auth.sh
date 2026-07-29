@@ -36,7 +36,9 @@ cp_auth_status() {
 # Milliseconds until the refresh token expires, or empty when unknown.
 cp_refresh_ms_left() {
   local file="$1" exp now
-  [ -n "$file" ] && [ -f "$file" ] || return 0
+  if [ -z "$file" ] || [ ! -f "$file" ]; then
+    return 0
+  fi
   exp="$(jq -r '.claudeAiOauth.refreshTokenExpiresAt // empty' "$file" 2>/dev/null)"
   [ -n "$exp" ] || return 0
   now="$(( $(date +%s) * 1000 ))"

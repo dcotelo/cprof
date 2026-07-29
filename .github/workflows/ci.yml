@@ -10,15 +10,21 @@ permissions:
 
 jobs:
   lint:
-    # shellcheck ships on the Ubuntu image; the shell under test does not have to
-    # match for a static check.
     runs-on: ubuntu-latest
+    env:
+      # Pinned, not the version on the runner image: a newer shellcheck locally
+      # than in CI means findings appear only after a push. Bump deliberately.
+      SHELLCHECK_VERSION: '0.11.0'
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
         run: |
-          shellcheck --version
-          shellcheck -x -P scripts -P tests \
+          curl -fsSL --retry 3 \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJ
+          sc="shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          "$sc" --version
+          "$sc" -x -P scripts -P tests \
             scripts/claudeprofile scripts/lib/*.sh hooks/*.sh statusline/*.sh tests/*.sh
 
   test:
