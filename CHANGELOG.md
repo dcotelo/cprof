@@ -5,6 +5,17 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.4.2]
+
+### Fixed
+
+- The plugin failed to load entirely, taking the `SessionStart` hook and
+  `/profile` with it: `plugin.json` named `./hooks/hooks.json` in its `hooks`
+  field, which Claude Code loads on its own, and the duplicate registration is an
+  error. The field only ever exists to point at *additional* hook files, so it is
+  gone. `claude plugin validate` does not catch this, so the manifest test now
+  does.
+
 ## [0.4.1]
 
 ### Fixed
