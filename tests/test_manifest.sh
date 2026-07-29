@@ -37,6 +37,10 @@ assert_eq "$version" "$(sed -n "s/^CP_VERSION='\\([^']*\\)'/\\1/p" "$ROOT/script
 assert_eq "$version" "$(mj .metadata.version)"      'marketplace metadata version matches'
 assert_eq "$version" "$(mj '.plugins[0].version')"  'marketplace plugin entry version matches'
 assert_eq "$(pj .name)" "$(mj '.plugins[0].name')"  'marketplace names the same plugin'
+# The marketplace is named for its owner, not for the plugin: installs are
+# addressed as plugin@marketplace, and cprof@cprof said nothing about where it
+# came from. Changing this again renames the install id, so it is pinned here.
+assert_eq 'dcotelo' "$(mj .name)"                   'marketplace is named for the owner'
 assert_eq './'    "$(mj '.plugins[0].source')"      'plugin source is the repository root'
 
 # --- referenced files exist --------------------------------------------------
