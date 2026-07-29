@@ -1,0 +1,69 @@
+name: tag
+
+# Releasing on merge, without releasing every merge: a push to main tags only
+# when it changes the version the manifests declare, so a docs-only merge
+# publishes nothing and a version bump publishes exactly once. Bump
+# .claude-plugin/plugin.json (and the marketplace entry with it), merge, done.
+#
+# The tag then has to start release.yml by being called, not by being pushed: a
+# tag pushed with GITHUB_TOKEN deliberately does not trigger another workflow,
+# so waiting for the tag event would leave the release silently unbuilt.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .claude-plugin/plugin.json
+      - .claude-plugin/marketplace.json
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      created: ${{ steps.check.outputs.created }}
+    steps:
+      # Full history: the existing tags are what make this idempotent, and a
+      # shallow clone brings none of them.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: tag the manifest version when it is new
+        id: check
+        run: |
+          version="$(jq -r .version .claude-plugin/plugin.json)"
+          case "$version" in
+            ''|null) printf 'plugin.json has no version\n' >&2; exit 1 ;;
+          esac
+          tag="cprof--v${version}"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+          # Re-running the workflow, or merging a change that touches the
+          # manifests without bumping them, must not fail — it has nothing to do.
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            printf '%s already exists, nothing to release\n' "$tag"
+            printf 'created=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$tag" -m "cprof $version"
+          git push origin "refs/tags/$tag"
+          printf 'created=true\n' >> "$GITHUB_OUTPUT"
+
+  # release.yml verifies the tag against the manifests and runs the suite before
+  # publishing, so nothing here needs to re-check them.
+  release:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
