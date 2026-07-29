@@ -54,7 +54,8 @@ exec zsh
 
 # 3. keep the account you already use, then add a second one
 claudeprofile add work --native        # adopts your current keychain login
-claudeprofile add personal             # ~/.claude-profiles/personal
+claudeprofile add personal             # ~/.claude-profiles/personal, sharing
+                                       # your plugins, skills and settings
 claudeprofile login personal           # interactive, opens a browser
 
 # 4. choose which one is the fallback, and route one tree to the other
@@ -101,6 +102,40 @@ Credentials are fixed at process start, so switching accounts always means
 relaunching `claude`. A `SessionStart` hook warns you when you have wandered into
 a directory that expects a different account.
 
+### Customisations follow you
+
+`CLAUDE_CONFIG_DIR` relocates the whole configuration directory, not only the
+credentials in it — plugins, skills, agents, commands, hooks, `settings.json` and
+`CLAUDE.md` all live there. Left alone, a profile would therefore start with none
+of them, and switching account would silently mean switching away every
+customisation.
+
+So `add` links them, and `claudeprofile share <name>` does it for a profile that
+predates this behaviour:
+
+```console
+$ claudeprofile share personal
+ASSET          RESULT
+settings.json  linked (previous kept as settings.json.moved-20260729-103012)
+CLAUDE.md      linked
+plugins        linked
+skills         linked
+hooks          linked
+```
+
+They are symlinks, so installing a plugin or editing settings once applies to
+every profile with nothing to re-sync. Anything the profile already had is moved
+aside rather than deleted, and `unshare` removes only the links this created.
+
+| Shared | Per-profile |
+| --- | --- |
+| `settings.json`, `keybindings.json` | `.credentials.json` |
+| `CLAUDE.md` | `.claude.json` |
+| `plugins`, `skills`, `agents`, `commands`, `hooks` | `projects`, `sessions`, `history.jsonl`, `todos`, caches |
+
+The right-hand column is what keeps two accounts apart, so nothing there is ever
+linked. Use `add --isolated` for a profile that should share nothing.
+
 ## Install
 
 What [Quickstart](#quickstart) steps 1 and 2 are doing, and why.
@@ -146,7 +181,8 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `claudeprofile which` | Profile resolved here, and the rule that produced it |
 | `claudeprofile status` | Profile this process is actually running as |
 | `claudeprofile env` | `export`/`unset` statements for `eval` |
-| `claudeprofile add <name> [--dir P] [--native] [--note S]` | Register a profile |
+| `claudeprofile add <name> [--dir P] [--native] [--note S] [--isolated]` | Register a profile |
+| `claudeprofile share <name>` / `unshare <name>` | Link `~/.claude` customisations into a profile, or drop the links |
 | `claudeprofile default <name>` | Set the default profile |
 | `claudeprofile pin [<name>] \| pin --clear` | Pin or unpin this repository |
 | `claudeprofile rule add <path> <name>` | Route a directory tree to a profile |

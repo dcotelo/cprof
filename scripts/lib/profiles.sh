@@ -9,16 +9,17 @@ cp_forbidden_dir() {
 }
 
 cp_cmd_add() {
-  local name='' dir='' note='' native=0 cfg existing
+  local name='' dir='' note='' native=0 isolated=0 cfg existing
   name="${1:-}"
   [ -n "$name" ] || { cp_warn 'add: missing profile name'; return 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --dir)    dir="${2:-}"; shift 2 ;;
-      --note)   note="${2:-}"; shift 2 ;;
-      --native) native=1; shift ;;
-      *)        cp_warn "add: unknown flag $1"; return 2 ;;
+      --dir)      dir="${2:-}"; shift 2 ;;
+      --note)     note="${2:-}"; shift 2 ;;
+      --native)   native=1; shift ;;
+      --isolated) isolated=1; shift ;;
+      *)          cp_warn "add: unknown flag $1"; return 2 ;;
     esac
   done
 
@@ -52,7 +53,14 @@ cp_cmd_add() {
 
   printf '%s' "$cfg" | jq --arg n "$name" --arg d "$dir" --arg note "$note" \
     '.profiles += [{name: $n, dir: $d, note: $note}]
-     | if (.default == null) then .default = $n else . end' | cp_config_write
+     | if (.default == null) then .default = $n else . end' | cp_config_write || return 1
+
+  # A profile directory is a whole configuration directory, so an unshared one
+  # starts with no plugins, skills or settings. Link them by default: an account
+  # switch should not also be a customisation switch.
+  if [ "$isolated" -eq 0 ]; then
+    cp_cmd_share "$name" >/dev/null || cp_warn "profile $name added, but sharing failed; run: claudeprofile share $name"
+  fi
 }
 
 cp_cmd_default() {

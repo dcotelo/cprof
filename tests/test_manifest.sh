@@ -32,6 +32,8 @@ case "$version" in
 esac
 
 # --- the two manifests agree --------------------------------------------------
+assert_eq "$version" "$(sed -n "s/^CP_VERSION='\\([^']*\\)'/\\1/p" "$ROOT/scripts/claudeprofile")" \
+  'the CLI reports the manifest version'
 assert_eq "$version" "$(mj .metadata.version)"      'marketplace metadata version matches'
 assert_eq "$version" "$(mj '.plugins[0].version')"  'marketplace plugin entry version matches'
 assert_eq "$(pj .name)" "$(mj '.plugins[0].name')"  'marketplace names the same plugin'
