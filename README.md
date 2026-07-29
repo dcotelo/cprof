@@ -1,10 +1,34 @@
-# claudeprofile
+<h1 align="center">⚑ claudeprofile</h1>
 
-Keep a personal Claude subscription and a work one apart, per repository.
+<p align="center">
+  <em>One personal Claude subscription, one for work.<br>
+  The right account per repository, without thinking about it.</em>
+</p>
+
+<p align="center">
+  <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
+  <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
+  <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
+  <img alt="110 assertions" src="https://img.shields.io/badge/tests-110%20assertions-brightgreen">
+</p>
+
+```console
+$ cd ~/dev/<company>/api && claudeprofile which
+work        native (keychain)              rule ~/dev/<company>
+
+$ cd ~/dev/side-project && claudeprofile which
+personal    ~/.claude-profiles/personal    default
+```
 
 `claudeprofile` stores your Claude accounts as profiles, then picks one for each
 session based on a default, a per-repository pin, or a directory rule — so repos
-under `~/dev/crowder` use the work account and everything else uses personal.
+under `~/dev/<company>` use the work account and everything else uses personal.
+
+**Contents** · [How it works](#how-it-works) · [Install](#install) ·
+[Setup](#setup) · [Resolution order](#resolution-order) ·
+[Commands](#commands) · [Statusline](#statusline) · [Safety](#safety) ·
+[Development](#development)
 
 ## How it works
 
@@ -24,6 +48,8 @@ relaunching `claude`. A `SessionStart` hook warns you when you have wandered int
 a directory that expects a different account.
 
 ## Install
+
+Requires macOS, bash 3.2+ (the system shell), and `jq`.
 
 ```bash
 claude plugin marketplace add dcotelo/claudeprofile
@@ -46,22 +72,28 @@ claudeprofile add work --native            # adopt your current account
 claudeprofile add personal                 # ~/.claude-profiles/personal
 claudeprofile login personal               # sign in
 claudeprofile default personal
-claudeprofile rule add ~/dev/crowder work
+claudeprofile rule add ~/dev/<company> work
 ```
 
 ```console
 $ claudeprofile list
-personal     max      me@dcotelo.dev            (default) (active)
-work         team     dcotelo@getcrowder.com    native
+personal     max      you@personal.dev            (default) (active)
+work         team     you@<company>.com           native
 ```
 
 ## Resolution order
 
-1. `CLAUDE_PROFILE=work claude` — explicit override
-2. repository pin (`claudeprofile pin`), keyed on the git top level
-3. directory rule, longest matching path prefix
-4. default profile
-5. nothing matched — stock `~/.claude` behaviour
+First match wins.
+
+| # | Source | Set with |
+| --- | --- | --- |
+| 1 | environment override, one session | `CLAUDE_PROFILE=work claude` |
+| 2 | repository pin, keyed on the git top level | `claudeprofile pin work` |
+| 3 | directory rule, longest matching prefix | `claudeprofile rule add ~/dev/<company> work` |
+| 4 | default profile | `claudeprofile default personal` |
+| 5 | nothing matched — stock `~/.claude` behaviour | — |
+
+`claudeprofile which` reports both the winner and the rule that produced it.
 
 Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 `~/dev/workshop`. There is no glob support.
@@ -91,8 +123,12 @@ relaunching — which is exactly when knowing the difference matters.
 
 ## Statusline
 
-`statusline/segment.sh` prints one dim line naming the account the session is
-running as, e.g. `⚑ personal`. Every profile is named, native included — a
+```console
+⚑ work
+```
+
+`statusline/segment.sh` prints that one dim line, naming the account the session
+is running as. Every profile is named, native included — a
 switching tool whose indicator is invisible in the common case teaches you to
 ignore it. The line is omitted only when there is no profile to name: no config,
 or a config with no native profile and no `CLAUDE_CONFIG_DIR` set.
@@ -125,15 +161,20 @@ The `ls | tail -1` resolves the newest installed version, so plugin updates do n
 break the statusline. The segment finds its own CLI relative to itself; no
 environment variable is required.
 
-Already running a statusline? Add the two lines above it. The segment
-deliberately does not read stdin, so Claude Code's JSON payload stays unconsumed
-for the next component — `</dev/null` keeps it that way even if that ever changes:
+<details>
+<summary><strong>Already running a statusline?</strong> Compose them.</summary>
+
+Add the badge above whatever you already run. The segment deliberately does not
+read stdin, so Claude Code's JSON payload stays unconsumed for the next
+component — `</dev/null` keeps it that way even if that ever changes:
 
 ```bash
 payload="$(cat)"
 [ -r "$seg" ] && bash "$seg" </dev/null
 printf '%s' "$payload" | your-existing-statusline
 ```
+
+</details>
 
 The segment never fails a statusline: a missing `jq`, an unreadable config, or a
 missing CLI prints nothing and exits 0.
