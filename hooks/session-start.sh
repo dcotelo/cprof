@@ -4,7 +4,7 @@
 set -u
 
 root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-cli="$root/scripts/claudeprofile"
+cli="$root/scripts/cprof"
 [ -x "$cli" ] || exit 0
 
 want="$("$cli" env 2>/dev/null)"
@@ -16,6 +16,6 @@ if [ "$want" = "$have" ]; then
 fi
 
 detail="$("$cli" which 2>/dev/null | head -1)"
-printf 'claudeprofile: this session does not match this directory. Expected: %s. Relaunch claude here to switch.\n' \
+printf 'cprof: this session does not match this directory. Expected: %s. Relaunch claude here to switch.\n' \
   "${detail:-unknown}"
 exit 0

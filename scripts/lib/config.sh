@@ -2,15 +2,35 @@
 # shellcheck shell=bash
 # Config file ownership: paths, read/validate/write, profile field lookups.
 
-CP_CONFIG_PATH="${CLAUDEPROFILE_CONFIG:-$HOME/.claudeprofile.json}"
+# The tool was called claudeprofile before 0.4.0. An explicit path always wins,
+# under either variable name, so an existing setup keeps working; otherwise the
+# default is the new path and anything at the old one is adopted below.
+CP_CONFIG_PATH="${CPROF_CONFIG:-${CLAUDEPROFILE_CONFIG:-$HOME/.cprof.json}}"
+CP_CONFIG_LEGACY="$HOME/.claudeprofile.json"
 # CP_STATE_DIR and CP_KEYCHAIN_SERVICE are consumed by lib/auth.sh.
 # shellcheck disable=SC2034
-CP_STATE_DIR="${CLAUDEPROFILE_STATE_DIR:-$HOME/.claudeprofile}"
+CP_STATE_DIR="${CPROF_STATE_DIR:-${CLAUDEPROFILE_STATE_DIR:-$HOME/.cprof}}"
+
+# Moves a pre-rename config to the current path, once. Moving rather than copying:
+# two files would drift, and a write landing in the one the tool no longer reads
+# is a silently lost change. Only ever runs for the default path — an explicit
+# CPROF_CONFIG is taken literally.
+cp_config_migrate() {
+  [ "$CP_CONFIG_PATH" = "$HOME/.cprof.json" ] || return 0
+  [ ! -e "$CP_CONFIG_PATH" ] || return 0
+  [ -f "$CP_CONFIG_LEGACY" ] || return 0
+  if mv "$CP_CONFIG_LEGACY" "$CP_CONFIG_PATH" 2>/dev/null; then
+    cp_warn "moved $CP_CONFIG_LEGACY to $CP_CONFIG_PATH (claudeprofile is now cprof)"
+  else
+    cp_warn "could not move $CP_CONFIG_LEGACY to $CP_CONFIG_PATH; still reading the old path"
+    CP_CONFIG_PATH="$CP_CONFIG_LEGACY"
+  fi
+}
 # shellcheck disable=SC2034
 CP_KEYCHAIN_SERVICE="Claude Code-credentials"
 
 cp_warn() {
-  printf 'claudeprofile: %s\n' "$1" >&2
+  printf 'cprof: %s\n' "$1" >&2
 }
 
 cp_have_jq() {
@@ -23,6 +43,7 @@ cp_config_default() {
 
 # stdout: config JSON. Returns 1 when the config exists but is unusable.
 cp_config_read() {
+  cp_config_migrate
   if [ ! -f "$CP_CONFIG_PATH" ]; then
     cp_config_default
     return 0

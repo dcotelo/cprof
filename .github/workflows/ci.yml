@@ -25,7 +25,7 @@ jobs:
           sc="shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
           "$sc" --version
           "$sc" -x -P scripts -P tests \
-            scripts/claudeprofile scripts/lib/*.sh hooks/*.sh statusline/*.sh tests/*.sh
+            scripts/cprof scripts/lib/*.sh hooks/*.sh statusline/*.sh tests/*.sh
 
   test:
     # macOS on purpose: the target shell is bash 3.2, the system shell there, and

@@ -59,7 +59,7 @@ cp_cmd_add() {
   # starts with no plugins, skills or settings. Link them by default: an account
   # switch should not also be a customisation switch.
   if [ "$isolated" -eq 0 ]; then
-    cp_cmd_share "$name" >/dev/null || cp_warn "profile $name added, but sharing failed; run: claudeprofile share $name"
+    cp_cmd_share "$name" >/dev/null || cp_warn "profile $name added, but sharing failed; run: cprof share $name"
   fi
 }
 
