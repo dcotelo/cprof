@@ -1,0 +1,81 @@
+name: release
+
+# Tag convention matches `claude plugin tag`, which validates plugin.json against
+# the marketplace entry before creating claudeprofile--v<version>.
+on:
+  push:
+    tags: ['claudeprofile--v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: version from tag
+        id: tag
+        run: echo "version=${GITHUB_REF_NAME#claudeprofile--v}" >> "$GITHUB_OUTPUT"
+
+      # A tag that disagrees with the manifests would publish a release nobody can
+      # install: the marketplace serves whatever the manifest claims.
+      - name: tag matches the manifests
+        env:
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          plugin=$(jq -r .version .claude-plugin/plugin.json)
+          market=$(jq -r .metadata.version .claude-plugin/marketplace.json)
+          entry=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)
+          for got in "$plugin" "$market" "$entry"; do
+            if [ "$got" != "$VERSION" ]; then
+              printf 'tag says %s, manifest says %s\n' "$VERSION" "$got" >&2
+              exit 1
+            fi
+          done
+          printf 'version %s agrees across manifests\n' "$VERSION"
+
+      - name: suite
+        run: bash tests/run.sh
+
+      - name: shellcheck
+        run: |
+          brew install shellcheck
+          shellcheck -x -P scripts -P tests \
+            scripts/claudeprofile scripts/lib/*.sh hooks/*.sh statusline/*.sh tests/*.sh
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: notes from CHANGELOG
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            $0 == "## [" v "]" { inside = 1; next }
+            inside && /^## \[/  { exit }
+            inside              { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            printf 'CHANGELOG.md has no section for %s\n' "$VERSION" >&2
+            exit 1
+          fi
+          cat notes.md
+
+      - name: create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "claudeprofile $VERSION" \
+            --notes-file notes.md \
+            --verify-tag

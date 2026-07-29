@@ -6,6 +6,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/dcotelo/claudeprofile/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/dcotelo/claudeprofile/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
@@ -240,14 +241,47 @@ stock Claude Code behaviour rather than a broken shell.
 bash tests/run.sh                    # run the suite
 shellcheck -x -P scripts -P tests scripts/claudeprofile scripts/lib/*.sh hooks/*.sh \
   statusline/*.sh tests/*.sh
-claude plugin validate .             # check the manifest
+claude plugin validate .             # check the manifests
 ```
+
+CI runs all three on every pull request: shellcheck and the manifest checks on
+Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
 Targets bash 3.2 (macOS system bash), with `jq` as the only external dependency.
 
 Tests sandbox `HOME`, the config path, the `claude` binary, and the `security`
 binary. No test touches the real keychain or a real account.
 
+## Releasing
+
+Version lives in three places that must agree — `plugin.json`, the
+`marketplace.json` metadata, and its plugin entry. `tests/test_manifest.sh`
+fails when they drift, and again if `CHANGELOG.md` has no section for the
+version, since the release notes are read from it.
+
+```bash
+# 1. bump all three, add the CHANGELOG section, commit
+bash tests/run.sh && claude plugin validate .
+
+# 2. tag: refuses a dirty tree, and checks the manifests agree
+claude plugin tag . --dry-run
+claude plugin tag . --push
+```
+
+Pushing a `claudeprofile--v<version>` tag runs the release workflow, which
+re-verifies that the tag matches the manifests, runs the suite on macOS, then
+publishes a GitHub release with that CHANGELOG section as its notes.
+
+Installs track the marketplace, so consumers update with:
+
+```bash
+claude plugin marketplace update claudeprofile
+claude plugin update claudeprofile     # restart Claude Code to apply
+```
+
+The plugin cache is keyed by version, so a release without a version bump gives
+`plugin update` nothing to act on.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
