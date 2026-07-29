@@ -44,6 +44,23 @@ cp_cmd_env() {
   return 0
 }
 
+# Names the profile this process is actually running as, derived from the live
+# CLAUDE_CONFIG_DIR rather than from resolution. Prints one of: a profile name,
+# 'unknown' (config dir belongs to no profile), or 'stock' (no config dir and no
+# native profile).
+cp_cmd_status() {
+  local cfg name
+  cfg="$(cp_config_read)" || return 1
+  if [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
+    name="$(printf '%s' "$cfg" | jq -r 'first(.profiles[]? | select(.native == true) | .name) // empty')"
+    printf '%s\n' "${name:-stock}"
+    return 0
+  fi
+  name="$(printf '%s' "$cfg" | jq -r --arg d "$(cp_path_normalize "$CLAUDE_CONFIG_DIR")" \
+    'first(.profiles[]? | select((.dir // "") != "") | select((.dir | sub("^~"; env.HOME)) == $d) | .name) // empty')"
+  printf '%s\n' "${name:-unknown}"
+}
+
 cp_cmd_list() {
   local cfg names name active default_name st email sub markers dir
   cfg="$(cp_config_read)" || return 1
