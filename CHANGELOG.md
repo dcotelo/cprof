@@ -27,6 +27,12 @@ release workflow reads its notes from the section matching the tag.
 - Install documents a resolver function for the CLI, which the plugin does not
   put on `PATH`, and both wiring steps are single commands.
 
+### Removed
+
+- The design spec and implementation plan under `docs/` no longer ship. An
+  install clones the repository, so they were copied into every plugin cache;
+  they remain in git history.
+
 ### Fixed
 
 - Paths under a symlinked home now shorten to `~`. Stored paths are physical, so
