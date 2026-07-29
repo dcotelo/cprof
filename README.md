@@ -56,14 +56,32 @@ claude plugin marketplace add dcotelo/claudeprofile
 claude plugin install claudeprofile
 ```
 
-Then add the launcher to `~/.zshrc`:
+Installing the plugin puts nothing on `PATH` — the CLI lives inside a versioned
+cache directory. Add both functions to `~/.zshrc`: one to reach the CLI, one to
+launch `claude` with the resolved profile.
 
 ```bash
+claudeprofile() {
+  local cli
+  cli=$(ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/scripts/claudeprofile 2>/dev/null | tail -1)
+  [ -x "$cli" ] || { print -u2 'claudeprofile: plugin not installed'; return 127; }
+  "$cli" "$@"
+}
 claude() { eval "$(claudeprofile env)"; command claude "$@"; }
 ```
 
-Point `claudeprofile` at the installed script, or add its `scripts/` directory to
-`PATH`. `command claude` bypasses the wrapper.
+Resolving at call time means plugin updates need no edit here. Then
+`exec zsh` and check it:
+
+```console
+$ claudeprofile list
+work         team     you@<company>.com           native
+```
+
+`command claude` bypasses the wrapper. Without the wrapper, `claude` ignores
+profiles entirely and stock keychain behaviour applies — including when
+`claudeprofile` is missing from `PATH`, since `eval` of a failed command is a
+no-op.
 
 ## Setup
 
