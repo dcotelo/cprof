@@ -85,6 +85,49 @@ Nothing was moved or re-signed-in along the way: `--native` adopts your existing
 login where it already lives, and step 3's `login` writes only inside the new
 profile's own directory.
 
+### Importing a directory you already use
+
+Step 3 assumes a profile that does not exist yet. If you have been switching
+accounts by hand — an alias along the lines of
+
+```bash
+alias claude-client='CLAUDE_CONFIG_DIR=~/.claude-client claude'
+```
+
+— then that directory is already a profile in all but name, and `add` adopts it
+where it stands:
+
+```bash
+cprof add client --dir ~/.claude-client --isolated --note 'client account'
+```
+
+`--isolated` is the flag that matters here. Without it `add` links the shared
+assets, which moves the directory's own `settings.json`, `CLAUDE.md`, `plugins`
+and the rest aside as `*.moved-<timestamp>` and puts links to `~/.claude` in
+their place. Nothing is deleted and [`unshare`](#customisations-follow-you)
+reverses it, but a directory you have already furnished usually wants to keep
+what it has. Decide otherwise later with `cprof share client`.
+
+The existing login carries over, with one caveat worth checking. Claude Code keys
+credentials to the value of `CLAUDE_CONFIG_DIR`, and `add` stores the physical
+path, so a symlink standing between the two leaves the stored path different from
+the string your alias exported — and the login is then looked up under a name
+nothing wrote:
+
+```bash
+[ "$(cd ~/.claude-client && pwd -P)" = "$HOME/.claude-client" ] && echo match || echo differs
+```
+
+`differs` costs one `cprof login client`. Either way `cprof list` reports the
+account each profile actually resolves to, so it will tell you which happened.
+
+Finish by giving the directory a rule, after which the alias has nothing left to
+do:
+
+```bash
+cprof rule add ~/dev/<client> client
+```
+
 ## How it works
 
 Claude Code keys its credentials to `CLAUDE_CONFIG_DIR`. `cprof` uses this: each
