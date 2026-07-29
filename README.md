@@ -26,10 +26,63 @@ personal  ~/.claude-profiles/personal  default
 session based on a default, a per-repository pin, or a directory rule — so repos
 under `~/dev/<company>` use the work account and everything else uses personal.
 
-**Contents** · [How it works](#how-it-works) · [Install](#install) ·
-[Setup](#setup) · [Resolution order](#resolution-order) ·
+**Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
+[Install](#install) · [Resolution order](#resolution-order) ·
 [Commands](#commands) · [Statusline](#statusline) · [Safety](#safety) ·
-[Development](#development)
+[Development](#development) · [Releasing](#releasing)
+
+## Quickstart
+
+Five steps, about two minutes. Needs macOS and `jq` (`brew install jq`).
+
+```bash
+# 1. install the plugin
+claude plugin marketplace add dcotelo/claudeprofile
+claude plugin install claudeprofile
+
+# 2. reach the CLI, and route `claude` through it
+cat >> ~/.zshrc <<'RC'
+claudeprofile() {
+  local cli
+  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/scripts/claudeprofile ; } 2>/dev/null | sort -V | tail -1)
+  [ -x "$cli" ] || { print -u2 'claudeprofile: plugin not installed'; return 127; }
+  "$cli" "$@"
+}
+claude() { eval "$(claudeprofile env)"; command claude "$@"; }
+RC
+exec zsh
+
+# 3. keep the account you already use, then add a second one
+claudeprofile add work --native        # adopts your current keychain login
+claudeprofile add personal             # ~/.claude-profiles/personal
+claudeprofile login personal           # interactive, opens a browser
+
+# 4. choose which one is the fallback, and route one tree to the other
+claudeprofile default personal
+claudeprofile rule add ~/dev/<company> work
+
+# 5. confirm
+claudeprofile list
+claudeprofile which
+```
+
+```console
+$ claudeprofile list
+PROFILE   PLAN  ACCOUNT            FLAGS
+work      team  you@<company>.com  native
+personal  max   you@personal.dev   (default) (active)
+
+$ cd ~/dev/<company>/api && claudeprofile which
+work  native (keychain)  rule ~/dev/<company>
+```
+
+That is the whole setup. From here `claude` picks the account for you; the only
+rule to remember is that **a change takes effect on the next `claude` launch**,
+never in a running session, because credentials are read at process start.
+
+Nothing was moved or re-signed-in along the way: `--native` adopts your existing
+login where it already lives, and step 3's `login` writes only inside the new
+profile's own directory.
 
 ## How it works
 
@@ -50,68 +103,20 @@ a directory that expects a different account.
 
 ## Install
 
+What [Quickstart](#quickstart) steps 1 and 2 are doing, and why.
+
 Requires macOS, bash 3.2+ (the system shell), and `jq`.
 
-```bash
-claude plugin marketplace add dcotelo/claudeprofile
-claude plugin install claudeprofile
-```
-
 Installing the plugin puts nothing on `PATH` — the CLI lives inside a versioned
-cache directory. Two shell functions close the gap: one to reach the CLI, one to
-launch `claude` with the resolved profile. Paste this, then `exec zsh`:
+cache directory — so the first function reaches it and the second routes `claude`
+through it. Resolving the path at call time means plugin updates need no edit;
+`sort -V` keeps `0.10.0` ahead of `0.9.0`; and the braces around `ls` put zsh's
+own "no matches found" on the suppressed stream when nothing is installed.
 
-```bash
-cat >> ~/.zshrc <<'RC'
-claudeprofile() {
-  local cli
-  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/claudeprofile/*/scripts/claudeprofile ; } 2>/dev/null | sort -V | tail -1)
-  [ -x "$cli" ] || { print -u2 'claudeprofile: plugin not installed'; return 127; }
-  "$cli" "$@"
-}
-claude() { eval "$(claudeprofile env)"; command claude "$@"; }
-RC
-```
-
-Resolving at call time means plugin updates need no edit here. `sort -V` keeps
-`0.10.0` ahead of `0.9.0`, and the braces around `ls` put zsh's own
-"no matches found" on the suppressed stream when nothing is installed.
-
-```console
-$ exec zsh && claudeprofile list
-PROFILE  PLAN  ACCOUNT            FLAGS
-work     team  you@<company>.com  native
-```
-
-`command claude` bypasses the wrapper. Without the wrapper, `claude` ignores
-profiles entirely and stock keychain behaviour applies — including when
-`claudeprofile` is missing from `PATH`, since `eval` of a failed command is a
-no-op.
-
-## Setup
-
-```bash
-claudeprofile add work --native            # adopt your current account
-claudeprofile add personal                 # ~/.claude-profiles/personal
-claudeprofile login personal               # sign in
-claudeprofile default personal
-claudeprofile rule add ~/dev/<company> work
-```
-
-```console
-$ claudeprofile list
-PROFILE   PLAN  ACCOUNT            FLAGS
-personal  max   you@personal.dev   (default) (active)
-work      team  you@<company>.com  native
-
-$ claudeprofile rules
-PATH             PROFILE
-~/dev/<company>  work
-~/dev/oss        personal
-```
-
-Columns size themselves to their contents, so a long profile name widens the
-table instead of breaking the alignment. Paths under your home print as `~`.
+Skipping the wrapper is always available: `command claude` ignores profiles and
+uses stock keychain behaviour. That is also the silent failure mode worth knowing
+— if `claudeprofile` cannot be reached, `eval` of a failed command is a no-op, so
+`claude` starts stock with only one line on stderr to say so.
 
 ## Resolution order
 
@@ -156,6 +161,9 @@ In a session, `/profile` shows status, `/profile pin <name>` pins the repository
 `which` answers "what should this directory use", `status` answers "what am I
 signed in as right now". They disagree after you pin or add a rule without
 relaunching — which is exactly when knowing the difference matters.
+
+Listings size their columns to the contents, so a long profile name widens the
+table instead of breaking the alignment, and paths under your home print as `~`.
 
 ## Statusline
 
