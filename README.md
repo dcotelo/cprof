@@ -11,7 +11,7 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="110 assertions" src="https://img.shields.io/badge/tests-110%20assertions-brightgreen">
+  <img alt="217 assertions" src="https://img.shields.io/badge/tests-217%20assertions-brightgreen">
 </p>
 
 ```console
@@ -38,7 +38,7 @@ Five steps, about two minutes. Needs macOS and `jq` (`brew install jq`).
 ```bash
 # 1. install the plugin
 claude plugin marketplace add dcotelo/cprof
-claude plugin install cprof
+claude plugin install cprof@dcotelo
 
 # 2. reach the CLI, and route `claude` through it
 cat >> ~/.zshrc <<'RC'
