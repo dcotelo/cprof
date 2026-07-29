@@ -10,7 +10,7 @@
 set -u
 
 root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
-cli="$root/scripts/claudeprofile"
+cli="$root/scripts/cprof"
 [ -x "$cli" ] || exit 0
 
 name="$("$cli" status 2>/dev/null)" || exit 0

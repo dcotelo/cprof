@@ -5,8 +5,8 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/claudeprofile"
-cfg_get() { jq -r "$1" "$CLAUDEPROFILE_CONFIG"; }
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
+cfg_get() { jq -r "$1" "$CPROF_CONFIG"; }
 
 # add creates the directory and becomes default when first
 assert_ok "$CLI" add personal --dir "$CP_T_TMP/p" --note 'Max'

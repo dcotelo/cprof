@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/claudeprofile"
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
 
 # Stub keychain backed by a plain file.
 KC="$CP_T_TMP/keychain.store"
@@ -47,7 +47,7 @@ chmod +x "$CP_CLAUDE_BIN"
 assert_ok "$CLI" login personal
 assert_eq 'true' "$([ -f "$CP_T_TMP/p/.credentials.json" ] && echo true)" 'credentials file created'
 assert_eq 'ORIGINAL-BLOB' "$(cat "$KC")" 'keychain untouched by a well-behaved login'
-assert_eq '600' "$(stat -f '%Lp' "$CLAUDEPROFILE_STATE_DIR/keychain.bak")" 'keychain backup is mode 600'
+assert_eq '600' "$(stat -f '%Lp' "$CPROF_STATE_DIR/keychain.bak")" 'keychain backup is mode 600'
 
 # --- misbehaving login: clobbers the keychain -> detected and restored --------
 rm -f "$CP_T_TMP/p/.credentials.json"

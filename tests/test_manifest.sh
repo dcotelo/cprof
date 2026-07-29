@@ -21,7 +21,7 @@ assert_ok jq -e . "$MARKET"
 for field in name version description author homepage repository license keywords; do
   assert_eq 'true' "$(pj "has(\"$field\")")" "plugin.json has $field"
 done
-assert_eq 'claudeprofile' "$(pj .name)"     'plugin name is claudeprofile'
+assert_eq 'cprof' "$(pj .name)"     'plugin name is cprof'
 assert_eq 'MIT'           "$(pj .license)"  'license matches LICENSE'
 assert_eq 'true'          "$(pj '.keywords | length > 0')" 'keywords are not empty'
 
@@ -32,7 +32,7 @@ case "$version" in
 esac
 
 # --- the two manifests agree --------------------------------------------------
-assert_eq "$version" "$(sed -n "s/^CP_VERSION='\\([^']*\\)'/\\1/p" "$ROOT/scripts/claudeprofile")" \
+assert_eq "$version" "$(sed -n "s/^CP_VERSION='\\([^']*\\)'/\\1/p" "$ROOT/scripts/cprof")" \
   'the CLI reports the manifest version'
 assert_eq "$version" "$(mj .metadata.version)"      'marketplace metadata version matches'
 assert_eq "$version" "$(mj '.plugins[0].version')"  'marketplace plugin entry version matches'
@@ -54,7 +54,7 @@ assert_eq "$version" "$(sed -n 's/^## \[\([0-9][^]]*\)\].*/\1/p' "$ROOT/CHANGELO
   'CHANGELOG names this version first'
 
 # --- anything a session executes stays executable ----------------------------
-assert_ok test -x "$ROOT/scripts/claudeprofile"
+assert_ok test -x "$ROOT/scripts/cprof"
 assert_ok test -x "$ROOT/statusline/segment.sh"
 assert_ok test -x "$ROOT/hooks/session-start.sh"
 

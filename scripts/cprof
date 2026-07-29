@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.3.0'
+CP_VERSION='0.4.0'
 
 CP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
 if [ -z "$CP_LIB_DIR" ]; then
   printf 'unset CLAUDE_CONFIG_DIR\n'
-  printf 'claudeprofile: cannot locate lib directory\n' >&2
+  printf 'cprof: cannot locate lib directory\n' >&2
   exit 0
 fi
 # shellcheck source=lib/config.sh
@@ -24,27 +24,27 @@ fi
 
 cp_usage() {
   cat >&2 <<'USAGE'
-claudeprofile - choose which Claude account a session uses
+cprof - choose which Claude account a session uses
 
 usage:
-  claudeprofile list                       profiles, identities, markers
-  claudeprofile which                      profile resolved for this directory
-  claudeprofile status                     profile this process is running as
-  claudeprofile env                        export statements for eval
-  claudeprofile add <name> [--dir P] [--native] [--note S] [--isolated]
-  claudeprofile share <name>               plugins, skills, settings from ~/.claude
-  claudeprofile unshare <name>             drop those links
-  claudeprofile default <name>
-  claudeprofile pin [<name>] | pin --clear
-  claudeprofile rules                      rules in the order they are consulted
-  claudeprofile rule add <path> <name> | rule rm <path> | rule list
-  claudeprofile login <name>
-  claudeprofile doctor
-  claudeprofile remove <name> [--purge]
-  claudeprofile version
+  cprof list                       profiles, identities, markers
+  cprof which                      profile resolved for this directory
+  cprof status                     profile this process is running as
+  cprof env                        export statements for eval
+  cprof add <name> [--dir P] [--native] [--note S] [--isolated]
+  cprof share <name>               plugins, skills, settings from ~/.claude
+  cprof unshare <name>             drop those links
+  cprof default <name>
+  cprof pin [<name>] | pin --clear
+  cprof rules                      rules in the order they are consulted
+  cprof rule add <path> <name> | rule rm <path> | rule list
+  cprof login <name>
+  cprof doctor
+  cprof remove <name> [--purge]
+  cprof version
 
 shell setup (~/.zshrc):
-  claude() { eval "$(claudeprofile env)"; command claude "$@"; }
+  claude() { eval "$(cprof env)"; command claude "$@"; }
 USAGE
 }
 
@@ -66,7 +66,7 @@ case "$cmd" in
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
-  version|--version|-v) printf 'claudeprofile %s\n' "$CP_VERSION" ;;
+  version|--version|-v) printf 'cprof %s\n' "$CP_VERSION" ;;
   help|--help|-h) cp_usage ;;
   *)       cp_usage; exit 2 ;;
 esac

@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/claudeprofile"
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
 
 mkdir -p "$CP_T_TMP/p" "$CP_T_TMP/dev/crowder" "$CP_T_TMP/gone-parent"
 cp_t_write_config <<JSON
@@ -30,7 +30,7 @@ out="$(cd "$CP_T_TMP" && CLAUDE_PROFILE=broken "$CLI" env 2>/dev/null)"
 assert_eq 'unset CLAUDE_CONFIG_DIR' "$out" 'missing profile dir unsets'
 
 # malformed config degrades to unset, still exit 0
-printf 'not json' > "$CLAUDEPROFILE_CONFIG"
+printf 'not json' > "$CPROF_CONFIG"
 out="$(cd "$CP_T_TMP" && "$CLI" env 2>/dev/null)"
 assert_eq 'unset CLAUDE_CONFIG_DIR' "$out" 'malformed config unsets'
 ( cd "$CP_T_TMP" && "$CLI" env >/dev/null 2>&1 )
@@ -64,6 +64,6 @@ esac
 # Read the expected version rather than hardcoding it: a literal here went stale
 # at the 0.2.0 bump and reported the old version as correct.
 manifest_version="$(jq -r .version "$(dirname "$0")/../.claude-plugin/plugin.json")"
-assert_eq "claudeprofile $manifest_version" "$("$CLI" version)" 'version matches the manifest'
+assert_eq "cprof $manifest_version" "$("$CLI" version)" 'version matches the manifest'
 
 cp_t_summary
