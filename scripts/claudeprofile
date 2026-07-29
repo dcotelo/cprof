@@ -27,6 +27,7 @@ claudeprofile - choose which Claude account a session uses
 usage:
   claudeprofile list                       profiles, identities, markers
   claudeprofile which                      profile resolved for this directory
+  claudeprofile status                     profile this process is running as
   claudeprofile env                        export statements for eval
   claudeprofile add <name> [--dir P] [--native] [--note S]
   claudeprofile default <name>
@@ -48,6 +49,7 @@ cmd="${1:-}"
 case "$cmd" in
   env)     cp_cmd_env; exit 0 ;;
   which)   cp_cmd_which ;;
+  status)  cp_cmd_status ;;
   list)    cp_cmd_list "$@" ;;
   add)     cp_cmd_add "$@" ;;
   default) cp_cmd_default "$@" ;;
