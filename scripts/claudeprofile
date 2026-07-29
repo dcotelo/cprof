@@ -32,6 +32,7 @@ usage:
   claudeprofile add <name> [--dir P] [--native] [--note S]
   claudeprofile default <name>
   claudeprofile pin [<name>] | pin --clear
+  claudeprofile rules                      rules in the order they are consulted
   claudeprofile rule add <path> <name> | rule rm <path> | rule list
   claudeprofile login <name>
   claudeprofile doctor
@@ -55,6 +56,7 @@ case "$cmd" in
   default) cp_cmd_default "$@" ;;
   pin)     cp_cmd_pin "$@" ;;
   rule)    cp_cmd_rule "$@" ;;
+  rules)   cp_cmd_rule list ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
