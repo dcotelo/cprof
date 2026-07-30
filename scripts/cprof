@@ -19,6 +19,8 @@ fi
 . "$CP_LIB_DIR/auth.sh"
 # shellcheck source=lib/output.sh
 . "$CP_LIB_DIR/output.sh"
+# shellcheck source=lib/color.sh
+. "$CP_LIB_DIR/color.sh"
 # shellcheck source=lib/share.sh
 . "$CP_LIB_DIR/share.sh"
 
