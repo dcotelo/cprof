@@ -109,12 +109,11 @@ cp_cmd_env() {
 # native profile).
 cp_cmd_status() {
   local cfg dir name CP_COLOR_ON=0
-  # cp_colorize (color.sh) reads this through bash's dynamic scoping, a
-  # cross-file read the static analyser can't trace; exporting surfaces it as
-  # a known use without changing behaviour (command substitution already
-  # forks a subshell that inherits locals).
-  export CP_COLOR_ON
   cfg="$(cp_config_read)" || return 1
+  # cp_colorize (color.sh) reads CP_COLOR_ON through bash's dynamic scoping;
+  # that cross-file read is invisible to the static analyser, hence the
+  # disable below.
+  # shellcheck disable=SC2034
   cp_color_enabled && CP_COLOR_ON=1
   if [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
     name="$(cp_native_name "$cfg" 'stock')"
@@ -143,12 +142,11 @@ cp_native_name() {
 
 cp_cmd_list() {
   local cfg names name active default_name st email sub markers dir CP_COLOR_ON=0
-  # See cp_cmd_status: export so shellcheck can see cp_colorize's read of this
-  # across the sourced color.sh; the subshell already got it via the fork.
-  export CP_COLOR_ON
   cfg="$(cp_config_read)" || return 1
   # Decide once, here: the rows below are piped into cp_table, and inside a
-  # pipeline stdout is never a terminal.
+  # pipeline stdout is never a terminal. cp_colorize (color.sh) reads
+  # CP_COLOR_ON via dynamic scoping, a cross-file read shellcheck can't trace.
+  # shellcheck disable=SC2034
   cp_color_enabled && CP_COLOR_ON=1
   active="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null | cut -f1)"
   default_name="$(printf '%s' "$cfg" | jq -r '.default // empty')"
@@ -186,10 +184,10 @@ cp_cmd_list() {
 
 cp_cmd_which() {
   local cfg line name reason dir CP_COLOR_ON=0
-  # See cp_cmd_status: export so shellcheck can see cp_colorize's read of this
-  # across the sourced color.sh; the subshell already got it via the fork.
-  export CP_COLOR_ON
   cfg="$(cp_config_read)" || return 1
+  # cp_colorize (color.sh) reads CP_COLOR_ON via dynamic scoping, a cross-file
+  # read shellcheck can't trace.
+  # shellcheck disable=SC2034
   cp_color_enabled && CP_COLOR_ON=1
   line="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null)"
   name="$(printf '%s' "$line" | cut -f1)"
