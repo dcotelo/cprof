@@ -36,6 +36,9 @@ usage:
   cprof add <name> [--dir P] [--native] [--note S] [--isolated]
   cprof share <name>               plugins, skills, settings from ~/.claude
   cprof unshare <name>             drop those links
+  cprof color <name> [<colour>]    pick or set a profile's colour
+  cprof color <name> auto          back to the hashed colour
+  cprof color --text on|off        colour the name as well as the flag
   cprof default <name>
   cprof pin [<name>] | pin --clear
   cprof rules                      rules in the order they are consulted
@@ -65,6 +68,7 @@ case "$cmd" in
   rules)   cp_cmd_rule list ;;
   share)   cp_cmd_share "$@" ;;
   unshare) cp_cmd_unshare "$@" ;;
+  color)   cp_cmd_color "$@" ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
   remove)  cp_cmd_remove "$@" ;;

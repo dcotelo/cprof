@@ -87,3 +87,66 @@ cp_color_for() {
   fi
   cp_color_auto "${2:-}"
 }
+
+# cp_cmd_color — set a profile's colour, toggle text colouring, or answer the
+# statusline segment.
+cp_cmd_color() {
+  local cfg name colour
+
+  case "${1:-}" in
+    '')
+      cp_warn 'color: missing profile name'
+      return 2
+      ;;
+    --text)
+      cfg="$(cp_config_read)" || return 1
+      case "${2:-}" in
+        on)  printf '%s' "$cfg" | jq '.colorText = true'  | cp_config_write ;;
+        off) printf '%s' "$cfg" | jq '.colorText = false' | cp_config_write ;;
+        *)   cp_warn 'color --text: expected on or off'; return 2 ;;
+      esac
+      return $?
+      ;;
+    --render)
+      # One call, two tab-separated fields, so the statusline spawns one process
+      # rather than three. Never fails: an unreadable config prints a blank
+      # colour and the segment falls back to its dim style.
+      cfg="$(cp_config_read 2>/dev/null)" || cfg=''
+      name="${2:-}"
+      printf '%s\t%s\n' \
+        "$(cp_color_code "$(cp_color_for "$cfg" "$name")")" \
+        "$(printf '%s' "$cfg" | jq -r 'if .colorText then "on" else "off" end' 2>/dev/null || printf 'off')"
+      return 0
+      ;;
+  esac
+
+  name="$1"
+  colour="${2:-}"
+  cfg="$(cp_config_read)" || return 1
+  cp_profile_exists "$cfg" "$name" || { cp_warn "unknown profile $name"; return 1; }
+
+  if [ -z "$colour" ]; then
+    cp_color_pick "$cfg" "$name"
+    return $?
+  fi
+
+  if [ "$colour" = 'auto' ]; then
+    printf '%s' "$cfg" | jq --arg n "$name" \
+      '.profiles |= map(if .name == $n then del(.color) else . end)' | cp_config_write
+    return $?
+  fi
+
+  if [ -z "$(cp_color_code "$colour")" ]; then
+    cp_warn "color: unknown colour $colour (try: $CP_COLOR_PALETTE, or a bright- variant)"
+    return 2
+  fi
+  printf '%s' "$cfg" | jq --arg n "$name" --arg c "$colour" \
+    '.profiles |= map(if .name == $n then .color = $c else . end)' | cp_config_write
+}
+
+# Replaced in full by the picker. Kept separate so Task 5 is committable on its
+# own and the command surface can be tested before the terminal handling exists.
+cp_color_pick() {
+  cp_warn 'color: picker not implemented'
+  return 2
+}

@@ -131,4 +131,39 @@ case "$out" in
   *) assert_eq ok ok 'NO_COLOR suppresses colour in status' ;;
 esac
 
+# --- the color command --------------------------------------------------------
+assert_ok "$CLI" color work blue
+assert_eq 'blue' "$(jq -r '.profiles[0].color' "$CPROF_CONFIG")" 'sets an explicit colour'
+
+assert_ok "$CLI" color work auto
+assert_eq 'null' "$(jq -r '.profiles[0].color // "null"' "$CPROF_CONFIG")" \
+  'auto removes the field rather than storing a word'
+
+assert_fail "$CLI" color work chartreuse
+assert_eq 'null' "$(jq -r '.profiles[0].color // "null"' "$CPROF_CONFIG")" \
+  'a rejected colour leaves the config untouched'
+assert_fail "$CLI" color ghost red
+assert_fail "$CLI" color
+
+assert_ok "$CLI" color --text on
+assert_eq 'true' "$(jq -r '.colorText' "$CPROF_CONFIG")" '--text on sets the global'
+assert_ok "$CLI" color --text off
+assert_eq 'false' "$(jq -r '.colorText' "$CPROF_CONFIG")" '--text off clears it'
+assert_fail "$CLI" color --text maybe
+
+# --render is what the statusline segment calls: one subprocess, two fields.
+"$CLI" color work red >/dev/null
+assert_eq "$(printf '31\toff')" "$("$CLI" color --render work)" \
+  '--render prints the SGR parameter and the text flag'
+"$CLI" color --text on >/dev/null
+assert_eq "$(printf '31\ton')" "$("$CLI" color --render work)" \
+  '--render reflects colorText'
+"$CLI" color --text off >/dev/null
+# A name that is not a profile still gets a colour: cp_color_for falls through
+# to the hash, and one rule everywhere beats a special case. `cprof status` can
+# print `unknown`, and colouring that consistently is the desired behaviour.
+# ghost hashes to yellow (33) under the palette order in Task 1.
+assert_eq "$(printf '33\toff')" "$("$CLI" color --render ghost)" \
+  '--render hashes a name that is not a profile'
+
 cp_t_summary
