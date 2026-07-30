@@ -226,6 +226,23 @@ case "$out" in
   *) assert_eq 'still names work' "$out" 'NO_COLOR keeps the badge itself' ;;
 esac
 
+# An ambient CPROF_COLOR=always in the caller's environment (documented in the
+# CHANGELOG as a supported value) must not reach the name segment.sh feeds back
+# into `cprof color --render`: if it does, `cprof status` itself prints escapes,
+# `cp_color_for` hashes the escape-laden string instead of the plain name, and
+# the flag comes out the wrong colour.
+out="$(CPROF_COLOR=always CLAUDE_CONFIG_DIR="$CP_T_TMP/w" bash "$SEG" </dev/null)"
+assert_eq "$(printf '\033[31m⚑\033[0m \033[2mwork\033[0m')" "$out" \
+  'an ambient CPROF_COLOR=always does not corrupt the badge'
+
+# Same corruption also breaks the `''|stock` guard: a coloured "stock" no
+# longer matches the literal, so the segment would print a badge for the stock
+# profile. The active config here has no native profile, so an unset
+# CLAUDE_CONFIG_DIR resolves to stock.
+out="$(CPROF_COLOR=always env -u CLAUDE_CONFIG_DIR bash "$SEG" </dev/null)"
+assert_eq '' "$out" \
+  'the stock profile still prints nothing under an ambient CPROF_COLOR=always'
+
 # --render must degrade to a well-formed two-field line even when the config
 # cannot be read at all, since the statusline shells out to it on every
 # refresh. These assertions destroy the config, so they run last.
@@ -239,6 +256,20 @@ chmod 000 "$CPROF_CONFIG"
 assert_eq "$expect_hash" "$("$CLI" color --render work)" \
   '--render degrades to a well-formed line on an unreadable config'
 chmod 644 "$CPROF_CONFIG"
+
+# --- picker rows draw the actual badge, without a terminal --------------------
+# cp_color_menu_draw is pure output, so this needs no tty. The row must show
+# the same glyph the badge actually uses, since the spec's justification for
+# the picker is choosing on the rendered result rather than a colour name.
+draw="$(cp_color_menu_draw work 0 red green)"
+case "$draw" in
+  *'⚑ work'*) assert_eq ok ok 'picker rows draw the flag glyph' ;;
+  *) assert_eq '⚑ work' "$draw" 'picker rows draw the flag glyph' ;;
+esac
+case "$draw" in
+  *'# work'*) assert_eq 'no # row' "$draw" 'picker rows do not draw a bare #' ;;
+  *) assert_eq ok ok 'picker rows do not draw a bare #' ;;
+esac
 
 # --- picker navigation, without a terminal ------------------------------------
 assert_eq '1' "$(cp_color_menu_step 0 down 5)"  'down moves forward'

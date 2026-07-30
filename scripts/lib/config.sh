@@ -69,6 +69,10 @@ cp_config_write() {
     cp_warn 'refusing to write invalid JSON to config'
     return 1
   fi
+  # jq exits 0 on empty stdin too — the filter just runs zero times and prints
+  # nothing — so the guard above never fires for that case. Without this, an
+  # empty tmp file would still get mv'd over the config: exit 0, file gone.
+  [ -s "$tmp" ] || { rm -f "$tmp"; cp_warn 'refusing to write an empty config'; return 1; }
   mv "$tmp" "$CP_CONFIG_PATH"
 }
 
