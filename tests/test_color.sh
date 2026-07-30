@@ -185,6 +185,47 @@ esac
 assert_eq 'red' "$(jq -r '.profiles[0].color' "$CPROF_CONFIG")" \
   'a refused picker leaves the config untouched'
 
+# --- the statusline badge -----------------------------------------------------
+# Claude Code captures the statusline on a pipe, so the segment has to force
+# colour on. Auto-detection would find no terminal and the badge would be
+# permanently plain — the failure this asserts against.
+SEG="$(cd "$(dirname "$0")/.." && pwd -P)/statusline/segment.sh"
+"$CLI" color work red >/dev/null
+"$CLI" color --text off >/dev/null
+
+out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/w" bash "$SEG" </dev/null)"
+case "$out" in
+  *"${esc}[31m"*) assert_eq ok ok 'the badge is coloured despite running on a pipe' ;;
+  *) assert_eq 'coloured badge' "$out" 'the badge is coloured despite running on a pipe' ;;
+esac
+case "$out" in
+  *work*) assert_eq ok ok 'the badge still names the profile' ;;
+  *) assert_eq 'names work' "$out" 'the badge still names the profile' ;;
+esac
+# colorText off: the flag carries the colour, the name stays dim.
+case "$out" in
+  *"${esc}[31m⚑${esc}[0m ${esc}[2mwork"*) assert_eq ok ok 'flag coloured, name dim' ;;
+  *) assert_eq 'flag coloured, name dim' "$out" 'flag coloured, name dim' ;;
+esac
+
+"$CLI" color --text on >/dev/null
+out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/w" bash "$SEG" </dev/null)"
+case "$out" in
+  *"${esc}[31m⚑ work${esc}[0m"*) assert_eq ok ok 'colorText on colours the name too' ;;
+  *) assert_eq 'name coloured too' "$out" 'colorText on colours the name too' ;;
+esac
+"$CLI" color --text off >/dev/null
+
+out="$(NO_COLOR=1 CLAUDE_CONFIG_DIR="$CP_T_TMP/w" bash "$SEG" </dev/null)"
+case "$out" in
+  *"${esc}[31m"*) assert_eq 'no colour' "$out" 'NO_COLOR strips the badge colour' ;;
+  *) assert_eq ok ok 'NO_COLOR strips the badge colour' ;;
+esac
+case "$out" in
+  *work*) assert_eq ok ok 'NO_COLOR keeps the badge itself' ;;
+  *) assert_eq 'still names work' "$out" 'NO_COLOR keeps the badge itself' ;;
+esac
+
 # --render must degrade to a well-formed two-field line even when the config
 # cannot be read at all, since the statusline shells out to it on every
 # refresh. These assertions destroy the config, so they run last.
