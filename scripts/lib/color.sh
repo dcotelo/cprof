@@ -261,10 +261,10 @@ cp_color_menu_draw() {
     if [ "$i" = "$idx" ]; then marker='>'; else marker=' '; fi
     if [ "$label" = 'auto' ]; then
       code="$(cp_color_code "$(cp_color_auto "$name")")"
-      printf '  %s \033[%sm# %s\033[0m   auto\n' "$marker" "${code:-0}" "$name"
+      printf '  %s \033[%sm⚑ %s\033[0m   auto\n' "$marker" "${code:-0}" "$name"
     else
       code="$(cp_color_code "$label")"
-      printf '  %s \033[%sm# %s\033[0m   %s\n' "$marker" "${code:-0}" "$name" "$label"
+      printf '  %s \033[%sm⚑ %s\033[0m   %s\n' "$marker" "${code:-0}" "$name" "$label"
     fi
     i=$(( i + 1 ))
   done

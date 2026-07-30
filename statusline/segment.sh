@@ -13,7 +13,12 @@ root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}
 cli="$root/scripts/cprof"
 [ -x "$cli" ] || exit 0
 
-name="$("$cli" status 2>/dev/null)" || exit 0
+# CPROF_COLOR=never: `status` runs with the caller's environment, and a caller
+# who exports CPROF_COLOR=always (a value the CHANGELOG documents as
+# supported) would otherwise get an escape-laden name back — which then both
+# hashes to the wrong colour below and stops matching the ''|stock guard, so
+# the stock profile would grow a badge instead of staying silent.
+name="$(CPROF_COLOR=never "$cli" status 2>/dev/null)" || exit 0
 case "$name" in
   ''|stock) exit 0 ;;
 esac
@@ -22,9 +27,10 @@ esac
 # the name text is coloured as well as the flag. One subprocess rather than
 # three, on something that re-runs every few seconds.
 #
-# CPROF_COLOR=always because Claude Code captures the statusline on a pipe: the
-# CLI's own terminal detection would find no tty and disable colour permanently.
-render="$(CPROF_COLOR=always "$cli" color --render "$name" 2>/dev/null)"
+# --render never calls cp_color_enabled itself: it returns the raw SGR
+# parameter unconditionally and leaves the on/off decision to this segment (the
+# NO_COLOR check just below), so no CPROF_COLOR override belongs on this call.
+render="$("$cli" color --render "$name" 2>/dev/null)"
 code="${render%%	*}"
 text="${render##*	}"
 
