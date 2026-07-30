@@ -10,6 +10,11 @@ trap cp_t_teardown EXIT
 # shellcheck source=/dev/null
 . "$(dirname "$0")/../scripts/lib/color.sh"
 
+# Guard against an ambient NO_COLOR/CPROF_COLOR in the developer's shell or CI;
+# assertions below that don't set these inline depend on them being absent.
+unset NO_COLOR
+unset CPROF_COLOR
+
 # --- names map to SGR parameters --------------------------------------------
 assert_eq '31' "$(cp_color_code red)"            'red is 31'
 assert_eq '36' "$(cp_color_code cyan)"           'cyan is 36'
