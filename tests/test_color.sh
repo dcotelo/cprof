@@ -69,4 +69,54 @@ assert_eq '' "$(cp_color_for "$cfg" broken)" \
 assert_eq "$(cp_color_auto ghost)" "$(cp_color_for "$cfg" ghost)" \
   'an unknown profile still gets a colour'
 
+# --- colour reaches list and which, and only the name -------------------------
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
+cat > "$CP_CLAUDE_BIN" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = auth ] && [ "${2:-}" = status ] &&
+  { printf '{"loggedIn":true,"email":"a@b.c","subscriptionType":"max"}\n'; exit 0; }
+exit 1
+STUB
+chmod +x "$CP_CLAUDE_BIN"
+mkdir -p "$CP_T_TMP/w"
+cp_t_write_config <<JSON
+{"default":"work","profiles":[{"name":"work","dir":"$CP_T_TMP/w","color":"red"}],
+ "rules":[],"repos":{}}
+JSON
+
+esc="$(printf '\033')"
+out="$(CPROF_COLOR=always "$CLI" list 2>/dev/null)"
+case "$out" in
+  *"${esc}[31mwork${esc}[0m"*) assert_eq ok ok 'list colours the profile name' ;;
+  *) assert_eq 'coloured work' "$out" 'list colours the profile name' ;;
+esac
+case "$out" in
+  *"${esc}[31mmax"*|*"${esc}[31ma@b.c"*)
+    assert_eq 'plain plan and account' "$out" 'only the name is coloured' ;;
+  *) assert_eq ok ok 'only the name is coloured' ;;
+esac
+
+out="$(CPROF_COLOR=never "$CLI" list 2>/dev/null)"
+case "$out" in
+  *"${esc}["*) assert_eq 'no escapes' "$out" 'CPROF_COLOR=never suppresses colour' ;;
+  *) assert_eq ok ok 'CPROF_COLOR=never suppresses colour' ;;
+esac
+
+out="$(NO_COLOR=1 CPROF_COLOR=always "$CLI" list 2>/dev/null)"
+case "$out" in
+  *"${esc}["*) assert_eq 'no escapes' "$out" 'NO_COLOR suppresses colour in list' ;;
+  *) assert_eq ok ok 'NO_COLOR suppresses colour in list' ;;
+esac
+
+out="$(cd "$CP_T_TMP" && CPROF_COLOR=always "$CLI" which 2>/dev/null)"
+case "$out" in
+  *"${esc}[31mwork${esc}[0m"*) assert_eq ok ok 'which colours the profile name' ;;
+  *) assert_eq 'coloured work' "$out" 'which colours the profile name' ;;
+esac
+
+# status is what the segment shells out to; on a pipe it must stay plain so the
+# segment can wrap it itself without nesting escapes.
+out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/w" "$CLI" status 2>/dev/null)"
+assert_eq 'work' "$out" 'status is plain when piped'
+
 cp_t_summary
