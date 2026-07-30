@@ -62,7 +62,7 @@ cp_colorize() {
 cp_color_auto() {
   local sum idx
   sum="$(printf '%s' "${1:-}" | cksum | cut -d' ' -f1)"
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # CP_COLOR_PALETTE is a space-joined list; splitting it into args is the point
   set -- $CP_COLOR_PALETTE
   idx=$(( sum % $# ))
   while [ "$idx" -gt 0 ]; do
@@ -195,7 +195,7 @@ cp_color_pick() {
 
   entries="auto $CP_COLOR_PALETTE"
   for c in $CP_COLOR_PALETTE; do entries="$entries bright-$c"; done
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # entries is a space-joined list; splitting it into args is the point
   set -- $entries
   count=$#
 
@@ -207,9 +207,9 @@ cp_color_pick() {
   # Ctrl-C, echoing keystrokes into the menu, with no trap left to catch a
   # second one. Each of these must actually exit, with the conventional
   # 128+signal status. The EXIT arm is the exception: it is the safety net
-  # for a normal return (including one taken from inside the loop or after a
-  # failed write below), so it must not call exit itself — that would step on
-  # the exit status the function is already returning with.
+  # for a normal return (including one taken from inside the loop), so it
+  # must not call exit itself — that would step on the exit status the
+  # function is already returning with.
   trap 'cp_color_tty_restore; exit 130' INT
   trap 'cp_color_tty_restore; exit 143' TERM
   trap 'cp_color_tty_restore; exit 131' QUIT
@@ -235,7 +235,7 @@ cp_color_pick() {
   cp_color_tty_restore
   trap - EXIT INT TERM QUIT HUP
 
-  # shellcheck disable=SC2086
+  # shellcheck disable=SC2086 # entries is a space-joined list; splitting it into args is the point
   set -- $entries
   while [ "$idx" -gt 0 ]; do shift; idx=$(( idx - 1 )); done
   chosen="$1"
@@ -293,10 +293,11 @@ cp_color_menu_erase() {
 # then swallows that keypress's first two bytes. dd honours the terminal
 # settings instead of overriding them. Measured on bash 3.2.57 in a pty.
 #
-# Every path between the two `stty` calls returns nothing itself — the single
-# `dd` command substitution below is one command, not several — so `min 1 time
-# 0` is always restored before this function returns, no matter which key was
-# pressed.
+# A Ctrl-C during the `dd` command substitution kills that subshell before
+# `stty min 1 time 0` below it ever runs, so the restore is not guaranteed by
+# this function alone. It is still safe: the INT trap in cp_color_pick replays
+# the whole `stty -g` state saved before the picker started, min/time
+# included, so the terminal ends up correct either way.
 cp_color_read_key() {
   local c rest
   IFS= read -r -n 1 c || { printf 'cancel\n'; return 0; }

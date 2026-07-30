@@ -39,6 +39,8 @@ usage:
   cprof color <name> [<colour>]    pick or set a profile's colour
   cprof color <name> auto          back to the hashed colour
   cprof color --text on|off        colour the name as well as the flag
+  cprof color --render <name>      SGR parameter and colorText, tab-separated
+                                    (what the statusline segment calls)
   cprof default <name>
   cprof pin [<name>] | pin --clear
   cprof rules                      rules in the order they are consulted
