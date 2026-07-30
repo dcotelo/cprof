@@ -18,5 +18,25 @@ case "$name" in
   ''|stock) exit 0 ;;
 esac
 
-printf '\033[2m⚑ %s\033[0m\n' "$name"
+# One call, two tab-separated fields: this profile's SGR parameter, and whether
+# the name text is coloured as well as the flag. One subprocess rather than
+# three, on something that re-runs every few seconds.
+#
+# CPROF_COLOR=always because Claude Code captures the statusline on a pipe: the
+# CLI's own terminal detection would find no tty and disable colour permanently.
+render="$(CPROF_COLOR=always "$cli" color --render "$name" 2>/dev/null)"
+code="${render%%	*}"
+text="${render##*	}"
+
+# No colour resolved, or the reader asked for none: the original dim badge.
+if [ -z "$code" ] || [ -n "${NO_COLOR+set}" ]; then
+  printf '\033[2m⚑ %s\033[0m\n' "$name"
+  exit 0
+fi
+
+if [ "$text" = 'on' ]; then
+  printf '\033[%sm⚑ %s\033[0m\n' "$code" "$name"
+else
+  printf '\033[%sm⚑\033[0m \033[2m%s\033[0m\n' "$code" "$name"
+fi
 exit 0
