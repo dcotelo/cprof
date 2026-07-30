@@ -114,9 +114,21 @@ case "$out" in
   *) assert_eq 'coloured work' "$out" 'which colours the profile name' ;;
 esac
 
+out="$(cd "$CP_T_TMP" && NO_COLOR=1 CPROF_COLOR=always "$CLI" which 2>/dev/null)"
+case "$out" in
+  *"${esc}["*) assert_eq 'no escapes' "$out" 'NO_COLOR suppresses colour in which' ;;
+  *) assert_eq ok ok 'NO_COLOR suppresses colour in which' ;;
+esac
+
 # status is what the segment shells out to; on a pipe it must stay plain so the
 # segment can wrap it itself without nesting escapes.
 out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/w" "$CLI" status 2>/dev/null)"
 assert_eq 'work' "$out" 'status is plain when piped'
+
+out="$(NO_COLOR=1 CPROF_COLOR=always CLAUDE_CONFIG_DIR="$CP_T_TMP/w" "$CLI" status 2>/dev/null)"
+case "$out" in
+  *"${esc}["*) assert_eq 'no escapes' "$out" 'NO_COLOR suppresses colour in status' ;;
+  *) assert_eq ok ok 'NO_COLOR suppresses colour in status' ;;
+esac
 
 cp_t_summary
