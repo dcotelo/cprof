@@ -166,4 +166,18 @@ assert_eq "$(printf '31\ton')" "$("$CLI" color --render work)" \
 assert_eq "$(printf '33\toff')" "$("$CLI" color --render ghost)" \
   '--render hashes a name that is not a profile'
 
+# --render must degrade to a well-formed two-field line even when the config
+# cannot be read at all, since the statusline shells out to it on every
+# refresh. These assertions destroy the config, so they run last.
+expect_hash="$(printf '%s\toff' "$(cp_color_code "$(cp_color_auto work)")")"
+
+printf 'not json{{{' > "$CPROF_CONFIG"
+assert_eq "$expect_hash" "$("$CLI" color --render work)" \
+  '--render degrades to a well-formed line on malformed JSON'
+
+chmod 000 "$CPROF_CONFIG"
+assert_eq "$expect_hash" "$("$CLI" color --render work)" \
+  '--render degrades to a well-formed line on an unreadable config'
+chmod 644 "$CPROF_CONFIG"
+
 cp_t_summary

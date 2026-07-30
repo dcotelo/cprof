@@ -91,7 +91,7 @@ cp_color_for() {
 # cp_cmd_color — set a profile's colour, toggle text colouring, or answer the
 # statusline segment.
 cp_cmd_color() {
-  local cfg name colour
+  local cfg name colour sgr flag
 
   case "${1:-}" in
     '')
@@ -111,11 +111,17 @@ cp_cmd_color() {
       # One call, two tab-separated fields, so the statusline spawns one process
       # rather than three. Never fails: an unreadable config prints a blank
       # colour and the segment falls back to its dim style.
+      #
+      # jq exits 0 even when given no input at all (an unreadable config
+      # leaves cfg empty): with zero JSON values on stdin the filter runs
+      # zero times and jq prints nothing, so `|| fallback` never fires. Guard
+      # on the resulting value instead of the exit status for both fields.
       cfg="$(cp_config_read 2>/dev/null)" || cfg=''
       name="${2:-}"
-      printf '%s\t%s\n' \
-        "$(cp_color_code "$(cp_color_for "$cfg" "$name")")" \
-        "$(printf '%s' "$cfg" | jq -r 'if .colorText then "on" else "off" end' 2>/dev/null || printf 'off')"
+      sgr="$(cp_color_code "$(cp_color_for "$cfg" "$name")" 2>/dev/null)"
+      flag="$(printf '%s' "$cfg" | jq -r 'if .colorText then "on" else "off" end' 2>/dev/null)"
+      [ -n "$flag" ] || flag='off'
+      printf '%s\t%s\n' "$sgr" "$flag"
       return 0
       ;;
   esac
