@@ -14,7 +14,8 @@ release workflow reads its notes from the section matching the tag.
   profile name — no configuration, and stable across machines, because nothing
   is stored. `cprof color <name>` opens a picker; `cprof color <name> <colour>`
   sets one directly and `auto` returns to the hashed one. `cprof color --text on`
-  colours the profile name as well as the flag.
+  colours the badge's name text as well as the flag — `list` and `which`
+  already colour the name unconditionally, and are unaffected by this toggle.
 - Values are named ANSI colours, so they follow the terminal's own theme instead
   of overriding it. `NO_COLOR` is honoured, and `CPROF_COLOR=never|always|auto`
   overrides the terminal detection.

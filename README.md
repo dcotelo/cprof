@@ -11,7 +11,7 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="281 assertions" src="https://img.shields.io/badge/tests-281%20assertions-brightgreen">
+  <img alt="288 assertions" src="https://img.shields.io/badge/tests-288%20assertions-brightgreen">
 </p>
 
 ```console
@@ -235,7 +235,7 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof share <name>` / `unshare <name>` | Link `~/.claude` customisations into a profile, or drop the links |
 | `cprof color <name>` | Pick a profile's colour interactively |
 | `cprof color <name> <colour>` | Set it directly; `auto` returns to the hashed colour |
-| `cprof color --text on\|off` | Colour the profile name as well as the flag |
+| `cprof color --text on\|off` | Colour the statusline badge's name as well as its flag |
 | `cprof default <name>` | Set the default profile |
 | `cprof pin [<name>] \| pin --clear` | Pin or unpin this repository |
 | `cprof rule add <path> <name>` | Route a directory tree to a profile |
@@ -264,9 +264,17 @@ The flag carries the profile's colour. Colours are hashed from the profile name,
 so two profiles differ without any configuration and keep the same colour on
 every machine, because nothing is stored. `cprof color <name>` opens a picker to
 choose one, `cprof color <name> <colour>` sets it directly, and
-`cprof color --text on` colours the name too. Values are named ANSI colours, so
-they follow your terminal's theme instead of fighting it — `NO_COLOR` is
-honoured, and `CPROF_COLOR=never` turns colour off everywhere.
+`cprof color --text on` colours the badge's name text too, not just the flag.
+That toggle is statusline-only: `cprof list` and `cprof which` colour the
+profile name unconditionally, regardless of `--text`. Values are named ANSI
+colours, so they follow your terminal's theme instead of fighting it —
+`NO_COLOR` is honoured, and `CPROF_COLOR=never|always|auto` overrides the
+terminal detection the same way it does for every other command.
+
+Both settings live in `~/.cprof.json`, alongside profiles and rules, though you
+will normally reach them through the commands above rather than edit the file:
+a `color` field on a profile (`auto`, a base colour, or a `bright-` variant) and
+a top-level `colorText` boolean, defaulting to `false`.
 
 `statusline/segment.sh` prints that one line, naming the account the session
 is running as. Every profile is named, native included — a

@@ -35,7 +35,12 @@ cprof color <name>              open the picker
 cprof color <name> <colour>     set directly
 cprof color <name> auto         clear the override, back to hashed
 cprof color --text on|off       global colorText toggle
+cprof color --render <name>     SGR parameter and colorText, tab-separated
 ```
+
+`--render` exists for the statusline segment: one subprocess per refresh rather
+than three. It is documented because it is reachable from the shell, not because
+anyone is expected to type it.
 
 ### Configuration
 
@@ -137,12 +142,16 @@ will actually appear, so the choice is made on the result rather than on a
 colour name:
 
 ```
-Colour for work    ↑↓ move  ↵ select  q cancel
+Colour for work    up/down move, enter select, q cancel
 
     ⚑ work   auto (magenta)
-  › ⚑ work   red
+  > ⚑ work   red
     ⚑ work   green
 ```
+
+The header and marker are ASCII. Arrow and return glyphs render inconsistently
+across terminals and fonts, and a legend that renders as boxes is worse than a
+plain one.
 
 Rows are `auto`, the six base colours, and their `bright-` variants.
 
@@ -152,9 +161,16 @@ Terminal handling:
   refuses — `color: no terminal for the picker; pass a colour, e.g. cprof color
   work red` — and exits 2. There is no silent fallback: a picker that quietly
   does nothing is worse than one that says why.
-- The original terminal state is saved with `stty -g` and restored by a trap on
-  `EXIT INT TERM`, so Ctrl-C, a kill, and any error path all restore it. Cursor
-  hide and show ride the same trap.
+- The original terminal state is saved with `stty -g` and restored by traps on
+  `INT`, `TERM`, `QUIT`, `HUP` and `EXIT`, so Ctrl-C, Ctrl-\, a kill, a lost
+  connection and any error path all restore it. Cursor hide and show ride the
+  same traps. Each signal arm exits with the conventional 128+signal status;
+  the `EXIT` arm must not exit, or it would overwrite the status the function is
+  already returning with.
+- The saved state lives in a global, not a local. Function locals are popped
+  before an `EXIT` trap runs, so under `set -u` a local would be unbound by the
+  time the handler read it — the handler would abort before restoring the
+  cursor.
 - **bash 3.2 has no fractional `read -t`**; it arrived in bash 4, and the target
   is the macOS system shell. The escape-sequence continuation bytes are read
   with `dd bs=1 count=2` under `stty min 0 time 1`, which bounds the wait at a
