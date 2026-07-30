@@ -157,9 +157,16 @@ Terminal handling:
   hide and show ride the same trap.
 - **bash 3.2 has no fractional `read -t`**; it arrived in bash 4, and the target
   is the macOS system shell. The escape-sequence continuation bytes are read
-  under `stty min 0 time 1` — a tenth of a second at the terminal layer — after
-  which the loop reverts to `min 1 time 0`. Without this a bare ESC keypress
-  blocks until the next key.
+  with `dd bs=1 count=2` under `stty min 0 time 1`, which bounds the wait at a
+  tenth of a second. Without a bound, a bare ESC keypress blocks until the next
+  key and then swallows it.
+
+  An earlier draft set `stty min 0 time 1` and read with `read -r -n 2`. That
+  does not work: bash's `read -n` sets its own VMIN/VTIME for the duration of
+  the read, so the terminal reports `min=1 time=0` while it runs and the bound
+  is ignored. Measured on bash 3.2.57 in a pty — the exact symptom the technique
+  was meant to prevent. `dd` honours the terminal settings, which is why it is
+  worth the extra process in the key loop.
 - `k` and `j` are accepted alongside the arrows, so the picker stays usable if a
   terminal sends something unexpected.
 

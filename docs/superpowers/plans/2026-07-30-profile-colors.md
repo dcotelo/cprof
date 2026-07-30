@@ -890,6 +890,11 @@ cp_color_menu_erase() {
 # the macOS system shell. So the escape-sequence continuation is bounded at the
 # terminal layer with `stty min 0 time 1` (a tenth of a second) instead. Without
 # it, a bare ESC keypress blocks until the user presses something else.
+#
+# It has to be read with dd, not `read -n 2`: bash's read sets its own VMIN and
+# VTIME for the duration of the read, so the stty bound is ignored and ESC blocks
+# anyway — then swallows the first two bytes of the next keypress. Measured on
+# bash 3.2.57 in a pty.
 cp_color_read_key() {
   local c rest
   IFS= read -r -n 1 c || { printf 'cancel\n'; return 0; }
@@ -901,7 +906,7 @@ cp_color_read_key() {
   esac
   if [ "$c" = "$(printf '\033')" ]; then
     stty min 0 time 1
-    IFS= read -r -n 2 rest
+    rest="$(dd bs=1 count=2 2>/dev/null)"
     stty min 1 time 0
     case "$rest" in
       '[A') printf 'up\n'; return 0 ;;
