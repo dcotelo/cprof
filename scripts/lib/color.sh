@@ -54,3 +54,36 @@ cp_colorize() {
   fi
   printf '\033[%sm%s\033[0m\n' "$code" "${2:-}"
 }
+
+# cp_color_auto <name> -> a palette colour derived from the name.
+#
+# cksum is POSIX and gives the same number on every machine, so a profile keeps
+# its colour across runs, shells, and checkouts without storing anything.
+cp_color_auto() {
+  local sum idx
+  sum="$(printf '%s' "${1:-}" | cksum | cut -d' ' -f1)"
+  # shellcheck disable=SC2086
+  set -- $CP_COLOR_PALETTE
+  idx=$(( sum % $# ))
+  while [ "$idx" -gt 0 ]; do
+    shift
+    idx=$(( idx - 1 ))
+  done
+  printf '%s\n' "$1"
+}
+
+# cp_color_for <cfg> <name> -> the colour for a profile.
+#
+# An explicit field wins. The literal "auto" means the same as no field at all,
+# so `cprof color <name> auto` reads naturally even though it stores nothing.
+# An explicit value nobody recognises yields no colour rather than a guess.
+cp_color_for() {
+  local explicit
+  explicit="$(printf '%s' "${1:-}" | jq -r --arg n "${2:-}" \
+    'first(.profiles[]? | select(.name == $n) | .color // empty) // empty' 2>/dev/null)"
+  if [ -n "$explicit" ] && [ "$explicit" != 'auto' ]; then
+    [ -n "$(cp_color_code "$explicit")" ] && printf '%s\n' "$explicit"
+    return 0
+  fi
+  cp_color_auto "${2:-}"
+}

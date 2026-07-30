@@ -43,4 +43,30 @@ assert_eq 'work' "$(CP_COLOR_ON=1 cp_colorize bogus work)" 'no wrap for an unkno
 assert_eq "$(printf '\033[31mwork\033[0m')" \
           "$(CP_COLOR_ON=1 cp_colorize red work)"         'wraps when on'
 
+# --- auto assignment ---------------------------------------------------------
+first="$(cp_color_auto work)"
+assert_eq "$first" "$(cp_color_auto work)"        'auto is stable across calls'
+case " $CP_COLOR_PALETTE " in
+  *" $first "*) assert_eq ok ok 'auto returns a palette colour' ;;
+  *) assert_eq 'a palette colour' "$first" 'auto returns a palette colour' ;;
+esac
+# Different names should generally differ; this pair is checked explicitly so a
+# hash change that collapses everything to one colour fails loudly.
+assert_eq 'false' \
+  "$([ "$(cp_color_auto work)" = "$(cp_color_auto personal)" ] && echo true || echo false)" \
+  'work and personal hash to different colours'
+
+# --- explicit overrides ------------------------------------------------------
+cfg='{"profiles":[{"name":"work","color":"red"},{"name":"personal"},
+      {"name":"broken","color":"chartreuse"},{"name":"reset","color":"auto"}]}'
+assert_eq 'red' "$(cp_color_for "$cfg" work)"     'an explicit colour wins'
+assert_eq "$(cp_color_auto personal)" "$(cp_color_for "$cfg" personal)" \
+  'no colour field falls back to auto'
+assert_eq "$(cp_color_auto reset)" "$(cp_color_for "$cfg" reset)" \
+  'the literal auto falls back to auto'
+assert_eq '' "$(cp_color_for "$cfg" broken)" \
+  'an unrecognised explicit colour yields no colour'
+assert_eq "$(cp_color_auto ghost)" "$(cp_color_for "$cfg" ghost)" \
+  'an unknown profile still gets a colour'
+
 cp_t_summary
