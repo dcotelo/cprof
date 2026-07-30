@@ -165,9 +165,119 @@ cp_color_menu_step() {
   printf '%s\n' "$i"
 }
 
-# Replaced in full by the picker. Kept separate so Task 5 is committable on its
-# own and the command surface can be tested before the terminal handling exists.
+# cp_color_pick <cfg> <name> — choose a colour interactively.
+#
+# Requires a terminal on both stdin and stdout. There is no silent fallback: a
+# picker that quietly does nothing is worse than one that says why.
 cp_color_pick() {
-  cp_warn 'color: picker not implemented'
-  return 2
+  local cfg="$1" name="$2" saved entries count idx=0 key chosen
+
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    cp_warn "color: no terminal for the picker; pass a colour, e.g. cprof color $name red"
+    return 2
+  fi
+
+  entries="auto $CP_COLOR_PALETTE"
+  for c in $CP_COLOR_PALETTE; do entries="$entries bright-$c"; done
+  # shellcheck disable=SC2086
+  set -- $entries
+  count=$#
+
+  saved="$(stty -g)" || { cp_warn 'color: cannot read terminal state'; return 1; }
+  # One trap for every way out: normal return, Ctrl-C, and being killed. Leaving
+  # a terminal in raw mode with the cursor hidden is a worse bug than anything
+  # this command could get wrong.
+  trap 'stty "$saved" 2>/dev/null; printf "\033[?25h"; trap - EXIT INT TERM' EXIT INT TERM
+  stty -echo -icanon min 1 time 0
+  printf '\033[?25l'
+
+  while :; do
+    # shellcheck disable=SC2086 # entries is a space-joined list; splitting it into args is the point
+    cp_color_menu_draw "$name" "$idx" $entries
+    key="$(cp_color_read_key)"
+    case "$key" in
+      up|down) idx="$(cp_color_menu_step "$idx" "$key" "$count")" ;;
+      select)  break ;;
+      cancel)  cp_color_menu_erase "$count"; stty "$saved"; printf '\033[?25h'
+               trap - EXIT INT TERM; return 0 ;;
+    esac
+    cp_color_menu_erase "$count"
+  done
+
+  cp_color_menu_erase "$count"
+  stty "$saved"
+  printf '\033[?25h'
+  trap - EXIT INT TERM
+
+  # shellcheck disable=SC2086
+  set -- $entries
+  while [ "$idx" -gt 0 ]; do shift; idx=$(( idx - 1 )); done
+  chosen="$1"
+
+  if [ "$chosen" = 'auto' ]; then
+    printf '%s' "$cfg" | jq --arg n "$name" \
+      '.profiles |= map(if .name == $n then del(.color) else . end)' | cp_config_write || return 1
+    printf '%s -> auto\n' "$name"
+    return 0
+  fi
+  printf '%s' "$cfg" | jq --arg n "$name" --arg c "$chosen" \
+    '.profiles |= map(if .name == $n then .color = $c else . end)' | cp_config_write || return 1
+  printf '%s -> %s\n' "$name" "$chosen"
+}
+
+# Draws one row per entry, each showing the badge as it will actually look, so
+# the choice is made on the result rather than on the name of a colour.
+cp_color_menu_draw() {
+  local name="$1" idx="$2" i=0 marker code label
+  shift 2
+  printf 'Colour for %s    up/down move, enter select, q cancel\n' "$name"
+  for label in "$@"; do
+    if [ "$i" = "$idx" ]; then marker='>'; else marker=' '; fi
+    if [ "$label" = 'auto' ]; then
+      code="$(cp_color_code "$(cp_color_auto "$name")")"
+      printf '  %s \033[%sm# %s\033[0m   auto\n' "$marker" "${code:-0}" "$name"
+    else
+      code="$(cp_color_code "$label")"
+      printf '  %s \033[%sm# %s\033[0m   %s\n' "$marker" "${code:-0}" "$name" "$label"
+    fi
+    i=$(( i + 1 ))
+  done
+}
+
+# Moves back over the menu so the next draw overwrites it: header plus one line
+# per entry.
+cp_color_menu_erase() {
+  local n=$(( $1 + 1 ))
+  while [ "$n" -gt 0 ]; do
+    printf '\033[1A\033[2K'
+    n=$(( n - 1 ))
+  done
+}
+
+# Reads one keypress and names it.
+#
+# bash 3.2 has no fractional read -t — that arrived in bash 4, and the target is
+# the macOS system shell. So the escape-sequence continuation is bounded at the
+# terminal layer with `stty min 0 time 1` (a tenth of a second) instead. Without
+# it, a bare ESC keypress blocks until the user presses something else.
+cp_color_read_key() {
+  local c rest
+  IFS= read -r -n 1 c || { printf 'cancel\n'; return 0; }
+  case "$c" in
+    '') printf 'select\n'; return 0 ;;
+    q|Q) printf 'cancel\n'; return 0 ;;
+    k) printf 'up\n'; return 0 ;;
+    j) printf 'down\n'; return 0 ;;
+  esac
+  if [ "$c" = "$(printf '\033')" ]; then
+    stty min 0 time 1
+    IFS= read -r -n 2 rest
+    stty min 1 time 0
+    case "$rest" in
+      '[A') printf 'up\n'; return 0 ;;
+      '[B') printf 'down\n'; return 0 ;;
+      '')   printf 'cancel\n'; return 0 ;;
+    esac
+  fi
+  printf 'none\n'
 }

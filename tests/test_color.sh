@@ -166,6 +166,25 @@ assert_eq "$(printf '31\ton')" "$("$CLI" color --render work)" \
 assert_eq "$(printf '33\toff')" "$("$CLI" color --render ghost)" \
   '--render hashes a name that is not a profile'
 
+# --- the picker refuses to run blind ------------------------------------------
+# The suite has no terminal, which is exactly the condition being asserted: the
+# picker must say why rather than hang waiting for a keypress that cannot come.
+# Placed here, before the config-destroying assertions below, because work's
+# colour is still the "red" set above and the config is still valid JSON.
+out="$("$CLI" color work 2>&1 </dev/null)"
+rc=$?
+assert_eq '2' "$rc" 'the picker exits 2 without a terminal'
+case "$out" in
+  *'no terminal'*) assert_eq ok ok 'it says a terminal is missing' ;;
+  *) assert_eq 'no terminal ...' "$out" 'it says a terminal is missing' ;;
+esac
+case "$out" in
+  *'cprof color work red'*) assert_eq ok ok 'it names the non-interactive form' ;;
+  *) assert_eq 'suggests cprof color work red' "$out" 'it names the non-interactive form' ;;
+esac
+assert_eq 'red' "$(jq -r '.profiles[0].color' "$CPROF_CONFIG")" \
+  'a refused picker leaves the config untouched'
+
 # --render must degrade to a well-formed two-field line even when the config
 # cannot be read at all, since the statusline shells out to it on every
 # refresh. These assertions destroy the config, so they run last.
