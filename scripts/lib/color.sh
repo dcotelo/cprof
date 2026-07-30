@@ -165,12 +165,28 @@ cp_color_menu_step() {
   printf '%s\n' "$i"
 }
 
+# Holds the pre-picker `stty -g` state while the picker is running, so every
+# trap arm can restore it. This has to be a global, not a function-local: bash
+# pops locals before an EXIT trap runs, and scripts/cprof sets `set -u`, so a
+# local `$saved` would be an unbound-variable error precisely when the trap
+# fires — restoring nothing and leaving the terminal raw with the cursor
+# hidden, the one outcome this command must never produce.
+CP_COLOR_TTY_SAVED=''
+
+# Restores the terminal to the state saved before the picker put it in raw
+# mode, and shows the cursor again. Idempotent, and safe to call more than
+# once (every trap arm below does).
+cp_color_tty_restore() {
+  [ -n "$CP_COLOR_TTY_SAVED" ] && stty "$CP_COLOR_TTY_SAVED" 2>/dev/null
+  printf '\033[?25h'
+}
+
 # cp_color_pick <cfg> <name> — choose a colour interactively.
 #
 # Requires a terminal on both stdin and stdout. There is no silent fallback: a
 # picker that quietly does nothing is worse than one that says why.
 cp_color_pick() {
-  local cfg="$1" name="$2" saved entries count idx=0 key chosen
+  local cfg="$1" name="$2" entries count idx=0 key chosen
 
   if [ ! -t 0 ] || [ ! -t 1 ]; then
     cp_warn "color: no terminal for the picker; pass a colour, e.g. cprof color $name red"
@@ -183,11 +199,22 @@ cp_color_pick() {
   set -- $entries
   count=$#
 
-  saved="$(stty -g)" || { cp_warn 'color: cannot read terminal state'; return 1; }
-  # One trap for every way out: normal return, Ctrl-C, and being killed. Leaving
-  # a terminal in raw mode with the cursor hidden is a worse bug than anything
-  # this command could get wrong.
-  trap 'stty "$saved" 2>/dev/null; printf "\033[?25h"; trap - EXIT INT TERM' EXIT INT TERM
+  CP_COLOR_TTY_SAVED="$(stty -g)" || { cp_warn 'color: cannot read terminal state'; return 1; }
+  # A trap per way out, not one shared trap: a caught signal does not end the
+  # process on its own — bash runs the handler and then *resumes* whatever it
+  # interrupted, so a handler that only restores the terminal and clears
+  # itself would let the key loop carry on in cooked mode after the first
+  # Ctrl-C, echoing keystrokes into the menu, with no trap left to catch a
+  # second one. Each of these must actually exit, with the conventional
+  # 128+signal status. The EXIT arm is the exception: it is the safety net
+  # for a normal return (including one taken from inside the loop or after a
+  # failed write below), so it must not call exit itself — that would step on
+  # the exit status the function is already returning with.
+  trap 'cp_color_tty_restore; exit 130' INT
+  trap 'cp_color_tty_restore; exit 143' TERM
+  trap 'cp_color_tty_restore; exit 131' QUIT
+  trap 'cp_color_tty_restore; exit 129' HUP
+  trap 'cp_color_tty_restore' EXIT
   stty -echo -icanon min 1 time 0
   printf '\033[?25l'
 
@@ -198,16 +225,15 @@ cp_color_pick() {
     case "$key" in
       up|down) idx="$(cp_color_menu_step "$idx" "$key" "$count")" ;;
       select)  break ;;
-      cancel)  cp_color_menu_erase "$count"; stty "$saved"; printf '\033[?25h'
-               trap - EXIT INT TERM; return 0 ;;
+      cancel)  cp_color_menu_erase "$count"; cp_color_tty_restore
+               trap - EXIT INT TERM QUIT HUP; return 0 ;;
     esac
     cp_color_menu_erase "$count"
   done
 
   cp_color_menu_erase "$count"
-  stty "$saved"
-  printf '\033[?25h'
-  trap - EXIT INT TERM
+  cp_color_tty_restore
+  trap - EXIT INT TERM QUIT HUP
 
   # shellcheck disable=SC2086
   set -- $entries
@@ -260,6 +286,17 @@ cp_color_menu_erase() {
 # the macOS system shell. So the escape-sequence continuation is bounded at the
 # terminal layer with `stty min 0 time 1` (a tenth of a second) instead. Without
 # it, a bare ESC keypress blocks until the user presses something else.
+#
+# The continuation has to be read with dd, not `read -r -n 2`: bash's read sets
+# its own VMIN/VTIME for the duration of the read, so the stty bound above is
+# ignored while it runs — a bare ESC blocks until the next keypress anyway, and
+# then swallows that keypress's first two bytes. dd honours the terminal
+# settings instead of overriding them. Measured on bash 3.2.57 in a pty.
+#
+# Every path between the two `stty` calls returns nothing itself — the single
+# `dd` command substitution below is one command, not several — so `min 1 time
+# 0` is always restored before this function returns, no matter which key was
+# pressed.
 cp_color_read_key() {
   local c rest
   IFS= read -r -n 1 c || { printf 'cancel\n'; return 0; }
@@ -271,7 +308,7 @@ cp_color_read_key() {
   esac
   if [ "$c" = "$(printf '\033')" ]; then
     stty min 0 time 1
-    IFS= read -r -n 2 rest
+    rest="$(dd bs=1 count=2 2>/dev/null)"
     stty min 1 time 0
     case "$rest" in
       '[A') printf 'up\n'; return 0 ;;
