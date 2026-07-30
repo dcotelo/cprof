@@ -110,4 +110,16 @@ out="$("$CLI" which 2>/dev/null)"
 case "$out" in *'~/.claude-profiles/personal'*) assert_eq ok ok 'which shortens the profile directory' ;;
                 *) assert_eq '~/.claude-profiles/personal' "$out" 'which shortens the profile directory' ;; esac
 
+# --- colour must not disturb alignment ---------------------------------------
+# cp_table sizes columns with awk length(). Escapes are zero-width on screen but
+# not in bytes, so measuring them pads every other row to a phantom width.
+plain="$({ printf 'PROFILE\tPLAN\n'; printf 'work\tteam\n'; printf 'personal\tmax\n'; } | cp_table)"
+coloured="$({ printf 'PROFILE\tPLAN\n'
+              printf '\033[31mwork\033[0m\tteam\n'
+              printf 'personal\tmax\n'; } | cp_table)"
+# Strip the escapes back out; what remains must be byte-identical to the plain
+# rendering, which is exactly the property "colour does not move anything".
+stripped="$(printf '%s\n' "$coloured" | sed 's/'"$(printf '\033')"'\[[0-9;]*m//g')"
+assert_eq "$plain" "$stripped" 'escapes do not change column widths'
+
 cp_t_summary

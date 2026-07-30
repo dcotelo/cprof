@@ -27,14 +27,20 @@ cp_path_display() {
 # Aligns tab-separated rows into columns two spaces apart, sizing each column to
 # its widest cell so a long profile name cannot push a row out of alignment. A
 # ragged row is fine: missing cells produce no padding, and no line keeps
-# trailing whitespace.
+# trailing whitespace. Cells may carry SGR colour: widths are measured on the
+# text without its escapes, so colour never moves a column.
 cp_table() {
   awk -F'\t' '
     {
       nf[NR] = NF
       for (i = 1; i <= NF; i++) {
         cell[NR, i] = $i
-        if (length($i) > w[i]) w[i] = length($i)
+        # Colour is zero-width on screen but not in bytes. Measure the text
+        # without its escapes, print the cell with them. \033 rather than \x1b:
+        # the hex form is a gawk extension and the target is macOS awk.
+        bare = $i
+        gsub(/\033\[[0-9;]*m/, "", bare)
+        if (length(bare) > w[i]) w[i] = length(bare)
       }
     }
     END {
@@ -43,7 +49,9 @@ cp_table() {
         for (i = 1; i <= nf[r]; i++) {
           line = line cell[r, i]
           if (i < nf[r]) {
-            pad = w[i] - length(cell[r, i]) + 2
+            bare = cell[r, i]
+            gsub(/\033\[[0-9;]*m/, "", bare)
+            pad = w[i] - length(bare) + 2
             while (pad-- > 0) line = line " "
           }
         }
