@@ -1,6 +1,6 @@
 {
   "name": "cprof",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Select which Claude account a session uses, by default profile, per-repo pin, or directory rule.",
   "author": {
     "name": "Diego Cotelo",

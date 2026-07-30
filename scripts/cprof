@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.5.0'
+CP_VERSION='0.6.0'
 
 CP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
 if [ -z "$CP_LIB_DIR" ]; then

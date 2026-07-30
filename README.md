@@ -11,7 +11,7 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="217 assertions" src="https://img.shields.io/badge/tests-217%20assertions-brightgreen">
+  <img alt="281 assertions" src="https://img.shields.io/badge/tests-281%20assertions-brightgreen">
 </p>
 
 ```console
@@ -233,6 +233,9 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof env` | `export`/`unset` statements for `eval` |
 | `cprof add <name> [--dir P] [--native] [--note S] [--isolated]` | Register a profile |
 | `cprof share <name>` / `unshare <name>` | Link `~/.claude` customisations into a profile, or drop the links |
+| `cprof color <name>` | Pick a profile's colour interactively |
+| `cprof color <name> <colour>` | Set it directly; `auto` returns to the hashed colour |
+| `cprof color --text on\|off` | Colour the profile name as well as the flag |
 | `cprof default <name>` | Set the default profile |
 | `cprof pin [<name>] \| pin --clear` | Pin or unpin this repository |
 | `cprof rule add <path> <name>` | Route a directory tree to a profile |
@@ -257,7 +260,15 @@ table instead of breaking the alignment, and paths under your home print as `~`.
 ⚑ work
 ```
 
-`statusline/segment.sh` prints that one dim line, naming the account the session
+The flag carries the profile's colour. Colours are hashed from the profile name,
+so two profiles differ without any configuration and keep the same colour on
+every machine, because nothing is stored. `cprof color <name>` opens a picker to
+choose one, `cprof color <name> <colour>` sets it directly, and
+`cprof color --text on` colours the name too. Values are named ANSI colours, so
+they follow your terminal's theme instead of fighting it — `NO_COLOR` is
+honoured, and `CPROF_COLOR=never` turns colour off everywhere.
+
+`statusline/segment.sh` prints that one line, naming the account the session
 is running as. Every profile is named, native included — a
 switching tool whose indicator is invisible in the common case teaches you to
 ignore it. The line is omitted only when there is no profile to name: no config,
