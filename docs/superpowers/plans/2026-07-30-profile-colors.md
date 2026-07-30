@@ -573,11 +573,16 @@ assert_eq "$(printf '31\toff')" "$("$CLI" color --render work)" \
 assert_eq "$(printf '31\ton')" "$("$CLI" color --render work)" \
   '--render reflects colorText'
 "$CLI" color --text off >/dev/null
-assert_eq "$(printf '\toff')" "$("$CLI" color --render ghost)" \
-  '--render is empty-but-well-formed for an unknown profile with no colour'
+# A name that is not a profile still gets a colour: cp_color_for falls through
+# to the hash, and one rule everywhere beats a special case. `cprof status` can
+# print `unknown`, and colouring that consistently is the desired behaviour.
+# ghost hashes to yellow (33) under the palette order in Task 1.
+assert_eq "$(printf '33\toff')" "$("$CLI" color --render ghost)" \
+  '--render hashes a name that is not a profile'
 ```
 
-Note: the last assertion holds because `ghost` is not in the config, so `cp_color_for` falls through to `cp_color_auto`, which always returns a palette colour. Replace the expectation with the hashed result if that is what the implementation yields — run `cp_color_auto ghost` and use its code. Do not weaken the assertion to a wildcard.
+If that assertion fails because the palette order changed in Task 2, recompute
+with `cp_color_auto ghost` and use its code. Do not weaken it to a wildcard.
 
 - [ ] **Step 2: Run test to verify it fails**
 
