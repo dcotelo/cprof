@@ -180,4 +180,12 @@ assert_eq "$expect_hash" "$("$CLI" color --render work)" \
   '--render degrades to a well-formed line on an unreadable config'
 chmod 644 "$CPROF_CONFIG"
 
+# --- picker navigation, without a terminal ------------------------------------
+assert_eq '1' "$(cp_color_menu_step 0 down 5)"  'down moves forward'
+assert_eq '0' "$(cp_color_menu_step 1 up   5)"  'up moves back'
+assert_eq '0' "$(cp_color_menu_step 4 down 5)"  'down wraps to the top'
+assert_eq '4' "$(cp_color_menu_step 0 up   5)"  'up wraps to the bottom'
+assert_eq '2' "$(cp_color_menu_step 2 x    5)"  'an unknown key does not move'
+assert_eq '0' "$(cp_color_menu_step 0 down 1)"  'a single entry stays put'
+
 cp_t_summary

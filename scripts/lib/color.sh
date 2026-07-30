@@ -150,6 +150,21 @@ cp_cmd_color() {
     '.profiles |= map(if .name == $n then .color = $c else . end)' | cp_config_write
 }
 
+# cp_color_menu_step <index> <key> <count> -> the new 0-based index.
+#
+# Pure arithmetic, deliberately separate from the key loop: the loop needs a real
+# terminal and cannot be covered by the suite, so everything that can be tested
+# without one lives here.
+cp_color_menu_step() {
+  local i="${1:-0}" key="${2:-}" n="${3:-1}"
+  [ "$n" -gt 0 ] || n=1
+  case "$key" in
+    up)   i=$(( (i - 1 + n) % n )) ;;
+    down) i=$(( (i + 1) % n )) ;;
+  esac
+  printf '%s\n' "$i"
+}
+
 # Replaced in full by the picker. Kept separate so Task 5 is committable on its
 # own and the command surface can be tested before the terminal handling exists.
 cp_color_pick() {
