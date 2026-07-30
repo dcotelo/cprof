@@ -14,17 +14,78 @@
   <img alt="288 assertions" src="https://img.shields.io/badge/tests-288%20assertions-brightgreen">
 </p>
 
-```console
-$ cd ~/dev/<company>/api && cprof which
-work  native (keychain)  rule ~/dev/<company>
+<p align="center">
+  <strong>You have two Claude subscriptions. Claude Code has one login.</strong>
+</p>
 
-$ cd ~/dev/side-project && cprof which
-personal  ~/.claude-profiles/personal  default
+Log in for work, and your side project bills the company. Log in for yourself,
+and the work repo runs on a personal account. Switching means logging out,
+logging back in, and remembering which one you are on — every time you change
+directory.
+
+`cprof` makes the directory decide.
+
+```console
+$ cd ~/dev/acme/api && claude
+⚑ work                                    ← the badge says which account
+
+$ cd ~/dev/side-project && claude
+⚑ personal
 ```
 
-`cprof` stores your Claude accounts as profiles, then picks one for each
-session based on a default, a per-repository pin, or a directory rule — so repos
-under `~/dev/<company>` use the work account and everything else uses personal.
+Each profile is its own Claude config directory with its own credentials, so the
+accounts never touch. A default covers most of your work, a directory rule routes
+a whole tree, and a per-repository pin overrides both.
+
+```console
+$ cprof list
+PROFILE   PLAN  ACCOUNT            FLAGS
+work      team  you@acme.com       native
+personal  max   you@personal.dev   (default) (active)
+
+$ cd ~/dev/acme/api && cprof which
+work  native (keychain)  rule ~/dev/acme
+```
+
+### Why it is built this way
+
+**Nothing is moved, nothing is re-authenticated.** Your existing login stays
+exactly where it is, as a `native` profile. Adding `cprof` to a working setup
+changes nothing about that setup.
+
+**Your customisations follow you.** A Claude config directory holds plugins,
+skills, settings and `CLAUDE.md` as well as credentials — so a naive profile
+switch would silently switch away everything you have installed. `cprof` links
+them, and never links the files that identify you.
+
+**It cannot lose your account.** `login` snapshots the keychain first and
+restores it if a profile login writes to the shared item. `env` never exits
+non-zero, so a broken config degrades to stock Claude Code rather than a broken
+shell.
+
+**You can see it at a glance.** Every profile has a colour, hashed from its name
+so two profiles differ with no configuration at all. `cprof color work red` if
+you would rather choose.
+
+```console
+$ cprof color work            # pick one interactively
+
+Colour for work    up/down move, enter select, q cancel
+
+    ⚑ work   auto (magenta)
+  > ⚑ work   red
+    ⚑ work   green
+```
+
+### Getting it
+
+```bash
+claude plugin marketplace add dcotelo/cprof
+claude plugin install cprof@dcotelo
+```
+
+Then two shell functions — see [Quickstart](#quickstart) for the whole thing,
+about two minutes.
 
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
 [Install](#install) · [Resolution order](#resolution-order) ·
