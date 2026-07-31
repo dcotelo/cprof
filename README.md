@@ -64,18 +64,52 @@ non-zero, so a broken config degrades to stock Claude Code rather than a broken
 shell.
 
 **You can see it at a glance.** Every profile has a colour, hashed from its name
-so two profiles differ with no configuration at all. `cprof color work red` if
-you would rather choose.
+so two profiles differ with no configuration at all:
+
+<p>
+  <img alt="work in magenta" src="https://img.shields.io/badge/⚑%20work-bc3fbc?style=flat-square">
+  <img alt="personal in green" src="https://img.shields.io/badge/⚑%20personal-0dbc79?style=flat-square">
+  <img alt="client in cyan" src="https://img.shields.io/badge/⚑%20client-11a8cd?style=flat-square">
+</p>
+
+`cprof color work red` if you would rather choose, or run it with no colour to
+pick from the palette:
+
+<table>
+<tr>
+<td valign="top">
 
 ```console
-$ cprof color work            # pick one interactively
+$ cprof color work
 
-Colour for work    up/down move, enter select, q cancel
+Colour for work
+up/down move, enter select, q cancel
 
     ⚑ work   auto (magenta)
   > ⚑ work   red
     ⚑ work   green
+    ⚑ work   yellow
 ```
+
+</td>
+<td valign="top">
+
+The palette, drawn as the badge<br>will actually look:
+
+<img alt="red" src="https://img.shields.io/badge/⚑%20red-cd3131?style=flat-square"><br>
+<img alt="green" src="https://img.shields.io/badge/⚑%20green-0dbc79?style=flat-square"><br>
+<img alt="yellow" src="https://img.shields.io/badge/⚑%20yellow-b5a300?style=flat-square"><br>
+<img alt="blue" src="https://img.shields.io/badge/⚑%20blue-2472c8?style=flat-square"><br>
+<img alt="magenta" src="https://img.shields.io/badge/⚑%20magenta-bc3fbc?style=flat-square"><br>
+<img alt="cyan" src="https://img.shields.io/badge/⚑%20cyan-11a8cd?style=flat-square">
+
+</td>
+</tr>
+</table>
+
+Plus a `bright-` variant of each. The swatches above are approximations — the
+real values are named ANSI colours, so what you see is whatever your terminal
+theme maps them to, not what this page shows.
 
 ### Getting it
 
@@ -363,7 +397,20 @@ table instead of breaking the alignment, and paths under your home print as `~`.
 ⚑ work
 ```
 
-The flag carries the profile's colour. Colours are hashed from the profile name,
+The flag carries the profile's colour, and `--text` decides whether the name
+follows it:
+
+<p>
+  <img alt="default: flag coloured, name dim" src="https://img.shields.io/badge/⚑-bc3fbc?style=flat-square&label=&labelColor=bc3fbc">
+  <img alt="work" src="https://img.shields.io/badge/work-6e7681?style=flat-square">
+  &nbsp;&nbsp;<code>default — flag coloured, name dim</code>
+</p>
+<p>
+  <img alt="--text on: both coloured" src="https://img.shields.io/badge/⚑%20work-bc3fbc?style=flat-square">
+  &nbsp;&nbsp;<code>cprof color --text on</code>
+</p>
+
+Colours are hashed from the profile name,
 so two profiles differ without any configuration and keep the same colour on
 every machine, because nothing is stored. `cprof color <name>` opens a picker to
 choose one, `cprof color <name> <colour>` sets it directly, and
