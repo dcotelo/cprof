@@ -5,6 +5,27 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Added
+
+- Each profile has a colour, so the badge and `cprof list` say which account is
+  in use at a glance rather than on a read. Colours are assigned by hashing the
+  profile name — no configuration, and stable across machines, because nothing
+  is stored. `cprof color <name>` opens a picker; `cprof color <name> <colour>`
+  sets one directly and `auto` returns to the hashed one. `cprof color --text on`
+  colours the badge's name text as well as the flag — `list` and `which`
+  already colour the name unconditionally, and are unaffected by this toggle.
+- Values are named ANSI colours, so they follow the terminal's own theme instead
+  of overriding it. `NO_COLOR` is honoured, and `CPROF_COLOR=never|always|auto`
+  overrides the terminal detection.
+
+### Fixed
+
+- `cp_table` sized columns by counting bytes, so a cell containing colour padded
+  every other row to a width that was not on screen. Widths are now measured with
+  the escape sequences stripped, and colour moves nothing.
+
 ## [0.5.0]
 
 ### Changed

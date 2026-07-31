@@ -27,14 +27,20 @@ cp_path_display() {
 # Aligns tab-separated rows into columns two spaces apart, sizing each column to
 # its widest cell so a long profile name cannot push a row out of alignment. A
 # ragged row is fine: missing cells produce no padding, and no line keeps
-# trailing whitespace.
+# trailing whitespace. Cells may carry SGR colour: widths are measured on the
+# text without its escapes, so colour never moves a column.
 cp_table() {
   awk -F'\t' '
     {
       nf[NR] = NF
       for (i = 1; i <= NF; i++) {
         cell[NR, i] = $i
-        if (length($i) > w[i]) w[i] = length($i)
+        # Colour is zero-width on screen but not in bytes. Measure the text
+        # without its escapes, print the cell with them. \033 rather than \x1b:
+        # the hex form is a gawk extension and the target is macOS awk.
+        bare = $i
+        gsub(/\033\[[0-9;]*m/, "", bare)
+        if (length(bare) > w[i]) w[i] = length(bare)
       }
     }
     END {
@@ -43,7 +49,9 @@ cp_table() {
         for (i = 1; i <= nf[r]; i++) {
           line = line cell[r, i]
           if (i < nf[r]) {
-            pad = w[i] - length(cell[r, i]) + 2
+            bare = cell[r, i]
+            gsub(/\033\[[0-9;]*m/, "", bare)
+            pad = w[i] - length(bare) + 2
             while (pad-- > 0) line = line " "
           }
         }
@@ -100,10 +108,16 @@ cp_cmd_env() {
 # 'unknown' (config dir belongs to no profile), or 'stock' (no config dir and no
 # native profile).
 cp_cmd_status() {
-  local cfg dir name
+  local cfg dir name CP_COLOR_ON=0
   cfg="$(cp_config_read)" || return 1
+  # cp_colorize (color.sh) reads CP_COLOR_ON through bash's dynamic scoping;
+  # that cross-file read is invisible to the static analyser, hence the
+  # disable below.
+  # shellcheck disable=SC2034
+  cp_color_enabled && CP_COLOR_ON=1
   if [ -z "${CLAUDE_CONFIG_DIR:-}" ]; then
-    printf '%s\n' "$(cp_native_name "$cfg" 'stock')"
+    name="$(cp_native_name "$cfg" 'stock')"
+    cp_colorize "$(cp_color_for "$cfg" "$name")" "$name"
     return 0
   fi
   dir="$(cp_path_normalize "$CLAUDE_CONFIG_DIR")"
@@ -115,7 +129,8 @@ cp_cmd_status() {
   if [ -z "$name" ] && [ "$dir" = "$(cp_path_normalize "$(cp_share_source)")" ]; then
     name="$(cp_native_name "$cfg" '')"
   fi
-  printf '%s\n' "${name:-unknown}"
+  name="${name:-unknown}"
+  cp_colorize "$(cp_color_for "$cfg" "$name")" "$name"
 }
 
 # The native profile's name, or $2 when no profile is marked native.
@@ -126,8 +141,13 @@ cp_native_name() {
 }
 
 cp_cmd_list() {
-  local cfg names name active default_name st email sub markers dir
+  local cfg names name active default_name st email sub markers dir CP_COLOR_ON=0
   cfg="$(cp_config_read)" || return 1
+  # Decide once, here: the rows below are piped into cp_table, and inside a
+  # pipeline stdout is never a terminal. cp_colorize (color.sh) reads
+  # CP_COLOR_ON via dynamic scoping, a cross-file read shellcheck can't trace.
+  # shellcheck disable=SC2034
+  cp_color_enabled && CP_COLOR_ON=1
   active="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null | cut -f1)"
   default_name="$(printf '%s' "$cfg" | jq -r '.default // empty')"
   names="$(printf '%s' "$cfg" | jq -r '.profiles[]?.name')"
@@ -155,14 +175,20 @@ cp_cmd_list() {
         dir="$(cp_profile_dir "$cfg" "$name")"
         [ -d "$dir" ] || markers="$markers [dir missing]"
       fi
-      printf '%s\t%s\t%s\t%s\n' "$name" "$sub" "$email" "${markers# }"
+      printf '%s\t%s\t%s\t%s\n' \
+        "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" \
+        "$sub" "$email" "${markers# }"
     done
   } | cp_table
 }
 
 cp_cmd_which() {
-  local cfg line name reason dir
+  local cfg line name reason dir CP_COLOR_ON=0
   cfg="$(cp_config_read)" || return 1
+  # cp_colorize (color.sh) reads CP_COLOR_ON via dynamic scoping, a cross-file
+  # read shellcheck can't trace.
+  # shellcheck disable=SC2034
+  cp_color_enabled && CP_COLOR_ON=1
   line="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null)"
   name="$(printf '%s' "$line" | cut -f1)"
   reason="$(printf '%s' "$line" | cut -f2)"
@@ -177,9 +203,12 @@ cp_cmd_which() {
     'pin '*)  reason="pin $(cp_path_display "${reason#pin }")" ;;
   esac
   if cp_profile_is_native "$cfg" "$name"; then
-    printf '%s\tnative (keychain)\t%s\n' "$name" "$reason" | cp_table
+    printf '%s\tnative (keychain)\t%s\n' \
+      "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" "$reason" | cp_table
   else
     dir="$(cp_profile_dir "$cfg" "$name")"
-    printf '%s\t%s\t%s\n' "$name" "$(cp_path_display "$dir")" "$reason" | cp_table
+    printf '%s\t%s\t%s\n' \
+      "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" \
+      "$(cp_path_display "$dir")" "$reason" | cp_table
   fi
 }

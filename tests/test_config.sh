@@ -42,4 +42,10 @@ assert_eq 'rel/x'    "$(cp_expand 'rel/x')"  'relative path untouched'
 assert_fail eval 'printf "nope" | cp_config_write'
 assert_eq 'personal' "$(cp_config_read | jq -r '.default')" 'config intact after rejected write'
 
+# atomic write refuses empty stdin rather than truncating the config: `jq -S .`
+# exits 0 on empty input, so the earlier guard alone let a write like this
+# through and clobbered the file.
+assert_fail eval 'printf "" | cp_config_write'
+assert_eq 'personal' "$(cp_config_read | jq -r '.default')" 'config intact after an empty write'
+
 cp_t_summary
