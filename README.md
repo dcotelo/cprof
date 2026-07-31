@@ -25,13 +25,9 @@ directory.
 
 `cprof` makes the directory decide.
 
-```console
-$ cd ~/dev/acme/api && claude
-⚑ work                                    ← the badge says which account
-
-$ cd ~/dev/side-project && claude
-⚑ personal
-```
+<p align="center">
+  <img alt="cd into a work repo and claude runs as work; cd into a side project and it runs as personal" src="docs/demo.gif" width="720">
+</p>
 
 Each profile is its own Claude config directory with its own credentials, so the
 accounts never touch. A default covers most of your work, a directory rule routes
@@ -47,71 +43,7 @@ $ cd ~/dev/acme/api && cprof which
 work  native (keychain)  rule ~/dev/acme
 ```
 
-### Why it is built this way
-
-**Nothing is moved, nothing is re-authenticated.** Your existing login stays
-exactly where it is, as a `native` profile. Adding `cprof` to a working setup
-changes nothing about that setup.
-
-**Your customisations follow you.** A Claude config directory holds plugins,
-skills, settings and `CLAUDE.md` as well as credentials — so a naive profile
-switch would silently switch away everything you have installed. `cprof` links
-them, and never links the files that identify you.
-
-**It cannot lose your account.** `login` snapshots the keychain first and
-restores it if a profile login writes to the shared item. `env` never exits
-non-zero, so a broken config degrades to stock Claude Code rather than a broken
-shell.
-
-**You can see it at a glance.** Every profile has a colour, hashed from its name
-so two profiles differ with no configuration at all:
-
-<p>
-  <img alt="work in magenta" src="https://img.shields.io/badge/⚑%20work-bc3fbc?style=flat-square">
-  <img alt="personal in green" src="https://img.shields.io/badge/⚑%20personal-0dbc79?style=flat-square">
-  <img alt="client in cyan" src="https://img.shields.io/badge/⚑%20client-11a8cd?style=flat-square">
-</p>
-
-`cprof color work red` if you would rather choose, or run it with no colour to
-pick from the palette:
-
-<table>
-<tr>
-<td valign="top">
-
-```console
-$ cprof color work
-
-Colour for work
-up/down move, enter select, q cancel
-
-    ⚑ work   auto (magenta)
-  > ⚑ work   red
-    ⚑ work   green
-    ⚑ work   yellow
-```
-
-</td>
-<td valign="top">
-
-The palette, drawn as the badge<br>will actually look:
-
-<img alt="red" src="https://img.shields.io/badge/⚑%20red-cd3131?style=flat-square"><br>
-<img alt="green" src="https://img.shields.io/badge/⚑%20green-0dbc79?style=flat-square"><br>
-<img alt="yellow" src="https://img.shields.io/badge/⚑%20yellow-b5a300?style=flat-square"><br>
-<img alt="blue" src="https://img.shields.io/badge/⚑%20blue-2472c8?style=flat-square"><br>
-<img alt="magenta" src="https://img.shields.io/badge/⚑%20magenta-bc3fbc?style=flat-square"><br>
-<img alt="cyan" src="https://img.shields.io/badge/⚑%20cyan-11a8cd?style=flat-square">
-
-</td>
-</tr>
-</table>
-
-Plus a `bright-` variant of each. The swatches above are approximations — the
-real values are named ANSI colours, so what you see is whatever your terminal
-theme maps them to, not what this page shows.
-
-### Getting it
+## Install
 
 ```bash
 brew install dcotelo/tap/cprof
@@ -132,10 +64,36 @@ claude plugin marketplace add dcotelo/cprof
 claude plugin install cprof@dcotelo
 ```
 
-See [Quickstart](#quickstart) for the whole thing, about two minutes.
+**[Quickstart](#quickstart)** walks the whole setup — profiles, rules, default —
+in about two minutes. Requires macOS; Homebrew pulls in `jq`, the only other
+dependency. [Install details](#install-details) covers the plugin-only path
+and updating.
+
+### Why it is built this way
+
+- **Nothing is moved, nothing is re-authenticated.** Your existing login stays
+  exactly where it is, as a `native` profile. Adding `cprof` to a working setup
+  changes nothing about that setup.
+- **Your customisations follow you.** A Claude config directory holds plugins,
+  skills, settings and `CLAUDE.md` as well as credentials — so a naive profile
+  switch would silently switch away everything you have installed. `cprof` links
+  them, and never links the files that identify you.
+- **It cannot lose your account.** `login` snapshots the keychain first and
+  restores it if a profile login writes to the shared item. `env` never exits
+  non-zero, so a broken config degrades to stock Claude Code rather than a
+  broken shell.
+- **You can see it at a glance.** Every profile has a colour, hashed from its
+  name so two profiles differ with no configuration at all — and
+  [you can pick your own](#colours):
+
+<p>
+  <img alt="work in magenta" src="https://img.shields.io/badge/⚑%20work-bc3fbc?style=flat-square">
+  <img alt="personal in green" src="https://img.shields.io/badge/⚑%20personal-0dbc79?style=flat-square">
+  <img alt="client in cyan" src="https://img.shields.io/badge/⚑%20client-11a8cd?style=flat-square">
+</p>
 
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
-[Install](#install) · [Resolution order](#resolution-order) ·
+[Install details](#install-details) · [Resolution order](#resolution-order) ·
 [Commands](#commands) · [Statusline](#statusline) · [Safety](#safety) ·
 [Development](#development) · [Releasing](#releasing)
 
@@ -289,7 +247,7 @@ aside rather than deleted, and `unshare` removes only the links this created.
 The right-hand column is what keeps two accounts apart, so nothing there is ever
 linked. Use `add --isolated` for a profile that should share nothing.
 
-## Install
+## Install details
 
 What [Quickstart](#quickstart) steps 1 and 2 are doing, and why.
 
@@ -342,11 +300,11 @@ cprof update                     # the plugin
 
 Then restart Claude Code — a running session keeps the version it started with.
 
-Brew-only installs (see [Install](#install)) have nothing for `cprof update`
-to act on and should stop at the first line. Plugin-only installs — the CLI
-reached through the resolver function described under
-[Installing the plugin without Homebrew](#install) instead of Homebrew —
-should stop at the second.
+Brew-only installs (see [Install details](#install-details)) have nothing for
+`cprof update` to act on and should stop at the first line. Plugin-only
+installs — the CLI reached through the resolver function described under
+[Installing the plugin without Homebrew](#install-details) instead of
+Homebrew — should stop at the second.
 
 `cprof update` is exactly the two commands below, run in order. Reach for them
 directly only when `cprof` itself is unreachable, or when you want to see what
@@ -461,16 +419,56 @@ reaches:
   &nbsp;&nbsp;<code>cprof color --text off</code>
 </p>
 
+### Colours
+
 Colours are hashed from the profile name,
 so two profiles differ without any configuration and keep the same colour on
-every machine, because nothing is stored. `cprof color <name>` opens a picker to
-choose one, `cprof color <name> <colour>` sets it directly, and
+every machine, because nothing is stored. `cprof color work red` sets one
+directly (`auto` returns to the hash), and `cprof color work` with no colour
+opens a picker:
+
+<table>
+<tr>
+<td valign="top">
+
+```console
+$ cprof color work
+
+Colour for work
+up/down move, enter select, q cancel
+
+    ⚑ work   auto (magenta)
+  > ⚑ work   red
+    ⚑ work   green
+    ⚑ work   yellow
+```
+
+</td>
+<td valign="top">
+
+The palette, drawn as the badge<br>will actually look:
+
+<img alt="red" src="https://img.shields.io/badge/⚑%20red-cd3131?style=flat-square"><br>
+<img alt="green" src="https://img.shields.io/badge/⚑%20green-0dbc79?style=flat-square"><br>
+<img alt="yellow" src="https://img.shields.io/badge/⚑%20yellow-b5a300?style=flat-square"><br>
+<img alt="blue" src="https://img.shields.io/badge/⚑%20blue-2472c8?style=flat-square"><br>
+<img alt="magenta" src="https://img.shields.io/badge/⚑%20magenta-bc3fbc?style=flat-square"><br>
+<img alt="cyan" src="https://img.shields.io/badge/⚑%20cyan-11a8cd?style=flat-square">
+
+</td>
+</tr>
+</table>
+
+Plus a `bright-` variant of each. The swatches above are approximations — the
+real values are named ANSI colours, so they follow your terminal's theme
+instead of fighting it, and what you see is whatever your theme maps them to,
+not what this page shows. `NO_COLOR` is honoured, and
+`CPROF_COLOR=never|always|auto` overrides the terminal detection the same way
+it does for every other command.
+
 `cprof color --text off` narrows the colour to the flag alone.
 That toggle is statusline-only: `cprof list` and `cprof which` colour the
-profile name unconditionally, regardless of `--text`. Values are named ANSI
-colours, so they follow your terminal's theme instead of fighting it —
-`NO_COLOR` is honoured, and `CPROF_COLOR=never|always|auto` overrides the
-terminal detection the same way it does for every other command.
+profile name unconditionally, regardless of `--text`.
 
 Both settings live in `~/.cprof.json`, alongside profiles and rules, though you
 will normally reach them through the commands above rather than edit the file:
