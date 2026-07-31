@@ -5,6 +5,17 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.8.0]
+
+### Added
+
+- `cprof update` refreshes the marketplace listing and updates the plugin
+  itself, wrapping the two `env -u CLAUDE_CONFIG_DIR claude plugin …` commands
+  documented under [Updating](README.md#updating) so they no longer need to be
+  run by hand or remembered. It covers the plugin only — Updating now also
+  documents `brew upgrade dcotelo/tap/cprof` for the CLI, since the two are
+  installed, and updated, separately.
+
 ## [0.7.0]
 
 ### Changed
