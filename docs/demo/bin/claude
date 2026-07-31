@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Demo stub for the README GIF — prints the statusline badge the real
+# plugin shows, based on the directory, instead of launching Claude Code.
+case "$PWD" in
+  */dev/acme/*|*/dev/acme)
+    printf '\033[35m⚑ work\033[0m \033[2m← the badge says which account\033[0m\n' ;;
+  *)
+    printf '\033[32m⚑ personal\033[0m\n' ;;
+esac
