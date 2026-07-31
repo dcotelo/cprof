@@ -96,3 +96,27 @@ jobs:
             --title "cprof $VERSION" \
             --notes-file notes.md \
             --verify-tag
+
+      # Tell the tap a release exists so it bumps the formula now rather than
+      # on its next scheduled run. github.token cannot reach another
+      # repository, hence a separate secret scoped to contents:write on the tap
+      # and nothing else.
+      #
+      # Never fails the release. The tap polls daily as a backstop, so a
+      # dispatch that does not land costs latency, not correctness — and a
+      # published release that reports failure because a downstream notification
+      # bounced would be the worse outcome.
+      - name: tell the tap to bump the formula
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo 'TAP_DISPATCH_TOKEN is unset; the tap will pick this up on its daily run' >&2
+            exit 0
+          fi
+          gh api repos/dcotelo/homebrew-tap/dispatches \
+            -f event_type=cprof-released \
+            -F "client_payload[tag]=$TAG"
+          printf 'dispatched cprof-released for %s\n' "$TAG"
