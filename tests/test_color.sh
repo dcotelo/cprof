@@ -152,9 +152,15 @@ assert_eq 'false' "$(jq -r '.colorText' "$CPROF_CONFIG")" '--text off clears it'
 assert_fail "$CLI" color --text maybe
 
 # --render is what the statusline segment calls: one subprocess, two fields.
+# Colouring the name is the default: an absent colorText key reads as on, so a
+# config written before the key existed gets the same badge as a new one.
 "$CLI" color work red >/dev/null
+printf '%s' "$(jq 'del(.colorText)' "$CPROF_CONFIG")" > "$CPROF_CONFIG"
+assert_eq "$(printf '31\ton')" "$("$CLI" color --render work)" \
+  '--render treats an absent colorText as on'
+"$CLI" color --text off >/dev/null
 assert_eq "$(printf '31\toff')" "$("$CLI" color --render work)" \
-  '--render prints the SGR parameter and the text flag'
+  '--text off is what turns the name plain'
 "$CLI" color --text on >/dev/null
 assert_eq "$(printf '31\ton')" "$("$CLI" color --render work)" \
   '--render reflects colorText'
