@@ -33,6 +33,21 @@ $ cd ~/dev/side-project && claude
 ⚑ personal
 ```
 
+<!-- Demo GIF slot. Drop the recording at assets/demo.gif and uncomment the
+     block below. Keep it here rather than above the badges: the console block
+     states what happens, the recording shows the badge actually changing
+     colour, which no amount of monospace conveys.
+
+     Recording it: a terminal at 80 columns, two `cd` + `claude` runs against
+     profiles with different colours, ~8 seconds, no keystroke padding. The
+     badge is the subject — start wide enough that the statusline is legible
+     and never resize mid-take.
+
+<p align="center">
+  <img alt="cprof switching accounts by directory" src="assets/demo.gif" width="720">
+</p>
+-->
+
 Each profile is its own Claude config directory with its own credentials, so the
 accounts never touch. A default covers most of your work, a directory rule routes
 a whole tree, and a per-repository pin overrides both.
