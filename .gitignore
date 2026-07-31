@@ -1,4 +1,6 @@
 *.tmp.*
 .DS_Store
+# subagent-driven-development scratch: ledgers, briefs, review packages
+.superpowers/
 # per-machine tool permissions, not part of the plugin
 .claude/settings.local.json

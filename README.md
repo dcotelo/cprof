@@ -11,20 +11,81 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="217 assertions" src="https://img.shields.io/badge/tests-217%20assertions-brightgreen">
+  <img alt="288 assertions" src="https://img.shields.io/badge/tests-288%20assertions-brightgreen">
 </p>
 
-```console
-$ cd ~/dev/<company>/api && cprof which
-work  native (keychain)  rule ~/dev/<company>
+<p align="center">
+  <strong>You have two Claude subscriptions. Claude Code has one login.</strong>
+</p>
 
-$ cd ~/dev/side-project && cprof which
-personal  ~/.claude-profiles/personal  default
+Log in for work, and your side project bills the company. Log in for yourself,
+and the work repo runs on a personal account. Switching means logging out,
+logging back in, and remembering which one you are on — every time you change
+directory.
+
+`cprof` makes the directory decide.
+
+```console
+$ cd ~/dev/acme/api && claude
+⚑ work                                    ← the badge says which account
+
+$ cd ~/dev/side-project && claude
+⚑ personal
 ```
 
-`cprof` stores your Claude accounts as profiles, then picks one for each
-session based on a default, a per-repository pin, or a directory rule — so repos
-under `~/dev/<company>` use the work account and everything else uses personal.
+Each profile is its own Claude config directory with its own credentials, so the
+accounts never touch. A default covers most of your work, a directory rule routes
+a whole tree, and a per-repository pin overrides both.
+
+```console
+$ cprof list
+PROFILE   PLAN  ACCOUNT            FLAGS
+work      team  you@acme.com       native
+personal  max   you@personal.dev   (default) (active)
+
+$ cd ~/dev/acme/api && cprof which
+work  native (keychain)  rule ~/dev/acme
+```
+
+### Why it is built this way
+
+**Nothing is moved, nothing is re-authenticated.** Your existing login stays
+exactly where it is, as a `native` profile. Adding `cprof` to a working setup
+changes nothing about that setup.
+
+**Your customisations follow you.** A Claude config directory holds plugins,
+skills, settings and `CLAUDE.md` as well as credentials — so a naive profile
+switch would silently switch away everything you have installed. `cprof` links
+them, and never links the files that identify you.
+
+**It cannot lose your account.** `login` snapshots the keychain first and
+restores it if a profile login writes to the shared item. `env` never exits
+non-zero, so a broken config degrades to stock Claude Code rather than a broken
+shell.
+
+**You can see it at a glance.** Every profile has a colour, hashed from its name
+so two profiles differ with no configuration at all. `cprof color work red` if
+you would rather choose.
+
+```console
+$ cprof color work            # pick one interactively
+
+Colour for work    up/down move, enter select, q cancel
+
+    ⚑ work   auto (magenta)
+  > ⚑ work   red
+    ⚑ work   green
+```
+
+### Getting it
+
+```bash
+claude plugin marketplace add dcotelo/cprof
+claude plugin install cprof@dcotelo
+```
+
+Then two shell functions — see [Quickstart](#quickstart) for the whole thing,
+about two minutes.
 
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
 [Install](#install) · [Resolution order](#resolution-order) ·
@@ -233,6 +294,9 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof env` | `export`/`unset` statements for `eval` |
 | `cprof add <name> [--dir P] [--native] [--note S] [--isolated]` | Register a profile |
 | `cprof share <name>` / `unshare <name>` | Link `~/.claude` customisations into a profile, or drop the links |
+| `cprof color <name>` | Pick a profile's colour interactively |
+| `cprof color <name> <colour>` | Set it directly; `auto` returns to the hashed colour |
+| `cprof color --text on\|off` | Colour the statusline badge's name as well as its flag |
 | `cprof default <name>` | Set the default profile |
 | `cprof pin [<name>] \| pin --clear` | Pin or unpin this repository |
 | `cprof rule add <path> <name>` | Route a directory tree to a profile |
@@ -257,7 +321,23 @@ table instead of breaking the alignment, and paths under your home print as `~`.
 ⚑ work
 ```
 
-`statusline/segment.sh` prints that one dim line, naming the account the session
+The flag carries the profile's colour. Colours are hashed from the profile name,
+so two profiles differ without any configuration and keep the same colour on
+every machine, because nothing is stored. `cprof color <name>` opens a picker to
+choose one, `cprof color <name> <colour>` sets it directly, and
+`cprof color --text on` colours the badge's name text too, not just the flag.
+That toggle is statusline-only: `cprof list` and `cprof which` colour the
+profile name unconditionally, regardless of `--text`. Values are named ANSI
+colours, so they follow your terminal's theme instead of fighting it —
+`NO_COLOR` is honoured, and `CPROF_COLOR=never|always|auto` overrides the
+terminal detection the same way it does for every other command.
+
+Both settings live in `~/.cprof.json`, alongside profiles and rules, though you
+will normally reach them through the commands above rather than edit the file:
+a `color` field on a profile (`auto`, a base colour, or a `bright-` variant) and
+a top-level `colorText` boolean, defaulting to `false`.
+
+`statusline/segment.sh` prints that one line, naming the account the session
 is running as. Every profile is named, native included — a
 switching tool whose indicator is invisible in the common case teaches you to
 ignore it. The line is omitted only when there is no profile to name: no config,
