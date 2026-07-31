@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.6.1'
+CP_VERSION='0.7.0'
 
 # Follow symlinks to the real file before looking for lib/ beside it. $0 is the
 # path used to invoke, not the file invoked: a Homebrew install links bin/cprof
