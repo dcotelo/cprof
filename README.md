@@ -264,6 +264,48 @@ uses stock keychain behaviour. That is also the silent failure mode worth knowin
 — if `cprof` cannot be reached, `eval` of a failed command is a no-op, so
 `claude` starts stock with only one line on stderr to say so.
 
+### Updating
+
+```bash
+env -u CLAUDE_CONFIG_DIR claude plugin marketplace update dcotelo
+env -u CLAUDE_CONFIG_DIR claude plugin update cprof@dcotelo
+```
+
+Then restart Claude Code — a running session keeps the version it started with.
+
+Both details in those commands are load-bearing, and neither is obvious:
+
+**`env -u CLAUDE_CONFIG_DIR`.** Marketplace commands fail from a directory that
+resolves to a non-native profile:
+
+```
+Failed to refresh marketplace 'dcotelo': corrupted installLocation
+(~/.claude/plugins/marketplaces/dcotelo) — expected a path inside
+~/.claude-profiles/<name>/plugins/marketplaces
+```
+
+This is `cprof`'s own doing. `share` links `plugins` into the profile directory,
+and Claude Code checks that the recorded `installLocation` sits under the config
+directory's plugins path — a check the stored `~/.claude/…` string fails even
+though the symlink resolves to exactly that place. Unsetting the variable for one
+command runs it as the native profile, where the path matches.
+
+**`cprof@dcotelo`, not `cprof`.** `plugin update` does not resolve the bare name
+and reports `Plugin "cprof" not found`, which reads like a broken install rather
+than a naming rule. `plugin list` and `marketplace update` both accept the short
+form, so the inconsistency is in Claude Code, not in this plugin.
+
+Confirm with:
+
+```bash
+cprof version                                  # the version you expected
+env -u CLAUDE_CONFIG_DIR claude plugin list    # cprof@dcotelo, enabled
+```
+
+`failed to load` rather than `enabled` means the plugin is installed but its
+hooks did not register, so the `SessionStart` warning and `/profile` are missing
+even though the CLI still works.
+
 ## Resolution order
 
 First match wins.
