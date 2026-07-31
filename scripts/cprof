@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.7.0'
+CP_VERSION='0.8.0'
 # The plugin's own marketplace and scoped name, consumed by cp_cmd_update.
 # 'update' always targets this specific listing — it is not something a user
 # configures, so it lives next to CP_VERSION rather than in ~/.cprof.json.

@@ -333,11 +333,20 @@ uses stock keychain behaviour. That is also the silent failure mode worth knowin
 
 ### Updating
 
+Two pieces installed, two things to update:
+
 ```bash
-cprof update
+brew upgrade dcotelo/tap/cprof   # the CLI on PATH
+cprof update                     # the plugin
 ```
 
 Then restart Claude Code — a running session keeps the version it started with.
+
+Brew-only installs (see [Install](#install)) have nothing for `cprof update`
+to act on and should stop at the first line. Plugin-only installs — the CLI
+reached through the resolver function described under
+[Installing the plugin without Homebrew](#install) instead of Homebrew —
+should stop at the second.
 
 `cprof update` is exactly the two commands below, run in order. Reach for them
 directly only when `cprof` itself is unreachable, or when you want to see what
