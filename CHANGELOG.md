@@ -5,6 +5,13 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+### Added
+
+- `cprof update` refreshes the marketplace listing and updates the plugin
+  itself, wrapping the two `env -u CLAUDE_CONFIG_DIR claude plugin …` commands
+  documented under [Updating](README.md#updating) so they no longer need to be
+  run by hand or remembered.
+
 ## [0.7.0]
 
 ### Changed

@@ -11,7 +11,7 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="294 assertions" src="https://img.shields.io/badge/tests-294%20assertions-brightgreen">
+  <img alt="300 assertions" src="https://img.shields.io/badge/tests-300%20assertions-brightgreen">
 </p>
 
 <p align="center">
@@ -334,11 +334,19 @@ uses stock keychain behaviour. That is also the silent failure mode worth knowin
 ### Updating
 
 ```bash
-env -u CLAUDE_CONFIG_DIR claude plugin marketplace update dcotelo
-env -u CLAUDE_CONFIG_DIR claude plugin update cprof@dcotelo
+cprof update
 ```
 
 Then restart Claude Code — a running session keeps the version it started with.
+
+`cprof update` is exactly the two commands below, run in order. Reach for them
+directly only when `cprof` itself is unreachable, or when you want to see what
+each step reported:
+
+```bash
+env -u CLAUDE_CONFIG_DIR claude plugin marketplace update dcotelo
+env -u CLAUDE_CONFIG_DIR claude plugin update cprof@dcotelo
+```
 
 Both details in those commands are load-bearing, and neither is obvious:
 
@@ -413,6 +421,7 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof rule rm <path>` | Drop a rule |
 | `cprof login <name>` | Sign a profile in, with keychain protection |
 | `cprof doctor` | Report unauthenticated profiles and expiring tokens |
+| `cprof update` | Refresh the marketplace, then update this plugin |
 | `cprof remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
 
 In a session, `/profile` shows status, `/profile pin <name>` pins the repository.
