@@ -431,9 +431,11 @@ opens a picker:
 <tr>
 <td valign="top">
 
-```console
-$ cprof color work
+```bash
+cprof color work
+```
 
+```text
 Colour for work
 up/down move, enter select, q cancel
 
