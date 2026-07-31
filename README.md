@@ -49,6 +49,12 @@ work  native (keychain)  rule ~/dev/acme
 brew install dcotelo/tap/cprof
 ```
 
+Or without Homebrew — no sudo, installs to `~/.local`, needs `jq` on `PATH`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh | bash
+```
+
 Then one line in your shell config, and you are done:
 
 ```bash
@@ -260,6 +266,13 @@ session — the `SessionStart` warning, `/profile`, and the statusline segment.
 The CLI is what the shell function needs, so brew alone is a working setup; the
 plugin alone is not.
 
+**The curl installer** is the CLI piece without Homebrew, in the same layout
+the formula uses: the latest release's `scripts`, `statusline`, `hooks` and
+`commands` land in `~/.local/share/cprof`, with `~/.local/bin/cprof` a symlink
+into it. It refuses to run without `jq` and warns when `~/.local/bin` is not
+on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0` in front of the
+one-liner; uninstall by deleting those two paths.
+
 <details>
 <summary><strong>Installing the plugin without Homebrew</strong></summary>
 
@@ -299,6 +312,10 @@ cprof update                     # the plugin
 ```
 
 Then restart Claude Code — a running session keeps the version it started with.
+
+A curl install updates its CLI by running the installer one-liner again — it
+replaces `~/.local/share/cprof` with the latest release — with `cprof update`
+still covering the plugin.
 
 Brew-only installs (see [Install details](#install-details)) have nothing for
 `cprof update` to act on and should stop at the first line. Plugin-only
@@ -562,7 +579,7 @@ stock Claude Code behaviour rather than a broken shell.
 ```bash
 bash tests/run.sh                    # run the suite
 shellcheck -x -P scripts -P tests scripts/cprof scripts/lib/*.sh hooks/*.sh \
-  statusline/*.sh tests/*.sh
+  statusline/*.sh tests/*.sh install.sh
 claude plugin validate .             # check the manifests
 ```
 
