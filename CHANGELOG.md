@@ -5,6 +5,26 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.6.1]
+
+### Fixed
+
+- A symlinked `cprof` could not find its library directory, and failed in the
+  worst available direction. `$0` is the path used to invoke, not the file
+  invoked, so `lib/` was looked for beside the link. With it unfound, `cprof`
+  prints `unset CLAUDE_CONFIG_DIR` on stdout and exits 0 — which the shell
+  function evals, so the session quietly ran the native account instead of the
+  profile the directory asked for. Symlinks are now followed to the real file.
+  This is what `ln -s /path/to/cprof ~/bin/cprof` does, and what a Homebrew
+  install does.
+
+### Added
+
+- Documented how to update, including the two requirements that are not
+  obvious: marketplace commands need `env -u CLAUDE_CONFIG_DIR` from a
+  non-native profile directory, and `plugin update` resolves only the qualified
+  `cprof@dcotelo`.
+
 ## [0.6.0]
 
 ### Added

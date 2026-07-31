@@ -11,7 +11,7 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="288 assertions" src="https://img.shields.io/badge/tests-288%20assertions-brightgreen">
+  <img alt="293 assertions" src="https://img.shields.io/badge/tests-293%20assertions-brightgreen">
 </p>
 
 <p align="center">
@@ -114,12 +114,25 @@ theme maps them to, not what this page shows.
 ### Getting it
 
 ```bash
+brew install dcotelo/tap/cprof
+```
+
+Then one line in your shell config, and you are done:
+
+```bash
+claude() { eval "$(cprof env)"; command claude "$@"; }
+```
+
+The Claude Code plugin is optional and adds the ambient parts — a warning when
+you walk into a directory expecting a different account, `/profile`, and the
+statusline badge:
+
+```bash
 claude plugin marketplace add dcotelo/cprof
 claude plugin install cprof@dcotelo
 ```
 
-Then two shell functions — see [Quickstart](#quickstart) for the whole thing,
-about two minutes.
+See [Quickstart](#quickstart) for the whole thing, about two minutes.
 
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
 [Install](#install) · [Resolution order](#resolution-order) ·
@@ -128,21 +141,16 @@ about two minutes.
 
 ## Quickstart
 
-Five steps, about two minutes. Needs macOS and `jq` (`brew install jq`).
+Five steps, about two minutes. Needs macOS.
 
 ```bash
-# 1. install the plugin
+# 1. install the CLI (jq comes with it), and the plugin for the ambient parts
+brew install dcotelo/tap/cprof
 claude plugin marketplace add dcotelo/cprof
 claude plugin install cprof@dcotelo
 
-# 2. reach the CLI, and route `claude` through it
+# 2. route `claude` through it
 cat >> ~/.zshrc <<'RC'
-cprof() {
-  local cli
-  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/scripts/cprof ; } 2>/dev/null | sort -V | tail -1)
-  [ -x "$cli" ] || { print -u2 'cprof: plugin not installed'; return 127; }
-  "$cli" "$@"
-}
 claude() { eval "$(cprof env)"; command claude "$@"; }
 RC
 exec zsh
@@ -285,13 +293,38 @@ linked. Use `add --isolated` for a profile that should share nothing.
 
 What [Quickstart](#quickstart) steps 1 and 2 are doing, and why.
 
-Requires macOS, bash 3.2+ (the system shell), and `jq`.
+Requires macOS and bash 3.2+ (the system shell). Homebrew pulls in `jq`, the
+only other dependency.
 
-Installing the plugin puts nothing on `PATH` — the CLI lives inside a versioned
-cache directory — so the first function reaches it and the second routes `claude`
-through it. Resolving the path at call time means plugin updates need no edit;
-`sort -V` keeps `0.10.0` ahead of `0.9.0`; and the braces around `ls` put zsh's
-own "no matches found" on the suppressed stream when nothing is installed.
+**Two pieces, and you can take either alone.** `brew` installs the CLI on
+`PATH`; the plugin installs the parts that only exist inside a Claude Code
+session — the `SessionStart` warning, `/profile`, and the statusline segment.
+The CLI is what the shell function needs, so brew alone is a working setup; the
+plugin alone is not.
+
+<details>
+<summary><strong>Installing the plugin without Homebrew</strong></summary>
+
+The plugin puts nothing on `PATH` — the CLI lives inside a versioned cache
+directory — so reaching it takes a resolver function:
+
+```bash
+cprof() {
+  local cli
+  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/scripts/cprof ; } 2>/dev/null | sort -V | tail -1)
+  [ -x "$cli" ] || { print -u2 'cprof: plugin not installed'; return 127; }
+  "$cli" "$@"
+}
+```
+
+Resolving at call time means plugin updates need no edit; `sort -V` keeps
+`0.10.0` ahead of `0.9.0`; and the braces around `ls` put zsh's own "no matches
+found" on the suppressed stream when nothing is installed. Install `jq` yourself
+(`brew install jq`).
+
+With both installed, `PATH` wins and this function is unnecessary.
+
+</details>
 
 Skipping the wrapper is always available: `command claude` ignores profiles and
 uses stock keychain behaviour. That is also the silent failure mode worth knowing
