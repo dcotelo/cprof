@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.7.0'
+CP_VERSION='0.8.0'
+# The plugin's own marketplace and scoped name, consumed by cp_cmd_update.
+# 'update' always targets this specific listing — it is not something a user
+# configures, so it lives next to CP_VERSION rather than in ~/.cprof.json.
+CP_MARKETPLACE='dcotelo'
+CP_PLUGIN_SCOPED='cprof@dcotelo'
 
 # Follow symlinks to the real file before looking for lib/ beside it. $0 is the
 # path used to invoke, not the file invoked: a Homebrew install links bin/cprof
@@ -40,6 +45,8 @@ fi
 . "$CP_LIB_DIR/color.sh"
 # shellcheck source=lib/share.sh
 . "$CP_LIB_DIR/share.sh"
+# shellcheck source=lib/update.sh
+. "$CP_LIB_DIR/update.sh"
 
 cp_usage() {
   cat >&2 <<'USAGE'
@@ -64,6 +71,7 @@ usage:
   cprof rule add <path> <name> | rule rm <path> | rule list
   cprof login <name>
   cprof doctor
+  cprof update                      refresh the marketplace, then update this plugin
   cprof remove <name> [--purge]
   cprof version
 
@@ -90,6 +98,7 @@ case "$cmd" in
   color)   cp_cmd_color "$@" ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
+  update)  cp_cmd_update "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
   version|--version|-v) printf 'cprof %s\n' "$CP_VERSION" ;;
   help|--help|-h) cp_usage ;;
