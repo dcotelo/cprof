@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Demo stub for the README GIF — canned output matching the README examples.
+case "$1" in
+  list)
+    printf 'PROFILE   PLAN  ACCOUNT            FLAGS\n'
+    printf '\033[35mwork\033[0m      team  you@acme.com       native\n'
+    printf '\033[32mpersonal\033[0m  max   you@personal.dev   (default) (active)\n'
+    ;;
+  which)
+    printf '\033[35mwork\033[0m  native (keychain)  rule ~/dev/acme\n'
+    ;;
+  *)
+    printf 'demo stub: only list and which are scripted\n' ;;
+esac
