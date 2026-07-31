@@ -119,7 +119,13 @@ cp_cmd_color() {
       cfg="$(cp_config_read 2>/dev/null)" || cfg=''
       name="${2:-}"
       sgr="$(cp_color_code "$(cp_color_for "$cfg" "$name")" 2>/dev/null)"
-      flag="$(printf '%s' "$cfg" | jq -r 'if .colorText then "on" else "off" end' 2>/dev/null)"
+      # Absent means on. Colour that stops at the flag says which profile in a
+      # glyph most people read as decoration; colouring the name puts it on the
+      # word they actually read. `--text off` is there for anyone who disagrees.
+      # Not `.colorText // true`: jq's alternative operator treats false as
+      # absent, so an explicit `--text off` would read as the default and the
+      # toggle would do nothing. Test against false directly.
+      flag="$(printf '%s' "$cfg" | jq -r 'if .colorText == false then "off" else "on" end' 2>/dev/null)"
       [ -n "$flag" ] || flag='off'
       printf '%s\t%s\n' "$sgr" "$flag"
       return 0

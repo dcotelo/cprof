@@ -5,6 +5,19 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.7.0]
+
+### Changed
+
+- The statusline badge colours the profile name as well as the flag by default.
+  Colour that stopped at the glyph put the signal on the part of the badge most
+  people read as decoration, rather than on the word they actually read.
+  `cprof color --text off` narrows it back to the flag alone.
+
+  An absent `colorText` key reads as on, so a config written before this release
+  gets the new badge without being touched. An explicit `--text off` is
+  preserved.
+
 ## [0.6.1]
 
 ### Fixed
