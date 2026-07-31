@@ -3,7 +3,24 @@ set -u
 
 CP_VERSION='0.6.0'
 
-CP_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/lib" 2>/dev/null && pwd -P)"
+# Follow symlinks to the real file before looking for lib/ beside it. $0 is the
+# path used to invoke, not the file invoked: a Homebrew install links bin/cprof
+# at libexec, and people run `ln -s` by hand, and in both cases the invoking
+# directory holds no lib/. Getting this wrong is not a missing-feature failure —
+# the branch below prints `unset CLAUDE_CONFIG_DIR` on stdout, which the shell
+# function evals, so the session would quietly run the wrong account.
+#
+# readlink without -f: the flag is a GNU extension that older macOS lacks.
+CP_SELF="${BASH_SOURCE[0]}"
+while [ -L "$CP_SELF" ]; do
+  CP_LINK="$(readlink "$CP_SELF")"
+  case "$CP_LINK" in
+    /*) CP_SELF="$CP_LINK" ;;
+    *)  CP_SELF="$(dirname "$CP_SELF")/$CP_LINK" ;;
+  esac
+done
+CP_LIB_DIR="$(cd "$(dirname "$CP_SELF")/lib" 2>/dev/null && pwd -P)"
+unset CP_SELF CP_LINK
 if [ -z "$CP_LIB_DIR" ]; then
   printf 'unset CLAUDE_CONFIG_DIR\n'
   printf 'cprof: cannot locate lib directory\n' >&2
