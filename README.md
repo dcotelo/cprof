@@ -11,7 +11,7 @@
   <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
   <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
   <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="288 assertions" src="https://img.shields.io/badge/tests-288%20assertions-brightgreen">
+  <img alt="293 assertions" src="https://img.shields.io/badge/tests-293%20assertions-brightgreen">
 </p>
 
 <p align="center">
@@ -64,28 +64,75 @@ non-zero, so a broken config degrades to stock Claude Code rather than a broken
 shell.
 
 **You can see it at a glance.** Every profile has a colour, hashed from its name
-so two profiles differ with no configuration at all. `cprof color work red` if
-you would rather choose.
+so two profiles differ with no configuration at all:
+
+<p>
+  <img alt="work in magenta" src="https://img.shields.io/badge/⚑%20work-bc3fbc?style=flat-square">
+  <img alt="personal in green" src="https://img.shields.io/badge/⚑%20personal-0dbc79?style=flat-square">
+  <img alt="client in cyan" src="https://img.shields.io/badge/⚑%20client-11a8cd?style=flat-square">
+</p>
+
+`cprof color work red` if you would rather choose, or run it with no colour to
+pick from the palette:
+
+<table>
+<tr>
+<td valign="top">
 
 ```console
-$ cprof color work            # pick one interactively
+$ cprof color work
 
-Colour for work    up/down move, enter select, q cancel
+Colour for work
+up/down move, enter select, q cancel
 
     ⚑ work   auto (magenta)
   > ⚑ work   red
     ⚑ work   green
+    ⚑ work   yellow
 ```
 
+</td>
+<td valign="top">
+
+The palette, drawn as the badge<br>will actually look:
+
+<img alt="red" src="https://img.shields.io/badge/⚑%20red-cd3131?style=flat-square"><br>
+<img alt="green" src="https://img.shields.io/badge/⚑%20green-0dbc79?style=flat-square"><br>
+<img alt="yellow" src="https://img.shields.io/badge/⚑%20yellow-b5a300?style=flat-square"><br>
+<img alt="blue" src="https://img.shields.io/badge/⚑%20blue-2472c8?style=flat-square"><br>
+<img alt="magenta" src="https://img.shields.io/badge/⚑%20magenta-bc3fbc?style=flat-square"><br>
+<img alt="cyan" src="https://img.shields.io/badge/⚑%20cyan-11a8cd?style=flat-square">
+
+</td>
+</tr>
+</table>
+
+Plus a `bright-` variant of each. The swatches above are approximations — the
+real values are named ANSI colours, so what you see is whatever your terminal
+theme maps them to, not what this page shows.
+
 ### Getting it
+
+```bash
+brew install dcotelo/tap/cprof
+```
+
+Then one line in your shell config, and you are done:
+
+```bash
+claude() { eval "$(cprof env)"; command claude "$@"; }
+```
+
+The Claude Code plugin is optional and adds the ambient parts — a warning when
+you walk into a directory expecting a different account, `/profile`, and the
+statusline badge:
 
 ```bash
 claude plugin marketplace add dcotelo/cprof
 claude plugin install cprof@dcotelo
 ```
 
-Then two shell functions — see [Quickstart](#quickstart) for the whole thing,
-about two minutes.
+See [Quickstart](#quickstart) for the whole thing, about two minutes.
 
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
 [Install](#install) · [Resolution order](#resolution-order) ·
@@ -94,21 +141,16 @@ about two minutes.
 
 ## Quickstart
 
-Five steps, about two minutes. Needs macOS and `jq` (`brew install jq`).
+Five steps, about two minutes. Needs macOS.
 
 ```bash
-# 1. install the plugin
+# 1. install the CLI (jq comes with it), and the plugin for the ambient parts
+brew install dcotelo/tap/cprof
 claude plugin marketplace add dcotelo/cprof
 claude plugin install cprof@dcotelo
 
-# 2. reach the CLI, and route `claude` through it
+# 2. route `claude` through it
 cat >> ~/.zshrc <<'RC'
-cprof() {
-  local cli
-  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/scripts/cprof ; } 2>/dev/null | sort -V | tail -1)
-  [ -x "$cli" ] || { print -u2 'cprof: plugin not installed'; return 127; }
-  "$cli" "$@"
-}
 claude() { eval "$(cprof env)"; command claude "$@"; }
 RC
 exec zsh
@@ -251,18 +293,85 @@ linked. Use `add --isolated` for a profile that should share nothing.
 
 What [Quickstart](#quickstart) steps 1 and 2 are doing, and why.
 
-Requires macOS, bash 3.2+ (the system shell), and `jq`.
+Requires macOS and bash 3.2+ (the system shell). Homebrew pulls in `jq`, the
+only other dependency.
 
-Installing the plugin puts nothing on `PATH` — the CLI lives inside a versioned
-cache directory — so the first function reaches it and the second routes `claude`
-through it. Resolving the path at call time means plugin updates need no edit;
-`sort -V` keeps `0.10.0` ahead of `0.9.0`; and the braces around `ls` put zsh's
-own "no matches found" on the suppressed stream when nothing is installed.
+**Two pieces, and you can take either alone.** `brew` installs the CLI on
+`PATH`; the plugin installs the parts that only exist inside a Claude Code
+session — the `SessionStart` warning, `/profile`, and the statusline segment.
+The CLI is what the shell function needs, so brew alone is a working setup; the
+plugin alone is not.
+
+<details>
+<summary><strong>Installing the plugin without Homebrew</strong></summary>
+
+The plugin puts nothing on `PATH` — the CLI lives inside a versioned cache
+directory — so reaching it takes a resolver function:
+
+```bash
+cprof() {
+  local cli
+  cli=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/scripts/cprof ; } 2>/dev/null | sort -V | tail -1)
+  [ -x "$cli" ] || { print -u2 'cprof: plugin not installed'; return 127; }
+  "$cli" "$@"
+}
+```
+
+Resolving at call time means plugin updates need no edit; `sort -V` keeps
+`0.10.0` ahead of `0.9.0`; and the braces around `ls` put zsh's own "no matches
+found" on the suppressed stream when nothing is installed. Install `jq` yourself
+(`brew install jq`).
+
+With both installed, `PATH` wins and this function is unnecessary.
+
+</details>
 
 Skipping the wrapper is always available: `command claude` ignores profiles and
 uses stock keychain behaviour. That is also the silent failure mode worth knowing
 — if `cprof` cannot be reached, `eval` of a failed command is a no-op, so
 `claude` starts stock with only one line on stderr to say so.
+
+### Updating
+
+```bash
+env -u CLAUDE_CONFIG_DIR claude plugin marketplace update dcotelo
+env -u CLAUDE_CONFIG_DIR claude plugin update cprof@dcotelo
+```
+
+Then restart Claude Code — a running session keeps the version it started with.
+
+Both details in those commands are load-bearing, and neither is obvious:
+
+**`env -u CLAUDE_CONFIG_DIR`.** Marketplace commands fail from a directory that
+resolves to a non-native profile:
+
+```
+Failed to refresh marketplace 'dcotelo': corrupted installLocation
+(~/.claude/plugins/marketplaces/dcotelo) — expected a path inside
+~/.claude-profiles/<name>/plugins/marketplaces
+```
+
+This is `cprof`'s own doing. `share` links `plugins` into the profile directory,
+and Claude Code checks that the recorded `installLocation` sits under the config
+directory's plugins path — a check the stored `~/.claude/…` string fails even
+though the symlink resolves to exactly that place. Unsetting the variable for one
+command runs it as the native profile, where the path matches.
+
+**`cprof@dcotelo`, not `cprof`.** `plugin update` does not resolve the bare name
+and reports `Plugin "cprof" not found`, which reads like a broken install rather
+than a naming rule. `plugin list` and `marketplace update` both accept the short
+form, so the inconsistency is in Claude Code, not in this plugin.
+
+Confirm with:
+
+```bash
+cprof version                                  # the version you expected
+env -u CLAUDE_CONFIG_DIR claude plugin list    # cprof@dcotelo, enabled
+```
+
+`failed to load` rather than `enabled` means the plugin is installed but its
+hooks did not register, so the `SessionStart` warning and `/profile` are missing
+even though the CLI still works.
 
 ## Resolution order
 
@@ -321,7 +430,20 @@ table instead of breaking the alignment, and paths under your home print as `~`.
 ⚑ work
 ```
 
-The flag carries the profile's colour. Colours are hashed from the profile name,
+The flag carries the profile's colour, and `--text` decides whether the name
+follows it:
+
+<p>
+  <img alt="default: flag coloured, name dim" src="https://img.shields.io/badge/⚑-bc3fbc?style=flat-square&label=&labelColor=bc3fbc">
+  <img alt="work" src="https://img.shields.io/badge/work-6e7681?style=flat-square">
+  &nbsp;&nbsp;<code>default — flag coloured, name dim</code>
+</p>
+<p>
+  <img alt="--text on: both coloured" src="https://img.shields.io/badge/⚑%20work-bc3fbc?style=flat-square">
+  &nbsp;&nbsp;<code>cprof color --text on</code>
+</p>
+
+Colours are hashed from the profile name,
 so two profiles differ without any configuration and keep the same colour on
 every machine, because nothing is stored. `cprof color <name>` opens a picker to
 choose one, `cprof color <name> <colour>` sets it directly, and
