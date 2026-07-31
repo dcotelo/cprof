@@ -25,13 +25,9 @@ directory.
 
 `cprof` makes the directory decide.
 
-```console
-$ cd ~/dev/acme/api && claude
-⚑ work                                    ← the badge says which account
-
-$ cd ~/dev/side-project && claude
-⚑ personal
-```
+<p align="center">
+  <img alt="cd into a work repo and claude runs as work; cd into a side project and it runs as personal" src="docs/demo.gif" width="720">
+</p>
 
 Each profile is its own Claude config directory with its own credentials, so the
 accounts never touch. A default covers most of your work, a directory rule routes
