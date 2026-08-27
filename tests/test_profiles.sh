@@ -55,6 +55,14 @@ assert_eq 'null' "$(cfg_get '.repos["'"$CP_T_TMP"'/repo"] // "null"')" 'pin --cl
 ( cd "$CP_T_TMP/repo" && "$CLI" pin >/dev/null 2>&1 )
 assert_eq 'work' "$(cfg_get '.repos["'"$CP_T_TMP"'/repo"]')" 'bare pin stores the resolved profile'
 
+# pin reports what it did on stderr, leaving stdout clean
+msg="$( (cd "$CP_T_TMP/repo" && "$CLI" pin personal >/dev/null) 2>&1 )"
+assert_eq "cprof: pinned $CP_T_TMP/repo to personal" "$msg" 'pin confirms on stderr'
+msg="$( (cd "$CP_T_TMP/repo" && "$CLI" pin --clear >/dev/null) 2>&1 )"
+assert_eq "cprof: unpinned $CP_T_TMP/repo" "$msg" 'pin --clear confirms on stderr'
+msg="$( (cd "$CP_T_TMP/repo" && "$CLI" pin --clear >/dev/null) 2>&1 )"
+assert_eq "cprof: no pin for $CP_T_TMP/repo" "$msg" 'clearing an absent pin says so'
+
 # remove
 assert_ok   "$CLI" remove personal
 assert_fail "$CLI" remove personal

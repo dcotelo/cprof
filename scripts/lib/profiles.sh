@@ -76,8 +76,13 @@ cp_cmd_pin() {
   cfg="$(cp_config_read)" || return 1
   root="$(cp_repo_root)"
   if [ "$arg" = '--clear' ]; then
-    printf '%s' "$cfg" | jq --arg r "$root" 'del(.repos[$r])' | cp_config_write
-    return $?
+    if ! printf '%s' "$cfg" | jq -e --arg r "$root" '.repos[$r]' >/dev/null; then
+      cp_warn "no pin for $(cp_path_display "$root")"
+      return 0
+    fi
+    printf '%s' "$cfg" | jq --arg r "$root" 'del(.repos[$r])' | cp_config_write || return 1
+    cp_warn "unpinned $(cp_path_display "$root")"
+    return 0
   fi
   if [ -n "$arg" ]; then
     name="$arg"
@@ -86,7 +91,8 @@ cp_cmd_pin() {
     [ -n "$name" ] || { cp_warn 'pin: nothing resolved for this directory; name a profile'; return 1; }
   fi
   cp_profile_exists "$cfg" "$name" || { cp_warn "unknown profile $name"; return 1; }
-  printf '%s' "$cfg" | jq --arg r "$root" --arg n "$name" '.repos[$r] = $n' | cp_config_write
+  printf '%s' "$cfg" | jq --arg r "$root" --arg n "$name" '.repos[$r] = $n' | cp_config_write || return 1
+  cp_warn "pinned $(cp_path_display "$root") to $name"
 }
 
 # Rules in the order resolution consults them: longest path prefix first. A rule
