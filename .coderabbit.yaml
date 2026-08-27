@@ -1,0 +1,25 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/reference/yaml-template
+language: en-US
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "scripts/**"
+      instructions: >-
+        Bash CLI. User-facing messages go to stderr via cp_warn; stdout is
+        reserved for shell-eval output (cprof env). Paths shown to users go
+        through cp_path_display; stored paths stay absolute via
+        cp_path_normalize. Flag any new command output that breaks these
+        conventions.
+    - path: "tests/**"
+      instructions: >-
+        Tests use the harness in tests/lib.sh (assert_eq, assert_ok,
+        assert_fail). Every behavior change in scripts/ should carry a
+        matching assertion.
+  tools:
+    shellcheck:
+      enabled: true
