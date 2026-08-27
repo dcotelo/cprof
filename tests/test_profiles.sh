@@ -55,13 +55,31 @@ assert_eq 'null' "$(cfg_get '.repos["'"$CP_T_TMP"'/repo"] // "null"')" 'pin --cl
 ( cd "$CP_T_TMP/repo" && "$CLI" pin >/dev/null 2>&1 )
 assert_eq 'work' "$(cfg_get '.repos["'"$CP_T_TMP"'/repo"]')" 'bare pin stores the resolved profile'
 
-# pin reports what it did on stderr, leaving stdout clean
-msg="$( (cd "$CP_T_TMP/repo" && "$CLI" pin personal >/dev/null) 2>&1 )"
-assert_eq "cprof: pinned $CP_T_TMP/repo to personal" "$msg" 'pin confirms on stderr'
-msg="$( (cd "$CP_T_TMP/repo" && "$CLI" pin --clear >/dev/null) 2>&1 )"
-assert_eq "cprof: unpinned $CP_T_TMP/repo" "$msg" 'pin --clear confirms on stderr'
-msg="$( (cd "$CP_T_TMP/repo" && "$CLI" pin --clear >/dev/null) 2>&1 )"
-assert_eq "cprof: no pin for $CP_T_TMP/repo" "$msg" 'clearing an absent pin says so'
+# pin reports what it did on stderr, leaving stdout clean and exiting 0
+pin_run() { out="$( (cd "$CP_T_TMP/repo" && "$CLI" "$@" 2>"$CP_T_TMP/err") )"; rc=$?; err="$(cat "$CP_T_TMP/err")"; }
+pin_run pin personal
+assert_eq '0' "$rc" 'pin exits 0'
+assert_eq '' "$out" 'pin keeps stdout clean'
+assert_eq "cprof: pinned $CP_T_TMP/repo to personal" "$err" 'pin confirms on stderr'
+pin_run pin --clear
+assert_eq '0' "$rc" 'pin --clear exits 0'
+assert_eq '' "$out" 'pin --clear keeps stdout clean'
+assert_eq "cprof: unpinned $CP_T_TMP/repo" "$err" 'pin --clear confirms on stderr'
+pin_run pin --clear
+assert_eq '0' "$rc" 'clearing an absent pin still exits 0'
+assert_eq '' "$out" 'clearing an absent pin keeps stdout clean'
+assert_eq "cprof: no pin for $CP_T_TMP/repo" "$err" 'clearing an absent pin says so'
+
+# a failed config write fails the command and never claims success
+mkdir -p "$CP_T_TMP/ro"
+cp "$CPROF_CONFIG" "$CP_T_TMP/ro/config.json"
+chmod 500 "$CP_T_TMP/ro"
+out="$( (cd "$CP_T_TMP/repo" && CPROF_CONFIG="$CP_T_TMP/ro/config.json" "$CLI" pin personal 2>"$CP_T_TMP/err") )"; rc=$?
+case "$(cat "$CP_T_TMP/err")" in *pinned*) claimed=yes ;; *) claimed=no ;; esac
+assert_eq '1' "$rc" 'pin fails when the config write fails'
+assert_eq '' "$out" 'failed pin keeps stdout clean'
+assert_eq 'no' "$claimed" 'failed pin does not claim success'
+chmod 700 "$CP_T_TMP/ro"
 
 # remove
 assert_ok   "$CLI" remove personal
