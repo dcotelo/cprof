@@ -41,7 +41,7 @@ code execution via the installer or hooks.
 - **The installer fetch has no independent digest.** `install.sh` is fetched
   from `main` over TLS and has no out-of-band checksum or signature; its
   integrity rests on GitHub's TLS plus the documented review-before-run step.
-  The tarball it then downloads comes from the GitHub API rather than the
+  The tarball it then downloads comes from GitHub's tag archive endpoint rather than the
   checksummed release asset. Homebrew remains the verified-install path — the
   formula pins a checksum.
 - **Local same-user malware** can do everything cprof can. No sandbox is
