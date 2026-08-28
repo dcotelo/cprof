@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Installs the cprof CLI without Homebrew:
 #
-#   curl -fsSL https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh | bash
+#   curl -fsSLO https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh && less install.sh
+#   bash install.sh   # after review
 #
 # Mirrors what the Homebrew formula does: the release tarball's scripts,
 # statusline, hooks and commands directories go to ~/.local/share/cprof, and

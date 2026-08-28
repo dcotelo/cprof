@@ -1,18 +1,15 @@
-<h1 align="center">⚑ cprof</h1>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:1a1b27,50:414868,100:7aa2f7&height=200&section=header&text=%E2%9A%91%20cprof&fontSize=52&fontColor=c0caf5&animation=fadeIn&fontAlignY=35&desc=One%20personal%20Claude%20subscription%2C%20one%20for%20work%20%E2%80%94%20the%20right%20account%20per%20repository&descSize=16&descAlignY=55" width="100%" alt="cprof — one personal Claude subscription, one for work; the right account per repository, without thinking about it" />
 
-<p align="center">
-  <em>One personal Claude subscription, one for work.<br>
-  The right account per repository, without thinking about it.</em>
-</p>
+<div align="center">
 
-<p align="center">
-  <a href="https://github.com/dcotelo/cprof/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/dcotelo/cprof/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-blue">
-  <img alt="platform macOS" src="https://img.shields.io/badge/platform-macOS-lightgrey">
-  <img alt="bash 3.2+" src="https://img.shields.io/badge/bash-3.2%2B-green">
-  <img alt="requires jq" src="https://img.shields.io/badge/requires-jq-orange">
-  <img alt="300 assertions" src="https://img.shields.io/badge/tests-300%20assertions-brightgreen">
-</p>
+[![CI](https://img.shields.io/github/actions/workflow/status/dcotelo/cprof/ci.yml?style=for-the-badge&label=CI&labelColor=1a1b27&color=7aa2f7)](https://github.com/dcotelo/cprof/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-MIT-1a1b27?style=for-the-badge&color=414868)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
+[![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](#development)
+[![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
+[![Tests](https://img.shields.io/badge/Tests-300%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
+
+</div>
 
 <p align="center">
   <strong>You have two Claude subscriptions. Claude Code has one login.</strong>
@@ -49,10 +46,17 @@ work  native (keychain)  rule ~/dev/acme
 brew install dcotelo/tap/cprof
 ```
 
-Or without Homebrew — no sudo, installs to `~/.local`, needs `jq` on `PATH`:
+Or without Homebrew — no sudo, installs to `~/.local`, needs `jq` on `PATH`.
+Download the installer, read it, then run it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh | bash
+curl -fsSLO https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh && less install.sh
+```
+
+then, once it reads right:
+
+```bash
+bash install.sh
 ```
 
 Then one line in your shell config, and you are done:
@@ -270,8 +274,8 @@ plugin alone is not.
 the formula uses: the latest release's `scripts`, `statusline`, `hooks` and
 `commands` land in `~/.local/share/cprof`, with `~/.local/bin/cprof` a symlink
 into it. It refuses to run without `jq` and warns when `~/.local/bin` is not
-on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0` in front of the
-one-liner; uninstall by deleting those two paths.
+on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0 bash install.sh`;
+uninstall by deleting those two paths.
 
 <details>
 <summary><strong>Installing the plugin without Homebrew</strong></summary>
@@ -313,7 +317,7 @@ cprof update                     # the plugin
 
 Then restart Claude Code — a running session keeps the version it started with.
 
-A curl install updates its CLI by running the installer one-liner again — it
+A curl install updates its CLI by running the installer again — it
 replaces `~/.local/share/cprof` with the latest release — with `cprof update`
 still covering the plugin.
 
@@ -588,6 +592,11 @@ Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
 Targets bash 3.2 (macOS system bash), with `jq` as the only external dependency.
 
+Found a bug? [Open an issue](https://github.com/dcotelo/cprof/issues) —
+templates are provided. Security problems go through
+[private vulnerability reporting](https://github.com/dcotelo/cprof/security/advisories/new)
+instead; see [SECURITY.md](SECURITY.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 Tests sandbox `HOME`, the config path, the `claude` binary, and the `security`
 binary. No test touches the real keychain or a real account.
 
@@ -624,3 +633,11 @@ The plugin cache is keyed by version, so a release without a version bump gives
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+<div align="center">
+
+**Maintained by [@dcotelo](https://github.com/dcotelo)** · [dcotelo.dev](https://dcotelo.dev)
+
+</div>
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:7aa2f7,50:414868,100:1a1b27&height=120&section=footer" width="100%" alt="" />
