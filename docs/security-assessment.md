@@ -27,7 +27,7 @@ code execution via the installer or hooks.
 
 | Surface | Threat | Mitigation |
 |---------|--------|------------|
-| `install.sh` (remote fetch) | Tampered or truncated installer executes | Docs instruct download → review → run, never `curl \| bash`; TLS to github.com; release tarballs ship with `checksums.txt` (release.yml); installer runs `set -eu` |
+| `install.sh` (remote fetch) | Tampered or truncated installer executes | Docs instruct download → review → run, never `curl \| bash`; TLS to github.com; installer runs `set -eu`. Release tarballs ship with `checksums.txt` (release.yml) — verify with `shasum -a 256 -c checksums.txt` next to the downloaded tarball. The checksum covers release archives only; see accepted risks for the installer fetch itself |
 | Config file | Malicious or corrupt JSON reroutes credentials or breaks resolution | `cp_config_read` validates with `jq -e` and refuses malformed input; `cp_config_write` is atomic (temp + `mv`), refuses invalid or empty JSON; file lives under the user's own `$HOME` — writing it already requires user-level access |
 | Profile directories | Other local users read credentials | Created `chmod 700`; `~/.claude` refused as a profile dir (`cp_forbidden_dir`) so cprof never manages or purges the native store |
 | `remove --purge` | Destructive deletion of a credential store | Interactive y/N confirmation; refuses `~/.claude` outright |
@@ -38,6 +38,12 @@ code execution via the installer or hooks.
 
 ## Accepted risks
 
+- **The installer fetch has no independent digest.** `install.sh` is fetched
+  from `main` over TLS and has no out-of-band checksum or signature; its
+  integrity rests on GitHub's TLS plus the documented review-before-run step.
+  The tarball it then downloads comes from the GitHub API rather than the
+  checksummed release asset. Homebrew remains the verified-install path — the
+  formula pins a checksum.
 - **Local same-user malware** can do everything cprof can. No sandbox is
   claimed; cprof is a convenience layer inside the user's own account.
 - **`claude` binary trust** — cprof execs whatever `claude` resolves to
