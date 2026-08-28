@@ -27,3 +27,6 @@ Claude account credentials and keychain entries, so treat anything touching
 In scope: the `cprof` CLI, its library scripts, the shell hooks and
 statusline segment, and `install.sh`. Out of scope: Claude Code itself,
 Homebrew, and vulnerabilities requiring an already-compromised local account.
+
+The threat model and mitigations are documented in
+[docs/security-assessment.md](docs/security-assessment.md).

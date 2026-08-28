@@ -88,6 +88,18 @@ jobs:
           fi
           cat notes.md
 
+      # OSPS-BR-06.01: every release asset is accounted for in a hash manifest.
+      # The tarball is built here rather than trusting the auto-generated one,
+      # whose bytes GitHub does not guarantee stable over time.
+      - name: tarball and checksums
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          git archive --format=tar.gz --prefix="cprof-$VERSION/" \
+            -o "cprof-$VERSION.tar.gz" HEAD
+          sha256sum "cprof-$VERSION.tar.gz" > checksums.txt
+          cat checksums.txt
+
       - name: create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -97,7 +109,8 @@ jobs:
           gh release create "$TAG" \
             --title "cprof $VERSION" \
             --notes-file notes.md \
-            --verify-tag
+            --verify-tag \
+            "cprof-$VERSION.tar.gz" checksums.txt
 
       # Tell the tap a release exists so it bumps the formula now rather than
       # on its next scheduled run. github.token cannot reach another
