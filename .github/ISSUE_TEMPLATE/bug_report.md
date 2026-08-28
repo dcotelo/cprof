@@ -19,7 +19,7 @@ $ cprof status
 - macOS version:
 - `bash --version` (first line):
 - `cprof version`:
-- Install method: brew / curl installer / plugin
+- Install method: brew / downloaded installer (install.sh) / plugin
 
 **Notes**
 `cprof status` and `cprof list` output never contains credentials, but check

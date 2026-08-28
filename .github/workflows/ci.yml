@@ -17,6 +17,8 @@ jobs:
       SHELLCHECK_VERSION: '0.11.0'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: shellcheck
         run: |
           curl -fsSL --retry 3 \
@@ -34,6 +36,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: shell version
         run: /bin/bash --version | head -1
       - name: suite
@@ -43,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: manifests parse and agree
         run: bash tests/test_manifest.sh
       - name: plugin validate

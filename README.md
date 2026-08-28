@@ -50,8 +50,12 @@ Or without Homebrew — no sudo, installs to `~/.local`, needs `jq` on `PATH`.
 Download the installer, read it, then run it:
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh
-less install.sh   # it's short — see what it will do
+curl -fsSLO https://raw.githubusercontent.com/dcotelo/cprof/main/install.sh && less install.sh
+```
+
+then, once it reads right:
+
+```bash
 bash install.sh
 ```
 
@@ -270,8 +274,8 @@ plugin alone is not.
 the formula uses: the latest release's `scripts`, `statusline`, `hooks` and
 `commands` land in `~/.local/share/cprof`, with `~/.local/bin/cprof` a symlink
 into it. It refuses to run without `jq` and warns when `~/.local/bin` is not
-on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0` in front of the
-one-liner; uninstall by deleting those two paths.
+on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0 bash install.sh`;
+uninstall by deleting those two paths.
 
 <details>
 <summary><strong>Installing the plugin without Homebrew</strong></summary>
