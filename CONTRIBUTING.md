@@ -29,6 +29,12 @@
 - **Conventions.** User-facing messages go to stderr via `cp_warn`; stdout is
   reserved for shell-eval output (`cprof env`). Paths shown to users go through
   `cp_path_display`; stored paths stay absolute via `cp_path_normalize`.
+- **[Conventional Commits](https://www.conventionalcommits.org) subjects.** These
+  are load-bearing, not just tidy: CI reads them to decide whether merging your
+  branch publishes a release, and at what version. `feat:` is a minor, `fix:`
+  and `perf:` are patches, a `!` before the colon is a major, and `docs:`,
+  `chore:`, `test:`, `ci:` and `refactor:` publish nothing. See
+  [README → Releasing](README.md#releasing).
 
 ## Error-handling convention
 

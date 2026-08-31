@@ -1,0 +1,80 @@
+name: release-bump
+
+# Bumps the version inside the pull request, so that merging a feature is what
+# publishes it. tag.yml then sees the manifest change land on main and releases.
+#
+# The bump rides in the branch rather than being committed to main by a bot,
+# because main-protection has no bypass for Actions — and opening one would let
+# any workflow holding contents:write commit to main unreviewed, which costs
+# more than the automation is worth.
+#
+# Re-running is safe: the version is computed from the last release tag rather
+# than from the manifests, so a branch that already carries its bump computes
+# the same answer, writes the same bytes, and pushes nothing.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-bump-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    # A pull request from a fork gets a read-only token, so the push could only
+    # fail. Those get bumped by hand, in a follow-up on a branch here.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Credentials are persisted here on purpose — unlike the other workflows,
+      # this job's whole job is to push. Full history: the last tag is what the
+      # next version is computed from, and a shallow clone brings no tags.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: bump the version when the branch warrants a release
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -eu
+
+          last="$(git describe --tags --abbrev=0 --match 'cprof--v*' 2>/dev/null || true)"
+          if [ -n "$last" ]; then
+            current="${last#cprof--v}"
+            range="$last..HEAD"
+          else
+            current="$(jq -r .version .claude-plugin/plugin.json)"
+            range=HEAD
+          fi
+
+          # --no-merges: a merge subject is prose, and prose is not a release.
+          subjects="$(git log --no-merges --format='%s' "$range")"
+
+          next="$(printf '%s\n' "$subjects" \
+            | bash .github/scripts/release-version.sh next "$current")"
+          if [ -z "$next" ]; then
+            printf 'nothing on this branch warrants a release (last was %s)\n' "$current"
+            exit 0
+          fi
+
+          printf '%s\n' "$subjects" \
+            | bash .github/scripts/release-version.sh apply "$next"
+
+          if git diff --quiet; then
+            printf 'already bumped to %s\n' "$next"
+            exit 0
+          fi
+
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -am "chore(release): $next"
+          git push origin "HEAD:$HEAD_REF"
+          printf 'bumped to %s\n' "$next"

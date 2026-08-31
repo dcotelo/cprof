@@ -602,25 +602,45 @@ binary. No test touches the real keychain or a real account.
 
 ## Releasing
 
-Version lives in four places that must agree — `CP_VERSION` in `scripts/cprof`,
-`plugin.json`, the `marketplace.json` metadata, and its plugin entry.
-`tests/test_manifest.sh` fails when the manifests drift, `tests/test_cli.sh`
-fails when `CP_VERSION` disagrees with them, and both fail again if
-`CHANGELOG.md` has no section for the version, since the release notes are read
-from it.
+Merging a release-worthy pull request is releasing. Open one as usual;
+`release-bump.yml` reads the
+[Conventional Commits](https://www.conventionalcommits.org) subjects on the
+branch, works out whether they warrant a release, and if they do, commits the
+version bump and a `CHANGELOG.md` section to the branch:
+
+| Commit type on the branch | Effect |
+|---|---|
+| `feat!:`, or any type with `!` | major |
+| `feat:` | minor |
+| `fix:`, `perf:` | patch |
+| `docs:`, `chore:`, `test:`, `ci:`, `refactor:` | no release |
+
+The bump lands in the pull request, so it is reviewable and editable before it
+ships — **rewrite the generated CHANGELOG entries into prose before merging**,
+since generated notes read like a commit log. Anything already written by hand
+under `## [Unreleased]` is promoted as-is instead of being generated over.
+
+Merging then puts the manifest change on `main`, where `tag.yml` tags
+`cprof--v<version>` and calls the release workflow: it re-verifies the tag
+against the manifests, runs the suite on macOS, and publishes a GitHub release
+with that CHANGELOG section as its notes and a `checksums.txt` beside the
+tarball.
+
+The version lives in four places that must agree — `CP_VERSION` in
+`scripts/cprof`, `plugin.json`, the `marketplace.json` metadata, and its plugin
+entry. The bump writes all four; `tests/test_manifest.sh` and
+`tests/test_cli.sh` fail when they drift, or when `CHANGELOG.md` has no section
+for the version.
+
+To release by hand instead — a fork's pull request cannot be bumped by CI, since
+its token is read-only:
 
 ```bash
-# 1. bump all three, add the CHANGELOG section, commit
+bash .github/scripts/release-version.sh apply <version>   # or edit the four by hand
 bash tests/run.sh && claude plugin validate .
-
-# 2. tag: refuses a dirty tree, and checks the manifests agree
-claude plugin tag . --dry-run
-claude plugin tag . --push
 ```
 
-Pushing a `cprof--v<version>` tag runs the release workflow, which
-re-verifies that the tag matches the manifests, runs the suite on macOS, then
-publishes a GitHub release with that CHANGELOG section as its notes.
+then merge, or tag directly with `claude plugin tag . --push`.
 
 Installs track the marketplace, so consumers update with:
 
