@@ -34,6 +34,7 @@ code execution via the installer or hooks.
 | Environment (`CLAUDE_PROFILE`, `CPROF_CONFIG`, `CP_CLAUDE_BIN`, `CP_SECURITY_BIN`) | PATH/env hijack substitutes binaries or config | Same trust domain as the user's shell: anything able to set these can already run code as the user. Overrides exist for tests; no privilege boundary is claimed or crossed — cprof never runs as root and never writes outside `$HOME` |
 | stdout eval (`cprof env`) | Injected output evaluated by the shell | stdout is reserved for shell-eval lines; all human messages go to stderr (`cp_warn`); values are shell-quoted (`cp_shquote`) |
 | CI / release pipeline | Compromised action or leaked token publishes a malicious release | All third-party actions pinned to commit SHAs; workflows default `permissions: contents: read`, escalating per-job; checkouts that never push set `persist-credentials: false`; tap dispatch uses a separate token scoped to the tap repo only; secret scanning + Scorecard + Dependabot alerts enabled |
+| Version-bump automation (`release-bump.yml`) | A workflow with `contents: write` pushes unreviewed code | It pushes only to the pull request branch it runs on, never to `main`, and skips pull requests from forks (whose token is read-only anyway); its commit is reviewable before merge like any other. The bump it writes still has to pass `main-protection` |
 | Keychain reads | Credential exposure through cprof output | cprof reads auth *status* via `claude auth status --json` and `security`(1) lookups; token values are never printed — status output carries plan/account, not secrets |
 
 ## Accepted risks
@@ -49,8 +50,11 @@ code execution via the installer or hooks.
 - **`claude` binary trust** — cprof execs whatever `claude` resolves to
   (or `CP_CLAUDE_BIN`). It does not verify that binary; that is Claude Code's
   installer's job.
-- **No commit signing / DCO** — solo-maintainer repo; merges require PR +
-  passing checks under an active ruleset with no bypass actors.
+- **No commit signing / DCO** — solo-maintainer repo; merges require a pull
+  request and passing checks under the active `main-protection` ruleset. The
+  repository admin role can bypass it, which is how a sole maintainer merges
+  their own work; no automation holds that bypass, so no workflow can commit to
+  `main`.
 
 ## Reporting
 
