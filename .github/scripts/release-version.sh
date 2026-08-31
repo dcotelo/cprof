@@ -19,10 +19,18 @@ usage() {
 
 # cp_rank <subject> -> 3 major, 2 minor, 1 patch, 0 nothing.
 # The type is read up to the first colon, so a scope and a bang both survive it.
+#
+# `: ` and a description are both required, because the near-misses are the
+# dangerous ones: `fix:broken` would otherwise publish a patch off a typo, and
+# `fix:` a release whose only note is an empty bullet.
 cp_rank() {
   local subject="$1" head type
+  case "$subject" in
+    *': '*) ;;
+    *) printf '0\n'; return 0 ;;
+  esac
+  [ -n "${subject#*: }" ] || { printf '0\n'; return 0; }
   head="${subject%%:*}"
-  [ "$head" != "$subject" ] || { printf '0\n'; return 0; }
   case "$head" in
     *' '*) printf '0\n'; return 0 ;;   # prose, not a conventional subject
     *'!')  printf '3\n'; return 0 ;;
@@ -32,6 +40,23 @@ cp_rank() {
     feat)      printf '2\n' ;;
     fix|perf)  printf '1\n' ;;
     *)         printf '0\n' ;;
+  esac
+}
+
+# cp_bucket <subject> -> the section heading it belongs under, or nothing when
+# the subject warrants no release. Everything that does warrant one lands
+# somewhere: a breaking change of an otherwise silent type (`docs!:`) still has
+# to appear, since release.yml aborts on an empty section.
+cp_bucket() {
+  local subject="$1" head type
+  [ "$(cp_rank "$subject")" -gt 0 ] || return 0
+  head="${subject%%:*}"
+  type="${head%%(*}"
+  type="${type%!}"
+  case "$type" in
+    feat) printf 'Added\n' ;;
+    fix)  printf 'Fixed\n' ;;
+    *)    printf 'Changed\n' ;;
   esac
 }
 
@@ -67,19 +92,11 @@ cp_summary() { printf '%s\n' "${1#*: }"; }
 cp_generated() {
   local version="$1" file="$2" heading subject printed
   printf '## [%s]\n' "$version"
-  for group in 'feat:Added' 'fix:Fixed' 'perf refactor:Changed'; do
-    heading="${group#*:}"
+  for heading in Added Fixed Changed; do
     printed=0
     while IFS= read -r subject; do
       [ -n "$subject" ] || continue
-      case "${subject%%:*}" in
-        *' '*) continue ;;
-      esac
-      local type="${subject%%:*}"; type="${type%%(*}"; type="${type%!}"
-      case " ${group%%:*} " in
-        *" $type "*) ;;
-        *) continue ;;
-      esac
+      [ "$(cp_bucket "$subject")" = "$heading" ] || continue
       [ "$printed" -eq 1 ] || { printf '\n### %s\n\n' "$heading"; printed=1; }
       printf -- '- %s\n' "$(cp_summary "$subject")"
     done < "$file"

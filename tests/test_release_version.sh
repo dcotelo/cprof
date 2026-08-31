@@ -31,6 +31,13 @@ assert_eq '' "$(next 0.8.0 'refactor: split resolve')"   'refactor alone release
 assert_eq '' "$(next 0.8.0 '')"                          'no commits release nothing'
 assert_eq '' "$(next 0.8.0 'merged main into the branch')" 'a non-conventional subject is ignored'
 
+# Conventional Commits wants `: ` and something after it. Accepting less lets a
+# typo publish: `fix:broken` would ship a patch, and `fix:` an empty note.
+assert_eq '' "$(next 0.8.0 'fix:broken')"  'a missing space after the colon is not a release'
+assert_eq '' "$(next 0.8.0 'fix:')"        'a bare type and colon is not a release'
+assert_eq '' "$(next 0.8.0 'fix: ')"       'an empty description is not a release'
+assert_eq '' "$(next 0.8.0 'feat!:no space')" 'a bang does not excuse the missing space'
+
 # The workflow re-runs on every push to the branch, and its own bump commit is
 # on the branch by then. Counting it would ratchet the version on each push.
 assert_eq '' "$(next 0.9.0 'chore(release): 0.9.0')" 'its own bump commit does not warrant another'
@@ -86,6 +93,18 @@ assert_eq '1' "$(changelog | grep -c '^## \[Unreleased\]')" 'apply keeps the Unr
 assert_eq '1' "$(changelog | grep -c 'curl installer')" 'a generated section carries the subject'
 assert_eq 'Added' "$(changelog | sed -n '/^## \[0.9.0\]/,/^## \[0/p' | grep '^### ' | head -1 | sed 's/^### //')" \
   'a feat files under Added'
+
+# A breaking change of any type still has to appear in the notes. release.yml
+# aborts on an empty section, so a major release whose only subject fell through
+# the grouping would fail at publish time.
+fixture ''
+apply 1.0.0 'docs!: drop the legacy setup guide'
+assert_eq '1.0.0' "$(next 0.8.0 'docs!: drop the legacy setup guide')" \
+  'a breaking docs commit is still a major'
+assert_eq '1' "$(changelog | grep -c 'drop the legacy setup guide')" \
+  'a breaking commit outside the usual types still gets a note'
+assert_eq 'Changed' "$(changelog | sed -n '/^## \[1.0.0\]/,/^## \[0/p' | grep '^### ' | head -1 | sed 's/^### //')" \
+  'an ungrouped breaking commit files under Changed'
 
 # Prose already written by hand beats anything generated from subject lines.
 fixture 'Hand-written prose that explains why.

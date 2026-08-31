@@ -43,8 +43,20 @@ jobs:
       - name: bump the version when the branch warrants a release
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -eu
+
+          # The versioning script is taken from the base revision, never from
+          # the branch: this job holds a write-capable token, and running a
+          # branch's own copy would let a pull request choose what that token
+          # executes. A change to the script therefore takes effect after it
+          # merges, not in the pull request that makes it.
+          script="$(mktemp)"
+          if ! git show "$BASE_SHA:.github/scripts/release-version.sh" > "$script" 2>/dev/null; then
+            printf 'no release-version.sh on the base revision; nothing to do\n'
+            exit 0
+          fi
 
           last="$(git describe --tags --abbrev=0 --match 'cprof--v*' 2>/dev/null || true)"
           if [ -n "$last" ]; then
@@ -59,14 +71,14 @@ jobs:
           subjects="$(git log --no-merges --format='%s' "$range")"
 
           next="$(printf '%s\n' "$subjects" \
-            | bash .github/scripts/release-version.sh next "$current")"
+            | bash "$script" next "$current")"
           if [ -z "$next" ]; then
             printf 'nothing on this branch warrants a release (last was %s)\n' "$current"
             exit 0
           fi
 
           printf '%s\n' "$subjects" \
-            | bash .github/scripts/release-version.sh apply "$next"
+            | bash "$script" apply "$next"
 
           if git diff --quiet; then
             printf 'already bumped to %s\n' "$next"

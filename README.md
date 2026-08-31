@@ -632,6 +632,11 @@ entry. The bump writes all four; `tests/test_manifest.sh` and
 `tests/test_cli.sh` fail when they drift, or when `CHANGELOG.md` has no section
 for the version.
 
+`release-bump.yml` runs `.github/scripts/release-version.sh` as it exists on the
+*base* revision, never the branch's copy, so that a pull request cannot choose
+what a write-capable token executes. A change to that script therefore takes
+effect once it merges, not in the pull request making it.
+
 To release by hand instead — a fork's pull request cannot be bumped by CI, since
 its token is read-only:
 
