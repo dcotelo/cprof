@@ -28,6 +28,7 @@ jobs:
           "$sc" --version
           "$sc" -x -P scripts -P tests \
             scripts/cprof scripts/lib/*.sh hooks/*.sh statusline/*.sh tests/*.sh \
+            .github/scripts/*.sh \
             install.sh
 
   test:
