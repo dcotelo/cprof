@@ -5,6 +5,37 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.9.0]
+
+### Added
+
+- An installer for setups without Homebrew. `install.sh` puts the CLI in
+  `~/.local` with no `sudo`, mirroring the layout the formula uses, so the
+  Homebrew-less path is a supported install rather than a manual copy. Download
+  and read it before running it — [Install](README.md#install) shows the two
+  commands.
+
+- `cprof pin` now says what it did: `pinned ~/dev/acme to work`, `unpinned
+  ~/dev/acme`, or `no pin for ~/dev/acme` when there was nothing to clear.
+  Pinning was silent on success and spoke only on failure, which left the most
+  common outcome — it worked — indistinguishable from a command that had not
+  run. The messages go to stderr, so `cprof env` output stays clean for the
+  shell to evaluate.
+
+- Releases ship a `checksums.txt` alongside a source tarball built from the
+  released tag, so a download can be verified with
+  `shasum -a 256 -c checksums.txt`. The archive is built during the release
+  rather than taken from GitHub's generated tarball, whose bytes are not
+  guaranteed stable over time.
+
+### Changed
+
+- Project documentation now covers the things a contributor or a reporter needs:
+  [SECURITY.md](SECURITY.md) with a vulnerability-reporting route and response
+  timeframe, [CONTRIBUTING.md](CONTRIBUTING.md) with the test and shellcheck
+  requirements, a [security assessment](docs/security-assessment.md) recording
+  the threat model, and issue and pull request templates.
+
 ## [0.8.0]
 
 ### Added

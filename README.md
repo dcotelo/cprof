@@ -602,10 +602,12 @@ binary. No test touches the real keychain or a real account.
 
 ## Releasing
 
-Version lives in three places that must agree — `plugin.json`, the
-`marketplace.json` metadata, and its plugin entry. `tests/test_manifest.sh`
-fails when they drift, and again if `CHANGELOG.md` has no section for the
-version, since the release notes are read from it.
+Version lives in four places that must agree — `CP_VERSION` in `scripts/cprof`,
+`plugin.json`, the `marketplace.json` metadata, and its plugin entry.
+`tests/test_manifest.sh` fails when the manifests drift, `tests/test_cli.sh`
+fails when `CP_VERSION` disagrees with them, and both fail again if
+`CHANGELOG.md` has no section for the version, since the release notes are read
+from it.
 
 ```bash
 # 1. bump all three, add the CHANGELOG section, commit
