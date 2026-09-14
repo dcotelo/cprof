@@ -127,4 +127,45 @@ CP_COLOR_ON=1 assert_eq "$(printf '\033[32m▓▓▓▓░░░░░░ 42%%\0
 assert_eq "$(printf '\033[31m▓▓▓▓▓▓▓▓▓▓ 95%%\033[0m')" \
   "$(CP_COLOR_ON=1 cp_usage_render 95)" 'render colors red at 95'
 
+# --- cprof usage: no profiles --------------------------------------------
+cp_t_write_config <<JSON
+{"default":null,"profiles":[],"rules":[],"repos":{}}
+JSON
+assert_eq 'no profiles saved' "$("$CLI" usage 2>/dev/null)" 'usage with no profiles saved'
+
+# --- cprof usage: table of all profiles ----------------------------------
+mkdir -p "$CP_T_TMP/p"
+cp_t_write_config <<JSON
+{"default":"work","profiles":[{"name":"work","dir":"$CP_T_TMP/p"}],"rules":[],"repos":{}}
+JSON
+printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/p/.credentials.json"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"five_hour":{"utilization":42,"resets_at":"2026-09-14T18:30:00Z"},
+ "seven_day":{"utilization":18,"resets_at":"2026-09-20T00:00:00Z"},
+ "limits":[{"kind":"weekly_scoped","utilization":55,
+            "resets_at":"2026-09-20T00:00:00Z",
+            "scope":{"model":{"display_name":"Claude Opus 4.5"}}}]}
+JSON
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(NO_COLOR=1 "$CLI" usage 2>/dev/null)"
+case "$out" in
+  *'work'*'42%'*'18%'*) assert_eq ok ok 'usage table shows both windows' ;;
+  *) assert_eq 'work ... 42% ... 18%' "$out" 'usage table shows both windows' ;;
+esac
+
+# --- cprof usage <name>: full breakdown ----------------------------------
+out="$(NO_COLOR=1 "$CLI" usage work 2>/dev/null)"
+case "$out" in *'42%'*) assert_eq ok ok 'usage detail shows 5h' ;;
+                *) assert_eq '42%' "$out" 'usage detail shows 5h' ;; esac
+case "$out" in *'18%'*) assert_eq ok ok 'usage detail shows 7d' ;;
+                *) assert_eq '18%' "$out" 'usage detail shows 7d' ;; esac
+case "$out" in *'Claude Opus 4.5'*'55%'*) assert_eq ok ok 'usage detail shows weekly_scoped model' ;;
+                *) assert_eq 'Claude Opus 4.5 ... 55%' "$out" 'usage detail shows weekly_scoped model' ;; esac
+
+# --- cprof usage <unknown> -------------------------------------------------
+assert_fail "$CLI" usage nope
+
 cp_t_summary

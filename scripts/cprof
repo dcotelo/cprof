@@ -73,6 +73,7 @@ usage:
   cprof rule add <path> <name> | rule rm <path> | rule list
   cprof login <name>
   cprof doctor
+  cprof usage [<name>]              usage bars (5h/7d), or full breakdown for one profile
   cprof update                      refresh the marketplace, then update this plugin
   cprof remove <name> [--purge]
   cprof version
@@ -100,6 +101,7 @@ case "$cmd" in
   color)   cp_cmd_color "$@" ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
+  usage)   cp_cmd_usage "$@" ;;
   update)  cp_cmd_update "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
   version|--version|-v) printf 'cprof %s\n' "$CP_VERSION" ;;

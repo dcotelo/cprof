@@ -117,3 +117,71 @@ cp_usage_render() {
     printf '%s %s%%\n' "$bar" "$pct"
   fi
 }
+
+cp_usage_list_all() {
+  local cfg="$1" names name data
+  names="$(printf '%s' "$cfg" | jq -r '.profiles[]?.name')"
+  if [ -z "$names" ]; then
+    printf 'no profiles saved\n'
+    return 0
+  fi
+  {
+    printf 'PROFILE\t5H\t7D\n'
+    for name in $names; do
+      data="$(cp_usage_read "$cfg" "$name")"
+      printf '%s\t%s\t%s\n' \
+        "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" \
+        "$(cp_usage_render "$(cp_usage_pct "$data" five_hour)")" \
+        "$(cp_usage_render "$(cp_usage_pct "$data" seven_day)")"
+    done
+  } | cp_table
+}
+
+# One line per five_hour/seven_day window, then one per weekly_scoped limit.
+cp_usage_detail() {
+  local cfg="$1" name="$2" data pct resets count i display sc_pct sc_resets
+  data="$(cp_usage_read "$cfg" "$name")"
+  if [ -z "$data" ]; then
+    printf '%s: no usage data (not logged in, offline, or CPROF_NO_USAGE set)\n' "$name"
+    return 1
+  fi
+  pct="$(cp_usage_pct "$data" five_hour)"
+  resets="$(cp_usage_resets_at "$data" five_hour)"
+  printf '5h    %s  resets %s\n' "$(cp_usage_render "$pct")" "${resets:-unknown}"
+  pct="$(cp_usage_pct "$data" seven_day)"
+  resets="$(cp_usage_resets_at "$data" seven_day)"
+  printf '7d    %s  resets %s\n' "$(cp_usage_render "$pct")" "${resets:-unknown}"
+  count="$(printf '%s' "$data" | jq '[.limits[]? | select(.kind == "weekly_scoped")] | length' 2>/dev/null)"
+  case "$count" in ''|*[!0-9]*) count=0 ;; esac
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    display="$(printf '%s' "$data" | jq -r --argjson i "$i" \
+      '[.limits[]? | select(.kind == "weekly_scoped")][$i].scope.model.display_name // "unknown model"')"
+    sc_pct="$(printf '%s' "$data" | jq -r --argjson i "$i" \
+      '[.limits[]? | select(.kind == "weekly_scoped")][$i].utilization // empty')"
+    sc_resets="$(printf '%s' "$data" | jq -r --argjson i "$i" \
+      '[.limits[]? | select(.kind == "weekly_scoped")][$i].resets_at // empty')"
+    printf '%-22s %s  resets %s\n' "$display" "$(cp_usage_render "$sc_pct")" "${sc_resets:-unknown}"
+    i=$(( i + 1 ))
+  done
+  return 0
+}
+
+cp_usage_render_fields() { :; }
+
+cp_cmd_usage() {
+  local cfg name CP_COLOR_ON=0
+  case "${1:-}" in
+    --render) cp_usage_render_fields "${2:-}"; return 0 ;;
+  esac
+  cfg="$(cp_config_read)" || return 1
+  # shellcheck disable=SC2034
+  cp_color_enabled && CP_COLOR_ON=1
+  name="${1:-}"
+  if [ -z "$name" ]; then
+    cp_usage_list_all "$cfg"
+    return $?
+  fi
+  cp_profile_exists "$cfg" "$name" || { cp_warn "unknown profile $name"; return 1; }
+  cp_usage_detail "$cfg" "$name"
+}
