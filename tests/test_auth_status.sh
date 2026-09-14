@@ -117,4 +117,41 @@ assert_eq '0' "$rc" 'doctor passes when an expiry is simply unknown'
 case "$out" in *'kc: ok'*) assert_eq ok ok 'unknown expiry reports ok, not expiring' ;;
                 *) assert_eq 'kc: ok' "$out" 'unknown expiry reports ok, not expiring' ;; esac
 
+# --- doctor: usage warning at >=90%, silent otherwise ---------------------
+export CP_CURL_BIN="$CP_T_TMP/bin/curl"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"five_hour":{"utilization":92,"resets_at":"2026-09-14T18:30:00Z"},
+ "seven_day":{"utilization":10,"resets_at":"2026-09-20T00:00:00Z"},"limits":[]}
+JSON
+STUB
+chmod +x "$CP_CURL_BIN"
+printf '{"claudeAiOauth":{"refreshTokenExpiresAt":99999999999999,"accessToken":"tok"}}' \
+  > "$CP_T_TMP/p/.credentials.json"
+out="$(cd "$CP_T_TMP" && "$CLI" doctor 2>&1)"
+rc=$?
+case "$out" in *'personal: 5h window at'*'92%'*) assert_eq ok ok 'doctor warns at 92% usage' ;;
+                *) assert_eq 'personal: 5h window at 92%' "$out" 'doctor warns at 92% usage' ;; esac
+assert_eq '1' "$rc" 'doctor fails when a profile is at 92% usage'
+
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"five_hour":{"utilization":42,"resets_at":"2026-09-14T18:30:00Z"},
+ "seven_day":{"utilization":10,"resets_at":"2026-09-20T00:00:00Z"},"limits":[]}
+JSON
+STUB
+chmod +x "$CP_CURL_BIN"
+rm -f "$CP_T_TMP/state/usage/personal.json"
+out="$(cd "$CP_T_TMP" && "$CLI" doctor 2>&1)"
+case "$out" in *'5h window'*) assert_eq 'no usage warning' "$out" 'doctor stays silent under 90%' ;;
+                *) assert_eq ok ok 'doctor stays silent under 90%' ;; esac
+
+# --- doctor: no network, no cache -> usage check never fails the run -----
+rm -f "$CP_CURL_BIN" "$CP_T_TMP/state/usage/personal.json"
+out="$(cd "$CP_T_TMP" && "$CLI" doctor 2>&1)"
+rc=$?
+assert_eq '0' "$rc" 'doctor passes when usage data is simply unavailable'
+
 cp_t_summary

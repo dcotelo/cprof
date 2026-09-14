@@ -138,8 +138,12 @@ cp_cmd_login() {
 }
 
 cp_cmd_doctor() {
-  local cfg names name st logged active ms left_days status=0
+  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0
   cfg="$(cp_config_read)" || return 1
+  # cp_usage_render (usage.sh) reads CP_COLOR_ON through bash's dynamic
+  # scoping, the same cross-file pattern cp_colorize already relies on.
+  # shellcheck disable=SC2034
+  cp_color_enabled && CP_COLOR_ON=1
   active="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null | cut -f1)"
   names="$(printf '%s' "$cfg" | jq -r '.profiles[]?.name')"
   if [ -z "$names" ]; then
@@ -162,6 +166,20 @@ cp_cmd_doctor() {
       status=1
     else
       printf '%s: ok\n' "$name"
+    fi
+    usage_data="$(cp_usage_read "$cfg" "$name")"
+    if [ -n "$usage_data" ]; then
+      pct="$(cp_usage_pct "$usage_data" five_hour)"
+      case "$pct" in
+        ''|*[!0-9]*) : ;;
+        *)
+          if [ "$pct" -ge 90 ]; then
+            printf '%s: 5h window at %s (resets %s)\n' \
+              "$name" "$(cp_usage_render "$pct")" "$(cp_usage_resets_at "$usage_data" five_hour)"
+            status=1
+          fi
+          ;;
+      esac
     fi
   done
   printf 'active profile here: %s\n' "${active:-none}"
