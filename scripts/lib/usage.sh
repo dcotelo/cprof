@@ -34,7 +34,8 @@ cp_usage_fetch() {
   chmod 700 "$CP_STATE_DIR" "$dir" 2>/dev/null
   printf '%s' "$body" | jq --argjson now "$(date +%s)" '. + {fetched_at: $now}' \
     > "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
-  chmod 600 "$file.tmp.$$" && mv "$file.tmp.$$" "$file" || { rm -f "$file.tmp.$$"; return 1; }
+  chmod 600 "$file.tmp.$$" || { rm -f "$file.tmp.$$"; return 1; }
+  mv "$file.tmp.$$" "$file" || { rm -f "$file.tmp.$$"; return 1; }
   cat "$file"
 }
 

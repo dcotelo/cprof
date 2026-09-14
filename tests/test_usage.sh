@@ -44,8 +44,8 @@ assert_eq '42' "$(cp_usage_pct "$out" five_hour)" 'fetch returns five_hour utili
 assert_eq '18' "$(cp_usage_pct "$out" seven_day)" 'fetch returns seven_day utilization'
 assert_eq 'true' "$([ -f "$CP_T_TMP/state/usage/work.json" ] && echo true || echo false)" \
   'fetch writes the cache file'
-perm="$(cd "$CP_T_TMP/state/usage" && ls -l work.json | cut -c1-10)"
-assert_eq '-rw-------' "$perm" 'cache file is mode 600'
+perm="$(stat -f '%Lp' "$CP_T_TMP/state/usage/work.json")"
+assert_eq '600' "$perm" 'cache file is mode 600'
 
 # --- TTL: a fresh cache is served without calling curl again -------------
 rm -f "$CP_CURL_BIN"
@@ -90,7 +90,7 @@ echo 'should not be called' >> "$CP_T_TMP/curl-called"
 exit 1
 STUB
 chmod +x "$CP_CURL_BIN"
-CPROF_NO_USAGE=1 out="$(CPROF_NO_USAGE=1 cp_usage_read "$CFG" work)"
+out="$(CPROF_NO_USAGE=1 cp_usage_read "$CFG" work)"
 assert_eq '' "$out" 'opt-out with no cache yields nothing'
 assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
   'opt-out never invokes curl'
