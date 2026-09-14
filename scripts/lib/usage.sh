@@ -77,3 +77,43 @@ cp_usage_pct() {
 cp_usage_resets_at() {
   printf '%s' "${1:-}" | jq -r --arg w "${2:-}" '.[$w].resets_at // empty' 2>/dev/null
 }
+
+# cp_usage_bar <pct> -> a 10-block bar, or nothing with return 1 when pct
+# isn't a plain integer.
+cp_usage_bar() {
+  local pct="${1:-}" filled empty bar
+  case "$pct" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$pct" -gt 100 ] && pct=100
+  filled=$(( (pct + 5) / 10 ))
+  [ "$filled" -gt 10 ] && filled=10
+  empty=$(( 10 - filled ))
+  bar=''
+  while [ "$filled" -gt 0 ]; do bar="${bar}▓"; filled=$(( filled - 1 )); done
+  while [ "$empty" -gt 0 ]; do bar="${bar}░"; empty=$(( empty - 1 )); done
+  printf '%s\n' "$bar"
+}
+
+# cp_usage_severity_colour <pct> -> red|yellow|green, or nothing/return 1.
+cp_usage_severity_colour() {
+  local pct="${1:-}"
+  case "$pct" in ''|*[!0-9]*) return 1 ;; esac
+  if   [ "$pct" -ge 90 ]; then printf 'red\n'
+  elif [ "$pct" -ge 70 ]; then printf 'yellow\n'
+  else printf 'green\n'
+  fi
+}
+
+# cp_usage_render <pct> -> "<bar> <pct>%", colored when CP_COLOR_ON=1, "-"
+# when pct is invalid or empty. Reads CP_COLOR_ON the same way cp_colorize
+# does: callers building table rows decide it once, up front.
+cp_usage_render() {
+  local pct="${1:-}" bar colour code
+  bar="$(cp_usage_bar "$pct")" || { printf -- '-\n'; return 0; }
+  colour="$(cp_usage_severity_colour "$pct")"
+  code="$(cp_color_code "$colour")"
+  if [ "${CP_COLOR_ON:-0}" = '1' ] && [ -n "$code" ]; then
+    printf '\033[%sm%s %s%%\033[0m\n' "$code" "$bar" "$pct"
+  else
+    printf '%s %s%%\n' "$bar" "$pct"
+  fi
+}

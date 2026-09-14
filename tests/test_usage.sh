@@ -102,4 +102,29 @@ JSON
 CFG="$(cp_config_read)"
 assert_fail cp_usage_fetch "$CFG" native
 
+# --- cp_usage_bar: rounding and bounds ------------------------------------
+assert_eq '▓▓▓▓░░░░░░' "$(cp_usage_bar 42)" 'bar rounds down under half'
+assert_eq '▓▓▓▓▓░░░░░' "$(cp_usage_bar 45)" 'bar rounds half up at the boundary'
+assert_eq '░░░░░░░░░░' "$(cp_usage_bar 0)"  'bar at 0%'
+assert_eq '▓▓▓▓▓▓▓▓▓▓' "$(cp_usage_bar 100)" 'bar at 100%'
+assert_eq '▓▓▓▓▓▓▓▓▓▓' "$(cp_usage_bar 250)" 'bar clamps above 100%'
+assert_fail cp_usage_bar ''
+assert_fail cp_usage_bar 'nope'
+
+# --- cp_usage_severity_colour ----------------------------------------------
+assert_eq 'green'  "$(cp_usage_severity_colour 42)" 'severity: green under 70'
+assert_eq 'yellow' "$(cp_usage_severity_colour 70)" 'severity: yellow at 70'
+assert_eq 'yellow' "$(cp_usage_severity_colour 89)" 'severity: yellow just under 90'
+assert_eq 'red'    "$(cp_usage_severity_colour 90)" 'severity: red at 90'
+
+# --- cp_usage_render: plain (CP_COLOR_ON unset/0) --------------------------
+assert_eq '▓▓▓▓░░░░░░ 42%' "$(cp_usage_render 42)" 'render is plain text without CP_COLOR_ON'
+assert_eq '-' "$(cp_usage_render '')" 'render shows a dash for empty input'
+
+# --- cp_usage_render: colored ----------------------------------------------
+CP_COLOR_ON=1 assert_eq "$(printf '\033[32m▓▓▓▓░░░░░░ 42%%\033[0m')" \
+  "$(CP_COLOR_ON=1 cp_usage_render 42)" 'render colors green under 70'
+assert_eq "$(printf '\033[31m▓▓▓▓▓▓▓▓▓▓ 95%%\033[0m')" \
+  "$(CP_COLOR_ON=1 cp_usage_render 95)" 'render colors red at 95'
+
 cp_t_summary
