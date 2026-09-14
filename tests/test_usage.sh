@@ -33,6 +33,7 @@ cat > "$CP_CURL_BIN" <<'STUB'
 #!/usr/bin/env bash
 config="$(cat)"
 case " $* " in *' -K - '*) : ;; *) exit 1 ;; esac
+case " $* " in *' https://api.anthropic.com/api/oauth/usage '*) : ;; *) exit 1 ;; esac
 case "$config" in *'Authorization: Bearer '*) : ;; *) exit 1 ;; esac
 case "$config" in *'anthropic-beta: oauth-2025-04-20'*) : ;; *) exit 1 ;; esac
 cat <<'JSON'
