@@ -43,6 +43,8 @@ fi
 . "$CP_LIB_DIR/output.sh"
 # shellcheck source=lib/color.sh
 . "$CP_LIB_DIR/color.sh"
+# shellcheck source=lib/usage.sh
+. "$CP_LIB_DIR/usage.sh"
 # shellcheck source=lib/share.sh
 . "$CP_LIB_DIR/share.sh"
 # shellcheck source=lib/update.sh
