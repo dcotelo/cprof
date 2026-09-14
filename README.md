@@ -393,7 +393,7 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 
 | Command | Description |
 | --- | --- |
-| `cprof list` | Profiles with identity and subscription; marks default, active, native |
+| `cprof list` | Profiles with identity, subscription, usage (5h/7d), and markers; marks default, active, native |
 | `cprof which` | Profile resolved here, and the rule that produced it |
 | `cprof status` | Profile this process is actually running as |
 | `cprof env` | `export`/`unset` statements for `eval` |
@@ -409,6 +409,7 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof rule rm <path>` | Drop a rule |
 | `cprof login <name>` | Sign a profile in, with keychain protection |
 | `cprof doctor` | Report unauthenticated profiles and expiring tokens |
+| `cprof usage [<name>]` | Usage bars (5h/7d) for every profile, or the full breakdown for one |
 | `cprof update` | Refresh the marketplace, then update this plugin |
 | `cprof remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
 
@@ -425,6 +426,14 @@ table instead of breaking the alignment, and paths under your home print as `~`.
 
 ```console
 ⚑ work
+```
+
+Once `cprof list`, `doctor`, or `usage` has fetched usage data at least once,
+the badge also carries a usage bar for the active profile's 5-hour window,
+colored red/yellow/green by how close it is to the cap:
+
+```console
+⚑ work ▓▓▓▓░░░░░░ 42%
 ```
 
 The badge carries the profile's colour, and `--text` decides how far it
@@ -578,6 +587,13 @@ the store cannot be read, the expiry is reported as unknown rather than guessed.
 missing `jq`, a malformed config, or a missing profile directory degrades to
 stock Claude Code behaviour rather than a broken shell.
 
+`cprof list`, `cprof doctor`, and `cprof usage` fetch usage data from
+`api.anthropic.com/api/oauth/usage` using the profile's own OAuth token,
+cached for 5 minutes under `~/.cprof/usage/`. The statusline never makes this
+call — it only reads the cache, so it never blocks. Set `CPROF_NO_USAGE=1` to
+turn fetching off everywhere; existing cached data (or a plain `-`) is shown
+instead.
+
 ## Development
 
 ```bash
@@ -590,7 +606,8 @@ claude plugin validate .             # check the manifests
 CI runs all three on every pull request: shellcheck and the manifest checks on
 Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
-Targets bash 3.2 (macOS system bash), with `jq` as the only external dependency.
+Targets bash 3.2 (macOS system bash), with `jq` and (for usage data) `curl`
+as the only external dependencies.
 
 Found a bug? [Open an issue](https://github.com/dcotelo/cprof/issues) —
 templates are provided. Security problems go through
