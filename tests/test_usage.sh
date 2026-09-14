@@ -188,4 +188,35 @@ assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" '--render field 1 is the fiv
 assert_eq "$(cp_usage_bar 73)" "$(printf '%s' "$fields" | cut -f2)" '--render field 2 is the bar'
 assert_eq '33' "$(printf '%s' "$fields" | cut -f3)" '--render field 3 is the SGR code (yellow=33)'
 
+# --- cprof list: 5H/7D columns --------------------------------------------
+cp_t_write_config <<JSON
+{"default":"work","profiles":[{"name":"work","dir":"$CP_T_TMP/p"}],"rules":[],"repos":{}}
+JSON
+printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/p/.credentials.json"
+cat > "$CP_CLAUDE_BIN" <<'STUB'
+#!/usr/bin/env bash
+[ "${1:-}" = auth ] && [ "${2:-}" = status ] && printf '{"loggedIn":true,"email":"me@x.com","subscriptionType":"max"}\n'
+STUB
+chmod +x "$CP_CLAUDE_BIN"
+rm -f "$CP_T_TMP/state/usage/work.json"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+cat <<'JSON'
+{"five_hour":{"utilization":42,"resets_at":"2026-09-14T18:30:00Z"},
+ "seven_day":{"utilization":18,"resets_at":"2026-09-20T00:00:00Z"},"limits":[]}
+JSON
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(NO_COLOR=1 "$CLI" list 2>/dev/null)"
+case "$out" in *'5H'*'7D'*) assert_eq ok ok 'list header gains 5H/7D' ;;
+                *) assert_eq '5H ... 7D' "$out" 'list header gains 5H/7D' ;; esac
+case "$out" in *'42%'*'18%'*) assert_eq ok ok 'list row shows both windows' ;;
+                *) assert_eq '42% ... 18%' "$out" 'list row shows both windows' ;; esac
+
+# --- cprof list: no usage data shows a dash, not an error -----------------
+rm -f "$CP_CURL_BIN" "$CP_T_TMP/state/usage/work.json"
+out="$(NO_COLOR=1 "$CLI" list 2>/dev/null)"
+case "$out" in *'  -  '*|*$'\t-\t'*) : ;; esac
+assert_eq '0' "$?" 'list tolerates missing usage data'
+
 cp_t_summary

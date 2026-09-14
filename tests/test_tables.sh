@@ -122,4 +122,10 @@ coloured="$({ printf 'PROFILE\tPLAN\n'
 stripped="$(printf '%s\n' "$coloured" | sed 's/'"$(printf '\033')"'\[[0-9;]*m//g')"
 assert_eq "$plain" "$stripped" 'escapes do not change column widths'
 
+# --- cp_table: alignment holds with the usage columns added ---------------
+expected='PROFILE  PLAN  ACCOUNT   5H                                  7D                                 FLAGS
+work     max   me@x.com  ▓▓▓▓░░░░░░ 42%  ░░░░░░░░░░ 0%  (active)'
+assert_eq "$expected" "$(printf 'PROFILE\tPLAN\tACCOUNT\t5H\t7D\tFLAGS\nwork\tmax\tme@x.com\t▓▓▓▓░░░░░░ 42%%\t░░░░░░░░░░ 0%%\t(active)\n' | cp_table)" \
+  'six-column rows with multi-byte bar characters still align'
+
 cp_t_summary

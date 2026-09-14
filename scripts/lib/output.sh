@@ -141,7 +141,7 @@ cp_native_name() {
 }
 
 cp_cmd_list() {
-  local cfg names name active default_name st email sub markers dir CP_COLOR_ON=0
+  local cfg names name active default_name st email sub markers dir data CP_COLOR_ON=0
   cfg="$(cp_config_read)" || return 1
   # Decide once, here: the rows below are piped into cp_table, and inside a
   # pipeline stdout is never a terminal. cp_colorize (color.sh) reads
@@ -156,7 +156,7 @@ cp_cmd_list() {
     return 0
   fi
   {
-    printf 'PROFILE\tPLAN\tACCOUNT\tFLAGS\n'
+    printf 'PROFILE\tPLAN\tACCOUNT\t5H\t7D\tFLAGS\n'
     for name in $names; do
       st="$(cp_auth_status "$cfg" "$name")"
       if [ "$(printf '%s' "$st" | jq -r '.loggedIn // false')" = 'true' ]; then
@@ -175,9 +175,13 @@ cp_cmd_list() {
         dir="$(cp_profile_dir "$cfg" "$name")"
         [ -d "$dir" ] || markers="$markers [dir missing]"
       fi
-      printf '%s\t%s\t%s\t%s\n' \
+      data="$(cp_usage_read "$cfg" "$name")"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" \
-        "$sub" "$email" "${markers# }"
+        "$sub" "$email" \
+        "$(cp_usage_render "$(cp_usage_pct "$data" five_hour)")" \
+        "$(cp_usage_render "$(cp_usage_pct "$data" seven_day)")" \
+        "${markers# }"
     done
   } | cp_table
 }
