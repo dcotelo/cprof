@@ -40,6 +40,9 @@ cp_table() {
         # the hex form is a gawk extension and the target is macOS awk.
         bare = $i
         gsub(/\033\[[0-9;]*m/, "", bare)
+        gsub(/▓/, "?", bare)
+        gsub(/░/, "?", bare)
+        gsub(/⚑/, "?", bare)
         if (length(bare) > w[i]) w[i] = length(bare)
       }
     }
@@ -51,6 +54,9 @@ cp_table() {
           if (i < nf[r]) {
             bare = cell[r, i]
             gsub(/\033\[[0-9;]*m/, "", bare)
+            gsub(/▓/, "?", bare)
+            gsub(/░/, "?", bare)
+            gsub(/⚑/, "?", bare)
             pad = w[i] - length(bare) + 2
             while (pad-- > 0) line = line " "
           }
