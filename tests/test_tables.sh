@@ -128,4 +128,11 @@ work     max   me@x.com  ▓▓▓▓░░░░░░ 42%  ░░░░░░�
 assert_eq "$expected" "$(printf 'PROFILE\tPLAN\tACCOUNT\t5H\t7D\tFLAGS\nwork\tmax\tme@x.com\t▓▓▓▓░░░░░░ 42%%\t░░░░░░░░░░ 0%%\t(active)\n' | cp_table)" \
   'six-column rows with multi-byte bar characters still align'
 
+# --- cp_table: the statusline's ⚑ flag glyph is also width-normalized ------
+expected='PROFILE   FLAGS
+⚑ work    ok
+personal  not logged in'
+assert_eq "$expected" "$(printf 'PROFILE\tFLAGS\n\xe2\x9a\x91 work\tok\npersonal\tnot logged in\n' | cp_table)" \
+  'a cell containing the flag glyph still aligns with plain-ASCII rows'
+
 cp_t_summary

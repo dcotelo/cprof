@@ -145,7 +145,7 @@ cp_usage_detail() {
   local cfg="$1" name="$2" data pct resets count i display sc_pct sc_resets
   data="$(cp_usage_read "$cfg" "$name")"
   if [ -z "$data" ]; then
-    printf '%s: no usage data (not logged in, offline, or CPROF_NO_USAGE set)\n' "$name"
+    cp_warn "$name: no usage data (not logged in, offline, or CPROF_NO_USAGE set)"
     return 1
   fi
   pct="$(cp_usage_pct "$data" five_hour)"

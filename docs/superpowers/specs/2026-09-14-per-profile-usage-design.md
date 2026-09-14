@@ -203,7 +203,7 @@ today's `⚑ work`, zero behavior change.
 |---|---|
 | No network / timeout, no prior cache | `-` in `list`, silent in `doctor`, nothing in statusline |
 | No network / timeout, stale cache exists | Foreground commands show the stale value (no explicit "stale" marker in v1 — noted as a future refinement, not blocking) |
-| `CPROF_NO_USAGE=1` | Same as "no cache", no fetch attempted anywhere |
+| `CPROF_NO_USAGE=1` | No fetch attempted anywhere; an existing cache is still shown (even if stale), and a profile with no cache at all falls back to the normal no-data behavior (`-` in `list`, silent in `doctor`, nothing in statusline) |
 | Native profile / not logged in | Same as no token: `cp_usage_fetch` returns 1 immediately |
 | Malformed API response | Treated as fetch failure |
 

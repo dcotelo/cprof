@@ -28,9 +28,13 @@ JSON
 printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/p/.credentials.json"
 CFG="$(cp_config_read)"
 
-# --- curl stub: success -------------------------------------------------
+# --- curl stub: success, only if invoked with -K - and both headers ------
 cat > "$CP_CURL_BIN" <<'STUB'
 #!/usr/bin/env bash
+config="$(cat)"
+case " $* " in *' -K - '*) : ;; *) exit 1 ;; esac
+case "$config" in *'Authorization: Bearer '*) : ;; *) exit 1 ;; esac
+case "$config" in *'anthropic-beta: oauth-2025-04-20'*) : ;; *) exit 1 ;; esac
 cat <<'JSON'
 {"five_hour":{"utilization":42,"resets_at":"2026-09-14T18:30:00Z"},
  "seven_day":{"utilization":18,"resets_at":"2026-09-20T00:00:00Z"},

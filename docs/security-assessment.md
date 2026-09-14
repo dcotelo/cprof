@@ -2,9 +2,11 @@
 
 Satisfies OSPS-SA-03.01: the most likely and most impactful potential security
 problems for cprof, and what stands between them and a user. Last reviewed
-2026-08-28 against v0.8.x. Re-review when the attack surface changes — a new
-credential path, a new remote fetch, or a new place cprof writes outside its
-own directories.
+2026-09-14 against v0.9.0 plus the per-profile-usage change (the OAuth usage
+endpoint fetch below), which is this review's own trigger: a new remote
+fetch. Re-review again when the attack surface changes further — a new
+credential path, another new remote fetch, or a new place cprof writes
+outside its own directories.
 
 ## What cprof protects
 

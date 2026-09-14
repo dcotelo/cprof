@@ -428,8 +428,9 @@ table instead of breaking the alignment, and paths under your home print as `~`.
 ⚑ work
 ```
 
-Once `cprof list`, `doctor`, or `usage` has fetched usage data at least once,
-the badge also carries a usage bar for the active profile's 5-hour window,
+Once `cprof list`, `doctor`, or `usage` has fetched usage data for the
+*active* profile at least once — fetching it for a different profile doesn't
+count — the badge also carries a usage bar for that profile's 5-hour window,
 colored red/yellow/green by how close it is to the cap:
 
 ```console
