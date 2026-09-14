@@ -167,7 +167,19 @@ cp_usage_detail() {
   return 0
 }
 
-cp_usage_render_fields() { :; }
+# cp_usage_render_fields <name> -> "<pct>\t<bar>\t<sgr-code>", cache-only,
+# nothing when there is no cache or it's unreadable. Never fetches — this is
+# the statusline's rendering entry point via `cprof usage --render`.
+cp_usage_render_fields() {
+  local name="${1:-}" cached pct bar colour code
+  cached="$(cp_usage_read_cached_only "$name")"
+  [ -n "$cached" ] || return 0
+  pct="$(cp_usage_pct "$cached" five_hour)"
+  bar="$(cp_usage_bar "$pct")" || return 0
+  colour="$(cp_usage_severity_colour "$pct")"
+  code="$(cp_color_code "$colour")"
+  printf '%s\t%s\t%s\n' "$pct" "$bar" "$code"
+}
 
 cp_cmd_usage() {
   local cfg name CP_COLOR_ON=0

@@ -168,4 +168,24 @@ case "$out" in *'Claude Opus 4.5'*'55%'*) assert_eq ok ok 'usage detail shows we
 # --- cprof usage <unknown> -------------------------------------------------
 assert_fail "$CLI" usage nope
 
+# --- usage --render: no cache yields nothing -----------------------------
+cp_t_write_config <<JSON
+{"default":"fresh","profiles":[{"name":"fresh","dir":"$CP_T_TMP/f"}],"rules":[],"repos":{}}
+JSON
+mkdir -p "$CP_T_TMP/f"
+assert_eq '' "$("$CLI" usage --render fresh 2>/dev/null)" \
+  '--render with no cache prints nothing'
+
+# --- usage --render: cache present, no network needed --------------------
+rm -f "$CP_CURL_BIN"
+mkdir -p "$CP_T_TMP/state/usage"
+cat > "$CP_T_TMP/state/usage/fresh.json" <<'JSON'
+{"fetched_at":1,"five_hour":{"utilization":73,"resets_at":"2026-09-14T18:30:00Z"},
+ "seven_day":{"utilization":10,"resets_at":"2026-09-20T00:00:00Z"},"limits":[]}
+JSON
+fields="$("$CLI" usage --render fresh 2>/dev/null)"
+assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" '--render field 1 is the five_hour pct'
+assert_eq "$(cp_usage_bar 73)" "$(printf '%s' "$fields" | cut -f2)" '--render field 2 is the bar'
+assert_eq '33' "$(printf '%s' "$fields" | cut -f3)" '--render field 3 is the SGR code (yellow=33)'
+
 cp_t_summary
