@@ -5,11 +5,11 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.10.0]
 ### Added
 - `cprof usage [<name>]`, usage columns in `cprof list`, a usage warning in
   `cprof doctor`, and a usage badge on the statusline, backed by
   `api.anthropic.com/api/oauth/usage`. Opt out with `CPROF_NO_USAGE=1`.
-
 ## [0.9.0]
 
 ### Added
