@@ -159,6 +159,11 @@ doctor failure just because the network was down.
 
 - No argument: one row per profile, same bar+pct rendering as `list` but
   usage-only (`PROFILE  5H  7D`), for a quick "am I close to any cap" view.
+  The `PROFILE` cell uses the same `cp_colorize "$(cp_color_for ...)"`
+  identity color `list`/`which` already use — every UI surface this feature
+  touches (`list`, `doctor`, `usage`, statusline) carries color: identity
+  color for profile names, severity color for the bar/percent, consistently
+  gated by the existing `cp_color_enabled`/`NO_COLOR`/`CPROF_COLOR` checks.
 - With a profile name: full breakdown for that profile — 5h bar, 7d bar, and
   one line per `weekly_scoped` limit showing its model's `display_name`, all
   with `resets_at` printed alongside each. This is the only place the
@@ -233,6 +238,13 @@ pattern:
   changes since the new columns/command are additive, but a quick pass to
   confirm `cp_table`'s column alignment still holds with the two new columns
   is worth a case in `tests/test_tables.sh`.
+
+## Delivery
+
+The PR for this feature includes terminal screenshots showing the colored
+output — `list` with the new columns, `doctor`'s warning line, `usage` (both
+forms), and the statusline badge — since color is a core part of what this
+feature is for and a text-only diff doesn't show it.
 
 ## Open questions carried into implementation (non-blocking)
 
