@@ -72,7 +72,9 @@ cp_usage_read_cached_only() {
 }
 
 cp_usage_pct() {
-  printf '%s' "${1:-}" | jq -r --arg w "${2:-}" '.[$w].utilization // empty' 2>/dev/null
+  printf '%s' "${1:-}" | jq -r --arg w "${2:-}" \
+    '.[$w].utilization // empty | if type == "number" then (floor | tostring) else empty end' \
+    2>/dev/null
 }
 
 cp_usage_resets_at() {

@@ -181,5 +181,11 @@ cp_cmd_remove() {
     '.profiles = [.profiles[]? | select(.name != $n)]
      | .rules   = [.rules[]?   | select(.profile != $n)]
      | .repos   = (.repos | with_entries(select(.value != $n)))
-     | if (.default == $n) then .default = (first(.profiles[]?.name) // null) else . end' | cp_config_write
+     | if (.default == $n) then .default = (first(.profiles[]?.name) // null) else . end' | cp_config_write || return 1
+
+  # Best-effort: a stale usage cache under this name must never be served to
+  # whatever profile (possibly a different account) reuses the name later.
+  # Inlined rather than sourcing usage.sh's cp_usage_cache_file, which isn't
+  # this file's job. A missing file is not an error.
+  rm -f "$CP_STATE_DIR/usage/$name.json"
 }

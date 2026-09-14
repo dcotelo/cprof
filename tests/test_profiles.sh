@@ -81,10 +81,16 @@ assert_eq '' "$out" 'failed pin keeps stdout clean'
 assert_eq 'no' "$claimed" 'failed pin does not claim success'
 chmod 700 "$CP_T_TMP/ro"
 
-# remove
+# remove also scrubs the cached usage data, so a later profile that reuses
+# the name never inherits stale numbers from a different account
+mkdir -p "$CP_T_TMP/state/usage"
+printf '{"five_hour":{"utilization":88},"seven_day":{"utilization":77}}' \
+  > "$CP_T_TMP/state/usage/personal.json"
 assert_ok   "$CLI" remove personal
 assert_fail "$CLI" remove personal
 assert_eq 'true' "$([ -d "$CP_T_TMP/p" ] && echo true)" 'remove leaves the directory in place'
+assert_eq '' "$([ -f "$CP_T_TMP/state/usage/personal.json" ] && echo present)" \
+  'remove deletes the profile usage cache'
 
 # purge needs confirmation and honours it
 assert_ok "$CLI" add tmpp --dir "$CP_T_TMP/tp"

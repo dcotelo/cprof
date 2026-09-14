@@ -111,6 +111,16 @@ assert_eq '▓▓▓▓▓▓▓▓▓▓' "$(cp_usage_bar 250)" 'bar clamps abo
 assert_fail cp_usage_bar ''
 assert_fail cp_usage_bar 'nope'
 
+# --- cp_usage_pct: floors a fractional utilization instead of passing it
+# through raw, which would fail cp_usage_bar/render's plain-integer check
+# and silently degrade every UI surface to "-" ------------------------------
+frac='{"five_hour":{"utilization":42.7}}'
+assert_eq '42' "$(cp_usage_pct "$frac" five_hour)" 'pct floors a fractional utilization'
+assert_eq '▓▓▓▓░░░░░░' "$(cp_usage_bar "$(cp_usage_pct "$frac" five_hour)")" \
+  'floored fractional pct renders via cp_usage_bar'
+assert_eq '▓▓▓▓░░░░░░ 42%' "$(cp_usage_render "$(cp_usage_pct "$frac" five_hour)")" \
+  'floored fractional pct renders via cp_usage_render'
+
 # --- cp_usage_severity_colour ----------------------------------------------
 assert_eq 'green'  "$(cp_usage_severity_colour 42)" 'severity: green under 70'
 assert_eq 'yellow' "$(cp_usage_severity_colour 70)" 'severity: yellow at 70'
@@ -215,8 +225,9 @@ case "$out" in *'42%'*'18%'*) assert_eq ok ok 'list row shows both windows' ;;
 
 # --- cprof list: no usage data shows a dash, not an error -----------------
 rm -f "$CP_CURL_BIN" "$CP_T_TMP/state/usage/work.json"
-out="$(NO_COLOR=1 "$CLI" list 2>/dev/null)"
-case "$out" in *'  -  '*|*$'\t-\t'*) : ;; esac
-assert_eq '0' "$?" 'list tolerates missing usage data'
+rc=0; out="$(NO_COLOR=1 "$CLI" list 2>/dev/null)" || rc=$?
+assert_eq '0' "$rc" 'list exits 0 with no usage data'
+case "$out" in *'-'*) assert_eq ok ok 'list shows a dash for missing usage' ;;
+                *) assert_eq 'a dash' "$out" 'list shows a dash for missing usage' ;; esac
 
 cp_t_summary
