@@ -2,13 +2,13 @@
 
 Status: approved (pending spec review)
 Owner: Diego Cotelo
-Related: clauth review synthesis (Obsidian vault note `clauth-ideas-for-cprof`, idea 1)
+Related: multi-account-manager review synthesis (idea 1)
 
 ## Context
 
 cprof (bash 3.2 + jq) routes Claude Code sessions to an account by directory,
-via `CLAUDE_CONFIG_DIR`. It never touches a live login. A review of `clauth`
-(a Rust multi-account manager with live usage monitoring) surfaced usage
+via `CLAUDE_CONFIG_DIR`. It never touches a live login. A review of a similar
+Rust multi-account manager with live usage monitoring surfaced usage
 visibility as the biggest gap: cprof has no way to show how close a profile is
 to its rate limit.
 
@@ -17,7 +17,7 @@ This spec covers idea 1 from that review: per-profile usage in `cprof list`,
 full breakdown. It is cprof's first feature that makes a network call.
 
 Deliberately out of scope (per the synthesis and user preference for cprof's
-directory-decides model over clauth's account-swap model): auto-switch
+directory-decides model over an account-swap model): auto-switch
 fallback chains, in-place credential swapping, a TUI/daemon, and the
 `SessionStart`/`UserPromptSubmit` headroom nudge hook (synthesis idea 2) —
 that hook can reuse this feature's cache later, but is a separate PR.
@@ -33,9 +33,9 @@ anthropic-beta: oauth-2025-04-20
 Response carries `five_hour` and `seven_day` objects with `utilization`
 (0-100) and `resets_at` (ISO 8601), plus a `limits[]` array whose entries have
 `kind` of `session` (5h), `weekly_all` (7d), or `weekly_scoped` (per model,
-with `scope.model.display_name`). This shape comes from reading clauth's
-`src/usage/fetch.rs` at commit `435a859f`, not from an independently verified
-live request — the implementation must tolerate missing fields.
+with `scope.model.display_name`). This shape comes from reading a similar
+tool's source, not from an independently verified live request — the
+implementation must tolerate missing fields.
 
 ## Architecture
 
