@@ -2,11 +2,11 @@
 
 Satisfies OSPS-SA-03.01: the most likely and most impactful potential security
 problems for cprof, and what stands between them and a user. Last reviewed
-2026-09-14 against v0.9.0 plus the per-profile-usage change (the OAuth usage
-endpoint fetch below), which is this review's own trigger: a new remote
-fetch. Re-review again when the attack surface changes further — a new
-credential path, another new remote fetch, or a new place cprof writes
-outside its own directories.
+2026-09-15 against v0.10.0, whose per-profile-usage change (the OAuth usage
+endpoint fetch below) is this review's own trigger: a new remote fetch.
+Re-review again when the attack surface changes further — a new credential
+path, another new remote fetch, or a new place cprof writes outside its own
+directories.
 
 ## What cprof protects
 
@@ -15,8 +15,11 @@ cprof's whole job is routing Claude Code at per-profile credential stores:
 - **Profile directories** (`~/.claude-profiles/<name>` by default), each a full
   `CLAUDE_CONFIG_DIR` holding `.credentials.json` and session data.
 - **macOS keychain items** — Claude Code stores tokens under a service name
-  derived from `CLAUDE_CONFIG_DIR` (`scripts/lib/auth.sh`); cprof reads status,
-  never writes keychain items itself.
+  derived from `CLAUDE_CONFIG_DIR` (`scripts/lib/auth.sh`); cprof mostly reads
+  status, but does write keychain items in one narrow case: `cp_cmd_login`'s
+  safety-net restore (if `claude auth login` writes to the shared keychain
+  item instead of the profile-specific one). `remove --purge` deletes a
+  profile's own item.
 - **The config file** (`~/.config/cprof/config.json`) — controls which
   credentials a directory resolves to. Whoever writes it decides which account
   every repo bills and authenticates as.

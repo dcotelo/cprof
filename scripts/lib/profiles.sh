@@ -12,6 +12,13 @@ cp_cmd_add() {
   local name='' dir='' note='' native=0 isolated=0 cfg existing
   name="${1:-}"
   [ -n "$name" ] || { cp_warn 'add: missing profile name'; return 2; }
+  # The name doubles as a directory name under ~/.claude-profiles, so it
+  # can't be a path. (State files under ~/.cprof go through cp_state_key and
+  # would survive a hostile name regardless; this just refuses it up front.)
+  case "$name" in
+    .|..|*/*) cp_warn "add: profile name may not be . or .. or contain /: $name"; return 2 ;;
+    *[[:cntrl:]]*) cp_warn 'add: profile name may not contain control characters (tab, newline, ...)'; return 2 ;;
+  esac
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -149,7 +156,7 @@ cp_cmd_rule() {
 }
 
 cp_cmd_remove() {
-  local name='' purge=0 cfg dir reply
+  local name='' purge=0 cfg dir reply service
   name="${1:-}"
   [ -n "$name" ] || { cp_warn 'remove: missing profile name'; return 2; }
   shift
@@ -164,6 +171,20 @@ cp_cmd_remove() {
   cp_profile_exists "$cfg" "$name" || { cp_warn "unknown profile $name"; return 1; }
   dir="$(cp_profile_dir "$cfg" "$name")"
 
+  # Scrub this name's per-profile state before anything destructive: a stale
+  # usage cache must never be served to whatever profile
+  # (possibly a different account) reuses the name later. Doing it first
+  # means a failed scrub leaves the profile registered — and, for --purge,
+  # its directory and keychain items untouched — so the retry works, rather
+  # than orphaning state under a name the config no longer knows.
+  # The path comes from the same helper that writes it, so a change to the
+  # convention cannot leave a stale file behind. A missing file is not an
+  # error.
+  if ! rm -f "$(cp_usage_cache_file "$name")"; then
+    cp_warn "remove: could not delete cached state for $name under $(cp_path_display "$CP_STATE_DIR"); profile left registered"
+    return 1
+  fi
+
   if [ "$purge" -eq 1 ] && [ -n "$dir" ]; then
     if cp_forbidden_dir "$dir"; then
       cp_warn 'refusing to purge ~/.claude'
@@ -172,20 +193,42 @@ cp_cmd_remove() {
     printf 'Delete %s and every credential and session in it? [y/N] ' "$dir" >&2
     read -r reply
     case "$reply" in
-      y|Y|yes|YES) rm -rf "$dir" ;;
+      y|Y|yes|YES)
+        # Keychain items first, directory last: an item that refuses to go
+        # fails the purge with the profile still registered AND its directory
+        # still intact, so nothing is half-deleted. Claude Code 2.1+ keeps
+        # the credentials in the keychain, not the directory, under a service
+        # derived from the directory path — so a profile re-added at the same
+        # path would silently inherit them. Only an item that exists and then
+        # refuses to go is worth a word.
+        service="$(cp_keychain_service "$dir")"
+        # An empty read is not proof of absence: only "not found" is.
+        cp_keychain_status "$service"
+        case $? in
+          0) if ! cp_keychain_delete "$service"; then
+               cp_warn "purge: could not delete keychain item $service (Keychain Access, or: security delete-generic-password -s '$service'); profile left registered"
+               return 1
+             fi ;;
+          1) ;;
+          *) cp_warn "purge: could not tell whether keychain item $service exists; profile left registered"
+             return 1 ;;
+        esac
+        # A directory that will not go is a profile that must stay
+        # registered: forgetting it would leave its credentials and
+        # sessions on disk under a name cprof no longer knows.
+        if ! rm -rf "$dir"; then
+          cp_warn "purge: could not delete $(cp_path_display "$dir"); profile left registered"
+          return 1
+        fi
+        ;;
       *) cp_warn 'purge declined; profile left registered'; return 1 ;;
     esac
   fi
+
 
   printf '%s' "$cfg" | jq --arg n "$name" \
     '.profiles = [.profiles[]? | select(.name != $n)]
      | .rules   = [.rules[]?   | select(.profile != $n)]
      | .repos   = (.repos | with_entries(select(.value != $n)))
-     | if (.default == $n) then .default = (first(.profiles[]?.name) // null) else . end' | cp_config_write || return 1
-
-  # Best-effort: a stale usage cache under this name must never be served to
-  # whatever profile (possibly a different account) reuses the name later.
-  # Inlined rather than sourcing usage.sh's cp_usage_cache_file, which isn't
-  # this file's job. A missing file is not an error.
-  rm -f "$CP_STATE_DIR/usage/$name.json"
+     | if (.default == $n) then .default = (first(.profiles[]?.name) // null) else . end' | cp_config_write
 }

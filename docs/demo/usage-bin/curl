@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Demo stub: the usage endpoint, answered per bearer token read from the
+# `-K -` config block on stdin — the same way the real call is made.
+config="$(cat)"
+# Same checks as the test stub: if the real call ever stopped using -K - or
+# the usage URL, the demo should break rather than keep looking healthy.
+case " $* " in *' -K - '*) : ;; *) exit 1 ;; esac
+case " $* " in *' https://api.anthropic.com/api/oauth/usage '*) : ;; *) exit 1 ;; esac
+case "$config" in *'Authorization: Bearer '*) : ;; *) exit 1 ;; esac
+token="$(printf '%s\n' "$config" | sed -n 's/^header = "Authorization: Bearer \(.*\)"$/\1/p')"
+case "$token" in
+  tok-personal) cat <<'JSON'
+{"five_hour":{"utilization":91,"resets_at":"2030-01-01T18:00:00Z"},
+ "seven_day":{"utilization":60,"resets_at":"2030-01-05T00:00:00Z"},
+ "limits":[{"kind":"weekly_scoped","percent":74,"resets_at":"2030-01-05T00:00:00Z",
+            "scope":{"model":{"display_name":"Claude Opus 5"}}}]}
+JSON
+  ;;
+  tok-work) cat <<'JSON'
+{"five_hour":{"utilization":42,"resets_at":"2030-01-01T18:00:00Z"},
+ "seven_day":{"utilization":18,"resets_at":"2030-01-05T00:00:00Z"},
+ "limits":[{"kind":"weekly_scoped","percent":12,"resets_at":"2030-01-05T00:00:00Z",
+            "scope":{"model":{"display_name":"Claude Opus 5"}}}]}
+JSON
+  ;;
+  *) exit 1 ;;   # an unknown token means the fixture is wrong; do not paper over it
+esac

@@ -43,6 +43,7 @@ cp_table() {
         gsub(/▓/, "?", bare)
         gsub(/░/, "?", bare)
         gsub(/⚑/, "?", bare)
+        gsub(/→/, "?", bare)
         if (length(bare) > w[i]) w[i] = length(bare)
       }
     }
@@ -57,6 +58,7 @@ cp_table() {
             gsub(/▓/, "?", bare)
             gsub(/░/, "?", bare)
             gsub(/⚑/, "?", bare)
+            gsub(/→/, "?", bare)
             pad = w[i] - length(bare) + 2
             while (pad-- > 0) line = line " "
           }
@@ -163,7 +165,9 @@ cp_cmd_list() {
   fi
   {
     printf 'PROFILE\tPLAN\tACCOUNT\t5H\t7D\tFLAGS\n'
-    for name in $names; do
+    # One line, one name (see cp_usage_list_all); fd 3 keeps `claude auth
+    # status` from reading the next name off stdin.
+    while IFS= read -r -u 3 name; do
       st="$(cp_auth_status "$cfg" "$name")"
       if [ "$(printf '%s' "$st" | jq -r '.loggedIn // false')" = 'true' ]; then
         email="$(printf '%s' "$st" | jq -r '.email // "unknown"')"
@@ -188,7 +192,7 @@ cp_cmd_list() {
         "$(cp_usage_render "$(cp_usage_pct "$data" five_hour)")" \
         "$(cp_usage_render "$(cp_usage_pct "$data" seven_day)")" \
         "${markers# }"
-    done
+    done 3<<< "$names"
   } | cp_table
 }
 

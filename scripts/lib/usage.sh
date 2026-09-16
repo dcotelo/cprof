@@ -2,13 +2,34 @@
 # shellcheck shell=bash
 # Per-profile usage: fetch from the OAuth usage endpoint, cache, read.
 
+# CP_CURL_BIN follows the CP_CLAUDE_BIN / CP_SECURITY_BIN convention: a hook
+# for the test suite's stubs. CP_USAGE_URL is likewise overridable, but a
+# bearer token only ever goes to an https:// URL — see cp_usage_url_ok.
 CP_CURL_BIN="${CP_CURL_BIN:-curl}"
 CP_USAGE_URL="${CP_USAGE_URL:-https://api.anthropic.com/api/oauth/usage}"
+
+cp_usage_url_ok() {
+  case "$CP_USAGE_URL" in https://*) return 0 ;; *) return 1 ;; esac
+}
 CP_USAGE_TTL=300
 
 # cp_usage_cache_file <name> -> path (may not exist)
 cp_usage_cache_file() {
-  printf '%s/usage/%s.json\n' "$CP_STATE_DIR" "${1:-}"
+  printf '%s/usage/%s.json\n' "$CP_STATE_DIR" "$(cp_state_key "${1:-}")"
+}
+
+# cp_usage_valid <body> -> 0 when the body is a usage response worth caching:
+# five_hour must be an object, and seven_day / limits — both optional, some
+# plans return null — must be an object / an array when present. Anything
+# else (an HTML error page, a 2xx with the wrong shape) is a fetch failure,
+# so it can never replace a good cached value with one the renderers can't
+# read.
+cp_usage_valid() {
+  printf '%s' "${1:-}" | jq -e '
+    (.five_hour | type) == "object"
+    and ((.seven_day == null) or ((.seven_day | type) == "object"))
+    and ((.limits == null) or ((.limits | type) == "array"))
+  ' >/dev/null 2>&1
 }
 
 # cp_usage_fetch <cfg> <name> -> usage JSON (with fetched_at merged in) on
@@ -16,7 +37,9 @@ cp_usage_cache_file() {
 # existing cache on failure, so a blip never clobbers a good value with
 # silence.
 cp_usage_fetch() {
-  local cfg="$1" name="$2" token body file dir
+  local cfg="$1" name="$2" token body
+  [ "${CPROF_NO_USAGE:-0}" = '1' ] && return 1
+  cp_usage_url_ok || return 1
   token="$(cp_creds_read "$cfg" "$name" | jq -r '.claudeAiOauth.accessToken // empty' 2>/dev/null)"
   [ -n "$token" ] || return 1
   # The token has to sit in this local variable to build curl's stdin config
@@ -27,16 +50,24 @@ cp_usage_fetch() {
     | "$CP_CURL_BIN" -sS --max-time 2 -K - "$CP_USAGE_URL" 2>/dev/null)"
   unset token
   [ -n "$body" ] || return 1
-  printf '%s' "$body" | jq -e '.five_hour' >/dev/null 2>&1 || return 1
+  cp_usage_valid "$body" || return 1
+  cp_usage_cache_write "$name" "$body" || return 1
+  cat "$(cp_usage_cache_file "$name")"
+}
+
+# cp_usage_cache_write <name> <body> -> stamps fetched_at on an already
+# validated usage body and installs it atomically as <name>'s cache. Return 1
+# leaves whatever cache was there untouched.
+cp_usage_cache_write() {
+  local name="$1" body="$2" file dir
   file="$(cp_usage_cache_file "$name")"
   dir="$(dirname "$file")"
-  mkdir -p "$dir" || return 1
+  mkdir -p "$dir" 2>/dev/null || return 1
   chmod 700 "$CP_STATE_DIR" "$dir" 2>/dev/null
   printf '%s' "$body" | jq --argjson now "$(date +%s)" '. + {fetched_at: $now}' \
     > "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
-  chmod 600 "$file.tmp.$$" || { rm -f "$file.tmp.$$"; return 1; }
-  mv "$file.tmp.$$" "$file" || { rm -f "$file.tmp.$$"; return 1; }
-  cat "$file"
+  chmod 600 "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
+  mv "$file.tmp.$$" "$file" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
 }
 
 # cp_usage_read <cfg> <name> -> cached JSON if fresh, else refetches, else
@@ -79,6 +110,46 @@ cp_usage_pct() {
 
 cp_usage_resets_at() {
   printf '%s' "${1:-}" | jq -r --arg w "${2:-}" '.[$w].resets_at // empty' 2>/dev/null
+}
+
+# cp_usage_window_open <usage-json> <window> -> that window's resets_at on
+# stdout when it parses AND lies in the future; nothing with return 1
+# otherwise. Cached usage is served regardless of age, so a high number in
+# it may describe a window that has since reset — not something to warn
+# about. Used by doctor's 5-hour warning.
+cp_usage_window_open() {
+  local resets_at epoch
+  resets_at="$(cp_usage_resets_at "${1:-}" "${2:-five_hour}")"
+  epoch="$(cp_time_epoch "$resets_at")" || return 1
+  [ "$epoch" -gt "$(date +%s)" ] || return 1
+  printf '%s\n' "$resets_at"
+}
+
+# cp_time_epoch <rfc3339> -> seconds since the epoch, or nothing with return
+# 1. Accepts every RFC 3339 spelling a resets_at may come in: ...Z, a numeric
+# offset (+HH:MM / -HH:MM), fractional seconds (2026-04-11T07:00:00.528743
+# +00:00), or a bare UTC wall clock. macOS `date -j -f` handles neither the
+# fraction nor the colon in the offset, so: drop the fraction, parse the
+# wall-clock part as UTC, then apply the offset by hand.
+cp_time_epoch() {
+  local s="${1:-}" base off epoch hh mm
+  case "$s" in
+    '') return 1 ;;
+    *Z) base="${s%Z}"; off='+00:00' ;;
+    *[+-][0-9][0-9]:[0-9][0-9]) off="${s#"${s%??????}"}"; base="${s%??????}" ;;
+    *) base="$s"; off='+00:00' ;;
+  esac
+  base="${base%%.*}"
+  epoch="$(TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "$base" +%s 2>/dev/null)" || return 1
+  case "$epoch" in ''|*[!0-9]*) return 1 ;; esac
+  hh="${off:1:2}"; mm="${off:4:2}"
+  case "$hh" in [01][0-9]|2[0-3]) ;; *) return 1 ;; esac
+  case "$mm" in [0-5][0-9]) ;; *) return 1 ;; esac
+  case "$off" in
+    +*) epoch=$(( epoch - (10#$hh * 3600 + 10#$mm * 60) )) ;;
+    -*) epoch=$(( epoch + (10#$hh * 3600 + 10#$mm * 60) )) ;;
+  esac
+  printf '%s\n' "$epoch"
 }
 
 # cp_usage_bar <pct> -> a 10-block bar, or nothing with return 1 when pct
@@ -130,13 +201,16 @@ cp_usage_list_all() {
   fi
   {
     printf 'PROFILE\t5H\t7D\n'
-    for name in $names; do
+    # One line, one name: a for-loop over $names would split "team alpha"
+    # in two and expand "work*" against the cwd. Read from fd 3 so a
+    # command in the body that touches stdin can't eat the next name.
+    while IFS= read -r -u 3 name; do
       data="$(cp_usage_read "$cfg" "$name")"
       printf '%s\t%s\t%s\n' \
         "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" \
         "$(cp_usage_render "$(cp_usage_pct "$data" five_hour)")" \
         "$(cp_usage_render "$(cp_usage_pct "$data" seven_day)")"
-    done
+    done 3<<< "$names"
   } | cp_table
 }
 
@@ -160,8 +234,13 @@ cp_usage_detail() {
   while [ "$i" -lt "$count" ]; do
     display="$(printf '%s' "$data" | jq -r --argjson i "$i" \
       '[.limits[]? | select(.kind == "weekly_scoped")][$i].scope.model.display_name // "unknown model"')"
+    # Same normalisation as cp_usage_pct: floor a fractional utilization, so
+    # it reaches cp_usage_bar's plain-integer check as a number, not a "-".
+    # The endpoint reports a scoped limit's usage as `percent` (the top-level
+    # windows use `utilization`); accept either, floored like cp_usage_pct.
     sc_pct="$(printf '%s' "$data" | jq -r --argjson i "$i" \
-      '[.limits[]? | select(.kind == "weekly_scoped")][$i].utilization // empty')"
+      '[.limits[]? | select(.kind == "weekly_scoped")][$i] | (.percent // .utilization // empty)
+       | if type == "number" then (floor | tostring) else empty end')"
     sc_resets="$(printf '%s' "$data" | jq -r --argjson i "$i" \
       '[.limits[]? | select(.kind == "weekly_scoped")][$i].resets_at // empty')"
     printf '%-22s %s  resets %s\n' "$display" "$(cp_usage_render "$sc_pct")" "${sc_resets:-unknown}"

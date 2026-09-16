@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
 [![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](#development)
 [![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
-[![Tests](https://img.shields.io/badge/Tests-300%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
+[![Tests](https://img.shields.io/badge/Tests-508%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
 
 </div>
 
@@ -23,7 +23,7 @@ directory.
 `cprof` makes the directory decide.
 
 <p align="center">
-  <img alt="cd into a work repo and claude runs as work; cd into a side project and it runs as personal" src="docs/demo.gif" width="720">
+  <img alt="cd into a work repo and claude runs as work; cd into a side project and it runs as personal; cprof list shows both profiles with their 5-hour and 7-day usage bars" src="docs/demo.gif" width="860">
 </p>
 
 Each profile is its own Claude config directory with its own credentials, so the
@@ -32,9 +32,9 @@ a whole tree, and a per-repository pin overrides both.
 
 ```console
 $ cprof list
-PROFILE   PLAN  ACCOUNT            FLAGS
-work      team  you@acme.com       native
-personal  max   you@personal.dev   (default) (active)
+PROFILE   PLAN  ACCOUNT            5H              7D              FLAGS
+work      team  you@acme.com       ▓▓▓▓░░░░░░ 42%  ▓▓░░░░░░░░ 18%  native
+personal  max   you@personal.dev   ▓▓▓▓▓▓▓▓▓░ 91%  ▓▓▓▓▓▓░░░░ 60%  (default) (active)
 
 $ cd ~/dev/acme/api && cprof which
 work  native (keychain)  rule ~/dev/acme
@@ -75,9 +75,9 @@ claude plugin install cprof@dcotelo
 ```
 
 **[Quickstart](#quickstart)** walks the whole setup — profiles, rules, default —
-in about two minutes. Requires macOS; Homebrew pulls in `jq`, the only other
-dependency. [Install details](#install-details) covers the plugin-only path
-and updating.
+in about two minutes. Requires macOS; Homebrew pulls in `jq`, and usage data
+needs `curl`, which macOS ships. [Install details](#install-details) covers
+the plugin-only path and updating.
 
 ### Why it is built this way
 
@@ -104,8 +104,9 @@ and updating.
 
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
 [Install details](#install-details) · [Resolution order](#resolution-order) ·
-[Commands](#commands) · [Statusline](#statusline) · [Safety](#safety) ·
-[Development](#development) · [Releasing](#releasing)
+[Commands](#commands) · [Usage headroom](#usage-headroom) ·
+[Statusline](#statusline) ·
+[Safety](#safety) · [Development](#development) · [Releasing](#releasing)
 
 ## Quickstart
 
@@ -129,7 +130,7 @@ cprof add personal             # ~/.claude-profiles/personal, sharing
                                        # your plugins, skills and settings
 cprof login personal           # interactive, opens a browser
 
-# 4. choose which one is the fallback, and route one tree to the other
+# 4. choose the default profile, and route one tree to the other
 cprof default personal
 cprof rule add ~/dev/<company> work
 
@@ -140,9 +141,9 @@ cprof which
 
 ```console
 $ cprof list
-PROFILE   PLAN  ACCOUNT            FLAGS
-work      team  you@<company>.com  native
-personal  max   you@personal.dev   (default) (active)
+PROFILE   PLAN  ACCOUNT            5H              7D              FLAGS
+work      team  you@<company>.com  ▓▓▓▓░░░░░░ 42%  ▓▓░░░░░░░░ 18%  native
+personal  max   you@personal.dev   ▓▓▓▓▓▓▓▓▓░ 91%  ▓▓▓▓▓▓░░░░ 60%  (default) (active)
 
 $ cd ~/dev/<company>/api && cprof which
 work  native (keychain)  rule ~/dev/<company>
@@ -261,8 +262,8 @@ linked. Use `add --isolated` for a profile that should share nothing.
 
 What [Quickstart](#quickstart) steps 1 and 2 are doing, and why.
 
-Requires macOS and bash 3.2+ (the system shell). Homebrew pulls in `jq`, the
-only other dependency.
+Requires macOS and bash 3.2+ (the system shell). Homebrew pulls in `jq`; the
+usage feature also needs `curl`, which every supported macOS ships.
 
 **Two pieces, and you can take either alone.** `brew` installs the CLI on
 `PATH`; the plugin installs the parts that only exist inside a Claude Code
@@ -408,8 +409,9 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof rules` / `rule list` | Rules in the order resolution consults them |
 | `cprof rule rm <path>` | Drop a rule |
 | `cprof login <name>` | Sign a profile in, with keychain protection |
-| `cprof doctor` | Report unauthenticated profiles and expiring tokens |
+| `cprof doctor` | Report unauthenticated profiles, expiring tokens, and any profile at 90% or more of its 5-hour usage window |
 | `cprof usage [<name>]` | Usage bars (5h/7d) for every profile, or the full breakdown for one |
+| `cprof usage --render <name>` | Cache-only: a profile's 5h percentage, bar, and colour code, tab-separated, for the statusline; never calls the usage endpoint |
 | `cprof update` | Refresh the marketplace, then update this plugin |
 | `cprof remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
 
@@ -421,6 +423,23 @@ relaunching — which is exactly when knowing the difference matters.
 
 Listings size their columns to the contents, so a long profile name widens the
 table instead of breaking the alignment, and paths under your home print as `~`.
+
+## Usage headroom
+
+Two accounts means two rate limits, and the one you are about to hit is rarely
+the one you are looking at. `cprof list` carries each profile's 5-hour and
+7-day windows as a bar, `cprof usage` shows only that, and `cprof usage <name>`
+adds the per-model weekly limits and when each window resets:
+
+<p align="center">
+  <img alt="cprof list with 5H and 7D usage bars per profile, cprof usage work showing the full breakdown with reset times, and cprof doctor warning that personal is at 91% of its 5-hour window" src="docs/usage-demo.gif" width="860">
+</p>
+
+The bar turns yellow at 70% and red at 90%, the same threshold at which
+`cprof doctor` starts reporting the profile. Numbers come from the account's
+own usage endpoint, cached for five minutes under `~/.cprof/usage/`, so a
+`list` right after a `usage` costs no second request; set `CPROF_NO_USAGE=1`
+to turn fetching off everywhere and show whatever is cached (or `-`) instead.
 
 ## Statusline
 
@@ -588,12 +607,21 @@ the store cannot be read, the expiry is reported as unknown rather than guessed.
 missing `jq`, a malformed config, or a missing profile directory degrades to
 stock Claude Code behaviour rather than a broken shell.
 
-`cprof list`, `cprof doctor`, and `cprof usage` fetch usage data from
+`cprof list`, `cprof doctor`, and `cprof usage [<name>]` fetch usage data from
 `api.anthropic.com/api/oauth/usage` using the profile's own OAuth token,
-cached for 5 minutes under `~/.cprof/usage/`. The statusline never makes this
-call — it only reads the cache, so it never blocks. Set `CPROF_NO_USAGE=1` to
-turn fetching off everywhere; existing cached data (or a plain `-`) is shown
-instead.
+cached for 5 minutes under `~/.cprof/usage/`. `cprof usage --render <name>` is
+the exception: it is what the statusline calls, and it only reads that cache,
+so the statusline never makes the request and never blocks on it. Set
+`CPROF_NO_USAGE=1` to turn fetching off everywhere; existing cached data (or a
+plain `-`) is shown instead. A response is cached only when it has the shape
+the renderers read — anything else is treated as a failed fetch, and the
+previous cache stands.
+
+Per-profile state under `~/.cprof/` (the usage cache) is
+filed under a filename-safe key derived from the profile name, so no name —
+however it got into the config — can address a path outside that directory.
+`add` also refuses a name that is `.`, `..`, contains `/`, or contains a
+control character.
 
 ## Development
 
@@ -617,6 +645,12 @@ instead; see [SECURITY.md](SECURITY.md). Contributions: [CONTRIBUTING.md](CONTRI
 
 Tests sandbox `HOME`, the config path, the `claude` binary, and the `security`
 binary. No test touches the real keychain or a real account.
+
+The README GIFs are recorded with [VHS](https://github.com/charmbracelet/vhs)
+from `docs/demo/*.tape`; `vhs docs/demo/demo.tape` and
+`vhs docs/demo/usage.tape` regenerate them. The usage one runs the real CLI
+against a throwaway `HOME` with stubbed `claude` and `curl`, so what it shows
+is the actual rendering, not canned text.
 
 ## Releasing
 

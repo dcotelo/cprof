@@ -83,6 +83,53 @@ out="$(cp_usage_read "$CFG" work)"
 assert_eq '91' "$(cp_usage_pct "$out" five_hour)" \
   'a failed refetch falls back to the stale cache'
 
+# --- failure: malformed (non-JSON) body, stale cache untouched -----------
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+printf '<html>502 Bad Gateway</html>'
+STUB
+chmod +x "$CP_CURL_BIN"
+before="$(cat "$cache")"
+out="$(cp_usage_read "$CFG" work)"
+assert_eq '91' "$(cp_usage_pct "$out" five_hour)" \
+  'a malformed response falls back to the stale cache'
+assert_eq "$before" "$(cat "$cache")" 'a malformed response leaves the cache file unchanged'
+
+# --- failure: JSON with the wrong shape is a fetch failure too -----------
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+printf '{"five_hour":{"utilization":5},"seven_day":"nope","limits":{}}'
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(cp_usage_read "$CFG" work)"
+assert_eq '91' "$(cp_usage_pct "$out" five_hour)" \
+  'a wrongly shaped response falls back to the stale cache'
+assert_eq "$before" "$(cat "$cache")" 'a wrongly shaped response leaves the cache file unchanged'
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+printf '{"five_hour":"91%%"}'
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(cp_usage_read "$CFG" work)"
+assert_eq "$before" "$(cat "$cache")" 'a non-object five_hour leaves the cache file unchanged'
+assert_eq '91' "$(cp_usage_pct "$out" five_hour)" 'a non-object five_hour still serves the stale 91%'
+
+# --- success: seven_day and limits are optional, only their shape is checked
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+printf '{"five_hour":{"utilization":12,"resets_at":"2026-09-14T20:00:00Z"},"seven_day":null}'
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(cp_usage_read "$CFG" work)"
+assert_eq '12' "$(cp_usage_pct "$out" five_hour)" \
+  'a response without seven_day/limits is still accepted'
+jq '.fetched_at = 1 | .five_hour.utilization = 91' "$cache" > "$cache.tmp" && mv "$cache.tmp" "$cache"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+chmod +x "$CP_CURL_BIN"
+
 # --- failure: curl fails, no cache at all --------------------------------
 rm -f "$cache"
 out="$(cp_usage_read "$CFG" work)"
@@ -100,12 +147,69 @@ assert_eq '' "$out" 'opt-out with no cache yields nothing'
 assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
   'opt-out never invokes curl'
 
+# --- opt-out: an existing cache is still served, however old ------------
+mkdir -p "$CP_T_TMP/state/usage"
+cat > "$cache" <<'JSON'
+{"fetched_at":1,"five_hour":{"utilization":64,"resets_at":"2026-09-14T18:30:00Z"},
+ "seven_day":{"utilization":20,"resets_at":"2026-09-20T00:00:00Z"},"limits":[]}
+JSON
+out="$(CPROF_NO_USAGE=1 cp_usage_read "$CFG" work)"
+assert_eq '64' "$(cp_usage_pct "$out" five_hour)" 'opt-out serves the cached value'
+assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
+  'opt-out with a stale cache still never invokes curl'
+rm -f "$cache"
+
+# --- cache paths: a profile name can never address a file outside usage/ ---
+assert_eq 'work' "$(cp_state_key work)" 'a plain name is its own state key'
+assert_eq 'a.b_c-d' "$(cp_state_key a.b_c-d)" 'dots, underscores and dashes pass through'
+key="$(cp_state_key '../../escape')"
+case "$key" in *..*|*/*) assert_eq 'no slash or dotdot' "$key" 'a traversal name is hashed' ;;
+                 *) assert_eq ok ok 'a traversal name is hashed' ;; esac
+case "$(cp_state_key 'team alpha')" in *' '*) assert_eq 'no space' "$(cp_state_key 'team alpha')" 'a name with a space is hashed' ;;
+                                         *) assert_eq ok ok 'a name with a space is hashed' ;; esac
+assert_eq "$(cp_state_key '../../escape')" "$(cp_state_key '../../escape')" 'the hashed key is stable'
+# a plain name that looks like a hashed key is hashed too, so no two names
+# can ever share a state file
+hk="$(cp_state_key 'team alpha')"
+case "$hk" in h-*) assert_eq ok ok 'hashed keys carry the h- prefix' ;; *) assert_eq 'h-...' "$hk" 'hashed keys carry the h- prefix' ;; esac
+assert_eq 'false' "$([ "$(cp_state_key "$hk")" = "$hk" ] && echo true || echo false)" \
+  'a name spelled like another name'"'"'s hashed key does not collide with it'
+case "$(cp_state_key 'h-work')" in h-work) assert_eq 'hashed' 'h-work' 'a plain name starting with h- is hashed' ;;
+                                    h-*) assert_eq ok ok 'a plain name starting with h- is hashed' ;;
+                                    *) assert_eq 'h-<hash>' "$(cp_state_key 'h-work')" 'a plain name starting with h- is hashed' ;; esac
+assert_eq "$CP_T_TMP/state/usage/$(cp_state_key '../../escape').json" \
+  "$(cp_usage_cache_file '../../escape')" 'the cache file for a hostile name stays under usage/'
+case "$(cp_usage_cache_file '../../escape')" in
+  "$CP_T_TMP/state/usage/"*) assert_eq ok ok 'hostile cache path is inside the state dir' ;;
+  *) assert_eq "$CP_T_TMP/state/usage/..." "$(cp_usage_cache_file '../../escape')" 'hostile cache path is inside the state dir' ;;
+esac
+
 # --- no token: native/never-logged-in profile fails fast, no crash -------
 cp_t_write_config <<JSON
 {"default":"native","profiles":[{"name":"native","native":true}],"rules":[],"repos":{}}
 JSON
 CFG="$(cp_config_read)"
 assert_fail cp_usage_fetch "$CFG" native
+
+# --- cp_time_epoch: the endpoint's RFC 3339 timestamps, in every spelling --
+assert_eq '1902700800' "$(cp_time_epoch '2030-04-18T00:00:00Z')" 'Z suffix parses as UTC'
+assert_eq '1902700800' "$(cp_time_epoch '2030-04-18T00:00:00.528743+00:00')" 'fractional seconds and +00:00 parse'
+assert_eq '1902700800' "$(cp_time_epoch '2030-04-18T02:00:00+02:00')" 'a positive offset is applied'
+assert_eq '1902700800' "$(cp_time_epoch '2030-04-17T19:00:00-05:00')" 'a negative offset is applied'
+assert_eq '1902700800' "$(cp_time_epoch '2030-04-18T00:00:00')" 'no zone is read as UTC'
+assert_fail cp_time_epoch 'not-a-time'
+assert_fail cp_time_epoch ''
+assert_fail cp_time_epoch '2030-04-18'
+assert_fail cp_time_epoch '2030-04-18T00:00:00+99:99'
+assert_fail cp_time_epoch '2030-04-18T00:00:00-25:00'
+assert_fail cp_time_epoch '2030-04-18T00:00:00+05:60'
+assert_eq '1902700800' "$(cp_time_epoch '2030-04-18T23:59:00+23:59')" 'the largest valid offset is accepted'
+
+# --- cp_usage_window_open: only a parseable, future resets_at counts -------
+assert_eq '2030-01-01T00:00:00Z' "$(cp_usage_window_open '{"five_hour":{"resets_at":"2030-01-01T00:00:00Z"}}' five_hour)" \
+  'an open window returns its resets_at'
+assert_fail cp_usage_window_open '{"five_hour":{"resets_at":"2020-01-01T00:00:00Z"}}' five_hour
+assert_fail cp_usage_window_open '{"five_hour":{"utilization":92}}' five_hour
 
 # --- cp_usage_bar: rounding and bounds ------------------------------------
 assert_eq '▓▓▓▓░░░░░░' "$(cp_usage_bar 42)" 'bar rounds down under half'
@@ -159,7 +263,7 @@ cat > "$CP_CURL_BIN" <<'STUB'
 cat <<'JSON'
 {"five_hour":{"utilization":42,"resets_at":"2026-09-14T18:30:00Z"},
  "seven_day":{"utilization":18,"resets_at":"2026-09-20T00:00:00Z"},
- "limits":[{"kind":"weekly_scoped","utilization":55,
+ "limits":[{"kind":"weekly_scoped","percent":55.7,
             "resets_at":"2026-09-20T00:00:00Z",
             "scope":{"model":{"display_name":"Claude Opus 4.5"}}}]}
 JSON
@@ -177,11 +281,85 @@ case "$out" in *'42%'*) assert_eq ok ok 'usage detail shows 5h' ;;
                 *) assert_eq '42%' "$out" 'usage detail shows 5h' ;; esac
 case "$out" in *'18%'*) assert_eq ok ok 'usage detail shows 7d' ;;
                 *) assert_eq '18%' "$out" 'usage detail shows 7d' ;; esac
-case "$out" in *'Claude Opus 4.5'*'55%'*) assert_eq ok ok 'usage detail shows weekly_scoped model' ;;
-                *) assert_eq 'Claude Opus 4.5 ... 55%' "$out" 'usage detail shows weekly_scoped model' ;; esac
+case "$out" in *'Claude Opus 4.5'*'▓▓▓▓▓▓░░░░ 55%'*) assert_eq ok ok 'usage detail floors a fractional weekly_scoped utilization to its bar and percentage' ;;
+                *) assert_eq 'Claude Opus 4.5 ... ▓▓▓▓▓▓░░░░ 55%' "$out" 'usage detail floors a fractional weekly_scoped utilization to its bar and percentage' ;; esac
+
+# --- contract: the live endpoint's shape (paths captured from a real
+# logged-in response on 2026-09-16, values synthetic). Top-level windows use
+# `utilization`; limits[] entries use `percent` and come in kinds session,
+# weekly_all, weekly_scoped; five_hour may carry no resets_at while the
+# window is idle; extra_usage / spend / seven_day_breakdown ride along. ------
+live='{"five_hour":{"utilization":41},
+ "seven_day":{"utilization":23,"resets_at":"2030-01-05T00:00:00Z"},
+ "limits":[{"group":"a","kind":"session","percent":41,"resets_at":"2030-01-01T18:00:00Z","severity":"ok"},
+           {"group":"b","kind":"weekly_all","percent":23,"resets_at":"2030-01-05T00:00:00Z","severity":"ok","is_active":true},
+           {"group":"c","kind":"weekly_scoped","percent":67.4,"resets_at":"2030-01-05T00:00:00Z","severity":"ok","is_active":true,
+            "scope":{"model":{"display_name":"Claude Opus 5"}}}],
+ "seven_day_breakdown":{"as_of":"2030-01-01T00:00:00Z","window_started_at":"2029-12-29T00:00:00Z",
+   "rows":[{"display_name":"Claude Opus 5","key":"opus","percent":20}]},
+ "extra_usage":{"credits_ever_enabled":false,"currency":"USD","decimal_places":2,"disabled_reason":null,"monthly_limit":0,"used_credits":0,"utilization":0},
+ "nimbus_quill":{"utilization":0},
+ "spend":{"disclaimer":"x","percent":0,"severity":"ok","used":{"amount_minor":0,"currency":"USD","exponent":2}}}'
+assert_ok cp_usage_valid "$live"
+assert_eq '41' "$(cp_usage_pct "$live" five_hour)" 'live shape: five_hour utilization reads'
+assert_eq '23' "$(cp_usage_pct "$live" seven_day)" 'live shape: seven_day utilization reads'
+assert_fail cp_usage_window_open "$live" five_hour
+cat > "$CP_CURL_BIN" <<STUB
+#!/usr/bin/env bash
+printf '%s' '$live'
+STUB
+chmod +x "$CP_CURL_BIN"
+rm -f "$CP_T_TMP/state/usage/work.json"
+out="$(NO_COLOR=1 "$CLI" usage work 2>/dev/null)"
+case "$out" in *'Claude Opus 5'*'▓▓▓▓▓▓▓░░░ 67%'*) assert_eq ok ok 'live shape: the weekly_scoped row reads percent' ;;
+                *) assert_eq 'Claude Opus 5 ... ▓▓▓▓▓▓▓░░░ 67%' "$out" 'live shape: the weekly_scoped row reads percent' ;; esac
+case "$out" in *'5h    ▓▓▓▓░░░░░░ 41%  resets unknown'*) assert_eq ok ok 'live shape: an idle five_hour shows resets unknown' ;;
+                *) assert_eq '5h    ▓▓▓▓░░░░░░ 41%  resets unknown' "$out" 'live shape: an idle five_hour shows resets unknown' ;; esac
+
+# --- CP_USAGE_URL must be https: a token never goes anywhere else -----------
+rm -f "$CP_T_TMP/curl-called"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+echo 'should not be called' >> "$CP_T_TMP/curl-called"
+exit 1
+STUB
+chmod +x "$CP_CURL_BIN"
+rm -f "$CP_T_TMP/state/usage/work.json"
+CFG="$(cp_config_read)"
+rc=0; CP_USAGE_URL=http://attacker.example/usage cp_usage_fetch "$CFG" work >/dev/null 2>&1 || rc=$?
+assert_eq '1' "$rc" 'a non-https CP_USAGE_URL fails the fetch'
+assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
+  'a non-https CP_USAGE_URL never reaches curl'
 
 # --- cprof usage <unknown> -------------------------------------------------
 assert_fail "$CLI" usage nope
+
+# --- cprof usage: names with spaces or glob characters stay one row each --
+mkdir -p "$CP_T_TMP/ta" "$CP_T_TMP/star" "$CP_T_TMP/state/usage"
+cp_t_write_config <<JSON
+{"default":"team alpha","profiles":[{"name":"team alpha","dir":"$CP_T_TMP/ta"},{"name":"work*","dir":"$CP_T_TMP/star"}],"rules":[],"repos":{}}
+JSON
+now="$(date +%s)"
+for n in 'team alpha' 'work*'; do
+  printf '{"fetched_at":%s,"five_hour":{"utilization":33},"seven_day":{"utilization":11},"limits":[]}' "$now" \
+    > "$CP_T_TMP/state/usage/$(cp_state_key "$n").json"
+done
+rm -f "$CP_T_TMP/curl-called"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+echo 'should not be called' >> "$CP_T_TMP/curl-called"
+exit 1
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(cd "$CP_T_TMP" && NO_COLOR=1 "$CLI" usage 2>/dev/null)"
+assert_eq '3' "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" \
+  'usage table has one row per profile when names hold spaces or globs'
+case "$out" in *'team alpha'*'33%'*) assert_eq ok ok 'a name with a space is one row' ;;
+                *) assert_eq 'team alpha ... 33%' "$out" 'a name with a space is one row' ;; esac
+case "$out" in *'work*'*'33%'*) assert_eq ok ok 'a name with a glob character is one row' ;;
+                *) assert_eq 'work* ... 33%' "$out" 'a name with a glob character is one row' ;; esac
+assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
+  'fresh caches under hashed keys are found, so curl is never invoked'
 
 # --- usage --render: no cache yields nothing -----------------------------
 cp_t_write_config <<JSON
@@ -202,6 +380,29 @@ fields="$("$CLI" usage --render fresh 2>/dev/null)"
 assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" '--render field 1 is the five_hour pct'
 assert_eq "$(cp_usage_bar 73)" "$(printf '%s' "$fields" | cut -f2)" '--render field 2 is the bar'
 assert_eq '33' "$(printf '%s' "$fields" | cut -f3)" '--render field 3 is the SGR code (yellow=33)'
+
+# --- statusline: renders the cached badge, never touches the network ------
+SEG="$(cd "$(dirname "$0")/.." && pwd -P)/statusline/segment.sh"
+rm -f "$CP_T_TMP/curl-called"
+cat > "$CP_CURL_BIN" <<'STUB'
+#!/usr/bin/env bash
+echo 'should not be called' >> "$CP_T_TMP/curl-called"
+exit 1
+STUB
+chmod +x "$CP_CURL_BIN"
+out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/f" NO_COLOR=1 bash "$SEG" </dev/null 2>/dev/null)"
+case "$out" in *'⚑ fresh'*'▓▓▓▓▓▓▓░░░ 73%'*) assert_eq ok ok 'segment appends the cached usage badge' ;;
+                *) assert_eq '⚑ fresh ▓▓▓▓▓▓▓░░░ 73%' "$out" 'segment appends the cached usage badge' ;; esac
+case "$out" in *"$(printf '\033')"*) assert_eq 'no escape bytes' "$out" 'NO_COLOR output carries no SGR sequences' ;;
+                *) assert_eq ok ok 'NO_COLOR output carries no SGR sequences' ;; esac
+assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
+  'segment never invokes curl'
+rm -f "$CP_T_TMP/state/usage/fresh.json"
+out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/f" NO_COLOR=1 bash "$SEG" </dev/null 2>/dev/null)"
+case "$out" in *'%'*) assert_eq '⚑ fresh' "$out" 'segment omits the badge with no cache' ;;
+                *) assert_eq ok ok 'segment omits the badge with no cache' ;; esac
+assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
+  'segment with no cache still never invokes curl'
 
 # --- cprof list: 5H/7D columns --------------------------------------------
 cp_t_write_config <<JSON

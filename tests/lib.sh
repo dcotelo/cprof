@@ -22,6 +22,9 @@ cp_t_setup() {
   export CP_CURL_BIN="$CP_T_TMP/bin/curl"
   unset CLAUDE_PROFILE
   unset CLAUDE_CONFIG_DIR
+  # Usage controls a developer's shell may carry must not leak into the
+  # fixtures (CPROF_NO_USAGE=1 would silently skip every fetch).
+  unset CPROF_NO_USAGE CP_USAGE_URL
 }
 
 cp_t_teardown() {

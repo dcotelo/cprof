@@ -989,7 +989,7 @@ Update the `list` row's description to mention the new columns:
 
 Edit `README.md` around line 424-428. Change the example and add one sentence:
 
-```markdown
+````markdown
 ## Statusline
 
 ```console
@@ -1006,7 +1006,7 @@ colored red/yellow/green by how close it is to the cap:
 
 The badge carries the profile's colour, and `--text` decides how far it
 reaches:
-```
+````
 
 (the rest of that section is unchanged).
 

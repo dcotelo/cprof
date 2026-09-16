@@ -1,4 +1,8 @@
 # CodeRabbit configuration — https://docs.coderabbit.ai/reference/yaml-template
+#
+# Re-reviews: comment `@coderabbitai review` (incremental — only commits since
+# the last review). `@coderabbitai full review` re-reads the whole PR, produces
+# a fresh batch of findings every time, and burns the hourly quota.
 language: en-US
 reviews:
   profile: chill
@@ -10,11 +14,15 @@ reviews:
   path_instructions:
     - path: "scripts/**"
       instructions: >-
-        Bash CLI. User-facing messages go to stderr via cp_warn; stdout is
-        reserved for shell-eval output (cprof env). Paths shown to users go
-        through cp_path_display; stored paths stay absolute via
-        cp_path_normalize. Flag any new command output that breaks these
-        conventions.
+        Bash CLI. Diagnostics — warnings and errors — go to stderr via
+        cp_warn. The stdout reservation is for `cprof env`, whose output is
+        eval'd by the shell: nothing but export/unset statements may reach
+        its stdout. Report and listing commands (list, which, status, rules,
+        doctor, usage, share) print their data on stdout
+        like any Unix tool, and their tests capture stdout; do not flag
+        that. Paths shown to users go through cp_path_display; stored paths
+        stay absolute via cp_path_normalize. Flag any new command output
+        that breaks these conventions.
     - path: "tests/**"
       instructions: >-
         Tests use the harness in tests/lib.sh (assert_eq, assert_ok,

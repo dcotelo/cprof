@@ -42,9 +42,20 @@ u_pct="$(printf '%s' "$usage_render" | cut -f1)"
 u_bar="$(printf '%s' "$usage_render" | cut -f2)"
 u_code="$(printf '%s' "$usage_render" | cut -f3)"
 
-# No colour resolved, or the reader asked for none: the original dim badge,
-# plus a plain usage suffix if a cache exists.
-if [ -z "$code" ] || [ -n "${NO_COLOR+set}" ]; then
+# The reader asked for no colour: plain text, no SGR sequences at all —
+# NO_COLOR means no escapes, not "escapes that happen to be grey".
+if [ -n "${NO_COLOR+set}" ]; then
+  if [ -n "$u_pct" ]; then
+    printf '⚑ %s %s %s%%\n' "$name" "$u_bar" "$u_pct"
+  else
+    printf '⚑ %s\n' "$name"
+  fi
+  exit 0
+fi
+
+# No colour resolved for this profile: the original dim badge, plus a plain
+# usage suffix if a cache exists.
+if [ -z "$code" ]; then
   if [ -n "$u_pct" ]; then
     printf '\033[2m⚑ %s\033[0m %s %s%%\n' "$name" "$u_bar" "$u_pct"
   else

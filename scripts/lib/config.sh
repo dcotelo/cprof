@@ -33,6 +33,24 @@ cp_warn() {
   printf 'cprof: %s\n' "$1" >&2
 }
 
+# cp_state_key <name> -> the filename a profile's per-profile state (usage
+# cache) is kept under in $CP_STATE_DIR. A plain name is its
+# own key, so those files stay readable; anything else — a slash, "." or
+# "..", whitespace, glob or control characters — is replaced by its sha256,
+# so no profile name, however it got into the config, can address a path
+# outside the state directory. Every read, write and delete of such a file
+# goes through this, rather than trusting add-time validation alone.
+cp_state_key() {
+  local name="${1:-}"
+  # h-* is reserved for hashed keys: a plain name spelled that way is hashed
+  # as well, so two names can never map to the same file.
+  case "$name" in
+    ''|.|..|h-*|*[!A-Za-z0-9._@+-]*)
+      printf 'h-%s\n' "$(printf '%s' "$name" | shasum -a 256 | cut -c1-32)" ;;
+    *) printf '%s\n' "$name" ;;
+  esac
+}
+
 cp_have_jq() {
   command -v jq >/dev/null 2>&1
 }
