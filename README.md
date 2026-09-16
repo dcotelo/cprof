@@ -597,7 +597,7 @@ stock Claude Code behaviour rather than a broken shell.
 ```bash
 bash tests/run.sh                    # run the suite
 shellcheck -x -P scripts -P tests scripts/cprof scripts/lib/*.sh hooks/*.sh \
-  statusline/*.sh tests/*.sh install.sh
+  statusline/*.sh tests/*.sh .github/scripts/*.sh docs/demo/*.sh docs/demo/bin/* install.sh
 claude plugin validate .             # check the manifests
 ```
 
