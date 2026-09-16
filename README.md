@@ -592,6 +592,35 @@ Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
 Targets bash 3.2 (macOS system bash), with `jq` as the only external dependency.
 
+### Dependencies
+
+Runtime, dev, and CI dependencies are chosen and tracked like this:
+
+- **Runtime: `jq`, nothing else.** It reads and validates the JSON config;
+  bash 3.2 has no safe way to do that alone. Any `jq` 1.5 or newer works, so it
+  is not version-pinned. Homebrew installs it through the formula; the curl
+  installer refuses to run without it. Adding a runtime dependency is a design
+  decision, not a convenience — open an issue first.
+- **Dev: `shellcheck`.** Pinned by version in `.github/workflows/ci.yml`
+  (`SHELLCHECK_VERSION`), downloaded from its GitHub release rather than taken
+  from the runner image, so local and CI findings agree. Bumped by hand,
+  deliberately, in its own commit.
+- **CI: `@anthropic-ai/claude-code`.** Installed from npm at a pinned version
+  for `claude plugin validate` only; bumped by hand when the manifest format
+  changes.
+- **GitHub Actions.** Every third-party action is pinned to a full commit SHA
+  with the version as a trailing comment. Bumps are reviewed like any other
+  change.
+
+### Project repositories
+
+- [dcotelo/cprof](https://github.com/dcotelo/cprof) — this repository: the
+  CLI, the plugin, hooks, statusline segment, installer, tests, and release
+  automation.
+- [dcotelo/homebrew-tap](https://github.com/dcotelo/homebrew-tap) — the
+  Homebrew formula. The release workflow dispatches a `cprof-released` event to
+  it so the formula bumps on every release; it also polls daily as a backstop.
+
 Found a bug? [Open an issue](https://github.com/dcotelo/cprof/issues) —
 templates are provided. Security problems go through
 [private vulnerability reporting](https://github.com/dcotelo/cprof/security/advisories/new)
