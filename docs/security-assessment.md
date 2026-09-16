@@ -13,8 +13,11 @@ cprof's whole job is routing Claude Code at per-profile credential stores:
 - **Profile directories** (`~/.claude-profiles/<name>` by default), each a full
   `CLAUDE_CONFIG_DIR` holding `.credentials.json` and session data.
 - **macOS keychain items** — Claude Code stores tokens under a service name
-  derived from `CLAUDE_CONFIG_DIR` (`scripts/lib/auth.sh`); cprof reads status,
-  never writes keychain items itself.
+  derived from `CLAUDE_CONFIG_DIR` (`scripts/lib/auth.sh`); cprof mostly reads
+  status, but does write keychain items in one narrow case: `cp_cmd_login`'s
+  safety-net restore (if `claude auth login` writes to the shared keychain
+  item instead of the profile-specific one). `remove --purge` deletes a
+  profile's own item.
 - **The config file** (`~/.config/cprof/config.json`) — controls which
   credentials a directory resolves to. Whoever writes it decides which account
   every repo bills and authenticates as.
@@ -36,6 +39,7 @@ code execution via the installer or hooks.
 | CI / release pipeline | Compromised action or leaked token publishes a malicious release | All third-party actions pinned to commit SHAs; workflows default `permissions: contents: read`, escalating per-job; checkouts that never push set `persist-credentials: false`; tap dispatch uses a separate token scoped to the tap repo only; secret scanning + Scorecard + Dependabot alerts enabled |
 | Version-bump automation (`release-bump.yml`) | A pull request steers a write-capable token, or the bot pushes unreviewed code | The versioning script is read from the base revision (`git show "$BASE_SHA:…"`), so a branch cannot choose what the token executes; the job pushes only to the pull request branch it runs on, never to `main`, and skips fork pull requests, whose token is read-only. Residual: the workflow file itself comes from the branch, as `pull_request` always runs the head's definition — so the trust boundary is write access to this repository, which a same-repo pull request already implies |
 | Keychain reads | Credential exposure through cprof output | cprof reads auth *status* via `claude auth status --json` and `security`(1) lookups; token values are never printed — status output carries plan/account, not secrets |
+| Usage endpoint fetch (`list`/`doctor`/`usage`) | Token exposure over the network, or via `ps` | TLS to `api.anthropic.com`; the bearer token is sent only in a request header, never in a URL or body; passed to curl via a `-K -` stdin config block, not argv, so it never appears in `ps`. `CPROF_NO_USAGE=1` disables the call entirely. The statusline never triggers this fetch, only reads a local cache |
 
 ## Accepted risks
 
@@ -45,6 +49,12 @@ code execution via the installer or hooks.
   The tarball it then downloads comes from GitHub's tag archive endpoint rather than the
   checksummed release asset. Homebrew remains the verified-install path — the
   formula pins a checksum.
+- **The usage-fetch token passes through one shell variable.** `cp_usage_fetch`
+  (`scripts/lib/usage.sh`) has to interpolate the OAuth token into a string to
+  build curl's `-K -` config block, so — unlike `cp_creds_read`'s callers,
+  which pipe credentials straight into `jq` — the token briefly exists in a
+  local variable. It never reaches argv (invisible to `ps`) and the variable
+  is `unset` immediately after use.
 - **Local same-user malware** can do everything cprof can. No sandbox is
   claimed; cprof is a convenience layer inside the user's own account.
 - **`claude` binary trust** — cprof execs whatever `claude` resolves to

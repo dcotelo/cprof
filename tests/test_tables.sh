@@ -122,4 +122,24 @@ coloured="$({ printf 'PROFILE\tPLAN\n'
 stripped="$(printf '%s\n' "$coloured" | sed 's/'"$(printf '\033')"'\[[0-9;]*m//g')"
 assert_eq "$plain" "$stripped" 'escapes do not change column widths'
 
+# --- cp_table: alignment holds with the usage columns added ---------------
+expected='PROFILE  PLAN  ACCOUNT   5H              7D             FLAGS
+work     max   me@x.com  ▓▓▓▓░░░░░░ 42%  ░░░░░░░░░░ 0%  (active)'
+assert_eq "$expected" "$(printf 'PROFILE\tPLAN\tACCOUNT\t5H\t7D\tFLAGS\nwork\tmax\tme@x.com\t▓▓▓▓░░░░░░ 42%%\t░░░░░░░░░░ 0%%\t(active)\n' | cp_table)" \
+  'six-column rows with multi-byte bar characters still align'
+
+# --- cp_table: the statusline's ⚑ flag glyph is also width-normalized ------
+expected='PROFILE   FLAGS
+⚑ work    ok
+personal  not logged in'
+assert_eq "$expected" "$(printf 'PROFILE\tFLAGS\n\xe2\x9a\x91 work\tok\npersonal\tnot logged in\n' | cp_table)" \
+  'a cell containing the flag glyph still aligns with plain-ASCII rows'
+
+# --- cp_table: an arrow glyph is width-normalized like the flag -----------
+expected='PROFILE        FLAGS
+work→personal  (active)
+work           ok'
+assert_eq "$expected" "$(printf 'PROFILE\tFLAGS\nwork\xe2\x86\x92personal\t(active)\nwork\tok\n' | cp_table)" \
+  'a cell containing an arrow glyph still aligns with a plain-ASCII row'
+
 cp_t_summary

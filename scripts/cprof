@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.9.0'
+CP_VERSION='0.10.0'
 # The plugin's own marketplace and scoped name, consumed by cp_cmd_update.
 # 'update' always targets this specific listing — it is not something a user
 # configures, so it lives next to CP_VERSION rather than in ~/.cprof.json.
@@ -43,6 +43,8 @@ fi
 . "$CP_LIB_DIR/output.sh"
 # shellcheck source=lib/color.sh
 . "$CP_LIB_DIR/color.sh"
+# shellcheck source=lib/usage.sh
+. "$CP_LIB_DIR/usage.sh"
 # shellcheck source=lib/share.sh
 . "$CP_LIB_DIR/share.sh"
 # shellcheck source=lib/update.sh
@@ -71,6 +73,7 @@ usage:
   cprof rule add <path> <name> | rule rm <path> | rule list
   cprof login <name>
   cprof doctor
+  cprof usage [<name>]              usage bars (5h/7d), or full breakdown for one profile
   cprof update                      refresh the marketplace, then update this plugin
   cprof remove <name> [--purge]
   cprof version
@@ -98,6 +101,7 @@ case "$cmd" in
   color)   cp_cmd_color "$@" ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
+  usage)   cp_cmd_usage "$@" ;;
   update)  cp_cmd_update "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
   version|--version|-v) printf 'cprof %s\n' "$CP_VERSION" ;;

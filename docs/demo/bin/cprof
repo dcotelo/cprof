@@ -3,9 +3,9 @@ set -u
 # Demo stub for the README GIF — canned output matching the README examples.
 case "$1" in
   list)
-    printf 'PROFILE   PLAN  ACCOUNT            FLAGS\n'
-    printf '\033[35mwork\033[0m      team  you@acme.com       native\n'
-    printf '\033[32mpersonal\033[0m  max   you@personal.dev   (default) (active)\n'
+    printf 'PROFILE   PLAN  ACCOUNT           5H              7D              FLAGS\n'
+    printf '\033[35mwork\033[0m      team  you@acme.com      \033[32m▓▓▓▓░░░░░░ 42%%\033[0m  \033[32m▓▓░░░░░░░░ 18%%\033[0m  native\n'
+    printf '\033[32mpersonal\033[0m  max   you@personal.dev  \033[31m▓▓▓▓▓▓▓▓▓░ 91%%\033[0m  \033[32m▓▓▓▓▓▓░░░░ 60%%\033[0m  (default) (active)\n'
     ;;
   which)
     printf '\033[35mwork\033[0m  native (keychain)  rule ~/dev/acme\n'

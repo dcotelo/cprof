@@ -34,15 +34,47 @@ render="$("$cli" color --render "$name" 2>/dev/null)"
 code="${render%%	*}"
 text="${render##*	}"
 
-# No colour resolved, or the reader asked for none: the original dim badge.
-if [ -z "$code" ] || [ -n "${NO_COLOR+set}" ]; then
-  printf '\033[2m⚑ %s\033[0m\n' "$name"
+# Usage badge: cache-only (never fetches — see cp_usage_read_cached_only),
+# so this never adds latency. Empty fields mean no cache yet; the statusline
+# looks exactly like it did before this feature in that case.
+usage_render="$("$cli" usage --render "$name" 2>/dev/null)"
+u_pct="$(printf '%s' "$usage_render" | cut -f1)"
+u_bar="$(printf '%s' "$usage_render" | cut -f2)"
+u_code="$(printf '%s' "$usage_render" | cut -f3)"
+
+# The reader asked for no colour: plain text, no SGR sequences at all —
+# NO_COLOR means no escapes, not "escapes that happen to be grey".
+if [ -n "${NO_COLOR+set}" ]; then
+  if [ -n "$u_pct" ]; then
+    printf '⚑ %s %s %s%%\n' "$name" "$u_bar" "$u_pct"
+  else
+    printf '⚑ %s\n' "$name"
+  fi
+  exit 0
+fi
+
+# No colour resolved for this profile: the original dim badge, plus a plain
+# usage suffix if a cache exists.
+if [ -z "$code" ]; then
+  if [ -n "$u_pct" ]; then
+    printf '\033[2m⚑ %s\033[0m %s %s%%\n' "$name" "$u_bar" "$u_pct"
+  else
+    printf '\033[2m⚑ %s\033[0m\n' "$name"
+  fi
   exit 0
 fi
 
 if [ "$text" = 'on' ]; then
-  printf '\033[%sm⚑ %s\033[0m\n' "$code" "$name"
+  if [ -n "$u_pct" ]; then
+    printf '\033[%sm⚑ %s\033[0m \033[%sm%s %s%%\033[0m\n' "$code" "$name" "$u_code" "$u_bar" "$u_pct"
+  else
+    printf '\033[%sm⚑ %s\033[0m\n' "$code" "$name"
+  fi
 else
-  printf '\033[%sm⚑\033[0m \033[2m%s\033[0m\n' "$code" "$name"
+  if [ -n "$u_pct" ]; then
+    printf '\033[%sm⚑\033[0m \033[2m%s\033[0m \033[%sm%s %s%%\033[0m\n' "$code" "$name" "$u_code" "$u_bar" "$u_pct"
+  else
+    printf '\033[%sm⚑\033[0m \033[2m%s\033[0m\n' "$code" "$name"
+  fi
 fi
 exit 0

@@ -84,7 +84,26 @@ cp_refresh_ms_left() {
 
 cp_keychain_write() {
   "$CP_SECURITY_BIN" add-generic-password -U \
-    -a "${USER:-$(id -un)}" -s "$CP_KEYCHAIN_SERVICE" -w "$1" >/dev/null 2>&1
+    -a "${USER:-$(id -un)}" -s "${2:-$CP_KEYCHAIN_SERVICE}" -w "$1" >/dev/null 2>&1
+}
+
+# cp_keychain_status <service> -> 0 present, 1 absent, 2 could not tell. An
+# empty cp_keychain_read is ambiguous — absent or failed — so callers that
+# must know the difference (purge: is there an item to delete?) use this: `security`
+# exits 44 (errSecItemNotFound) for absent and something else for trouble.
+cp_keychain_status() {
+  "$CP_SECURITY_BIN" find-generic-password -s "${1:-$CP_KEYCHAIN_SERVICE}" \
+    -a "${USER:-$(id -un)}" >/dev/null 2>&1
+  case $? in
+    0)  return 0 ;;
+    44) return 1 ;;
+    *)  return 2 ;;
+  esac
+}
+
+cp_keychain_delete() {
+  "$CP_SECURITY_BIN" delete-generic-password \
+    -a "${USER:-$(id -un)}" -s "${1:-$CP_KEYCHAIN_SERVICE}" >/dev/null 2>&1
 }
 
 cp_cmd_login() {
@@ -138,15 +157,21 @@ cp_cmd_login() {
 }
 
 cp_cmd_doctor() {
-  local cfg names name st logged active ms left_days status=0
+  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets
   cfg="$(cp_config_read)" || return 1
+  # cp_usage_render (usage.sh) reads CP_COLOR_ON through bash's dynamic
+  # scoping, the same cross-file pattern cp_colorize already relies on.
+  # shellcheck disable=SC2034
+  cp_color_enabled && CP_COLOR_ON=1
   active="$(printf '%s' "$cfg" | cp_resolve 2>/dev/null | cut -f1)"
   names="$(printf '%s' "$cfg" | jq -r '.profiles[]?.name')"
   if [ -z "$names" ]; then
     printf 'no profiles configured\n'
     return 1
   fi
-  for name in $names; do
+  # One line, one name (see cp_usage_list_all); fd 3 keeps `claude auth
+  # status` and friends from reading the next name off stdin.
+  while IFS= read -r -u 3 name; do
     st="$(cp_auth_status "$cfg" "$name")"
     logged="$(printf '%s' "$st" | jq -r '.loggedIn // false')"
     if [ "$logged" != 'true' ]; then
@@ -163,7 +188,23 @@ cp_cmd_doctor() {
     else
       printf '%s: ok\n' "$name"
     fi
-  done
+    usage_data="$(cp_usage_read "$cfg" "$name")"
+    if [ -n "$usage_data" ]; then
+      pct="$(cp_usage_pct "$usage_data" five_hour)"
+      case "$pct" in
+        ''|*[!0-9]*) : ;;
+        *)
+          # A stale cache (refetch failed) may describe a window that has
+          # already reset; only an open window is worth an alarm.
+          if [ "$pct" -ge 90 ] && resets="$(cp_usage_window_open "$usage_data" five_hour)"; then
+            printf '%s: 5h window at %s (resets %s)\n' \
+              "$name" "$(cp_usage_render "$pct")" "$resets"
+            status=1
+          fi
+          ;;
+      esac
+    fi
+  done 3<<< "$names"
   printf 'active profile here: %s\n' "${active:-none}"
   return "$status"
 }

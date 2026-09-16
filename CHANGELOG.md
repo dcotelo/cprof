@@ -5,6 +5,44 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+### Changed
+- Profile names may no longer be `.`, `..`, contain `/`, or contain a control
+  character (tab, newline), and every per-profile state file under `~/.cprof/`
+  (the usage cache) is filed under a filename-safe key derived from the name,
+  so no profile name can address a path outside the state directory. `remove`
+  scrubs that state before it rewrites the config, so a failed scrub leaves
+  the profile registered for a retry instead of orphaning the files.
+- A usage response is cached only when it has the shape the renderers read
+  (`five_hour` an object; `seven_day` and `limits`, when present, an object
+  and an array). Anything else is a failed fetch, and the previous cache
+  stands.
+- `list`, `doctor`, and `usage` treat a profile name containing spaces or
+  glob characters as one profile, not several.
+- `remove --purge` deletes the profile's live keychain item, so a profile
+  re-added at the same directory does not inherit the removed one's
+  credentials. A directory or keychain item that refuses to go — or a
+  keychain that cannot be read — now fails the command and leaves the
+  profile registered; the cached state is scrubbed first and the keychain
+  item before the directory, so a refusal at any step leaves everything
+  after it untouched.
+- `cprof usage <name>` reads a per-model limit's `percent`, the field the
+  endpoint sends (the top-level windows use `utilization`), so the model
+  rows render instead of showing `-`. A bearer token is only ever sent to an
+  `https://` usage URL.
+- `cprof doctor`'s 5-hour warning fires only while that window is still
+  open: a stale cache served after a failed refetch may describe a window
+  that has already reset.
+- `resets_at` is parsed as RFC 3339 in every spelling — `...Z`, numeric
+  offsets, fractional seconds, or a bare UTC wall clock — rather than only
+  the `...Z` form the fixtures use.
+- The statusline badge prints plain text under `NO_COLOR`, with no dim
+  escape sequences.
+
+## [0.10.0]
+### Added
+- `cprof usage [<name>]`, usage columns in `cprof list`, a usage warning in
+  `cprof doctor`, and a usage badge on the statusline, backed by
+  `api.anthropic.com/api/oauth/usage`. Opt out with `CPROF_NO_USAGE=1`.
 ## [0.9.0]
 
 ### Added
