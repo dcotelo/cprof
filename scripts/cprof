@@ -45,6 +45,8 @@ fi
 . "$CP_LIB_DIR/color.sh"
 # shellcheck source=lib/usage.sh
 . "$CP_LIB_DIR/usage.sh"
+# shellcheck source=lib/fallback.sh
+. "$CP_LIB_DIR/fallback.sh"
 # shellcheck source=lib/share.sh
 . "$CP_LIB_DIR/share.sh"
 # shellcheck source=lib/update.sh
@@ -68,6 +70,9 @@ usage:
   cprof color --render <name>      SGR parameter and colorText, tab-separated
                                     (what the statusline segment calls)
   cprof default <name>
+  cprof fallback <primary>          show the primary's configured fallback, or none
+  cprof fallback <primary> <name>   swap to <name> once <primary> hits usage threshold
+  cprof fallback <primary> --clear  remove the mapping
   cprof pin [<name>] | pin --clear
   cprof rules                      rules in the order they are consulted
   cprof rule add <path> <name> | rule rm <path> | rule list
@@ -99,6 +104,7 @@ case "$cmd" in
   share)   cp_cmd_share "$@" ;;
   unshare) cp_cmd_unshare "$@" ;;
   color)   cp_cmd_color "$@" ;;
+  fallback) cp_cmd_fallback "$@" ;;
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
   usage)   cp_cmd_usage "$@" ;;

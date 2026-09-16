@@ -70,6 +70,27 @@ cp_usage_cache_write() {
   mv "$file.tmp.$$" "$file" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
 }
 
+# cp_usage_fetch_raw <token> -> usage JSON on stdout (fresh, from the live
+# endpoint), or nothing with return 1. Unlike cp_usage_fetch, this takes an
+# explicit token instead of resolving one via a profile, and never touches
+# any cache file — for the fallback feature's confirming fetch, which must
+# check a specific account's usage without conflating it with whatever
+# profile name happens to be asking (during an active swap, the profile's
+# own live credentials are the fallback's, not the account being checked).
+cp_usage_fetch_raw() {
+  local token="${1:-}" body
+  # The opt-out means no token leaves this machine for usage data, whichever
+  # path asks — including the fallback's confirming fetch.
+  [ "${CPROF_NO_USAGE:-0}" = '1' ] && return 1
+  cp_usage_url_ok || return 1
+  [ -n "$token" ] || return 1
+  body="$(printf 'header = "Authorization: Bearer %s"\nheader = "anthropic-beta: oauth-2025-04-20"\n' "$token" \
+    | "$CP_CURL_BIN" -sS --max-time 2 -K - "$CP_USAGE_URL" 2>/dev/null)"
+  [ -n "$body" ] || return 1
+  cp_usage_valid "$body" || return 1
+  printf '%s' "$body"
+}
+
 # cp_usage_read <cfg> <name> -> cached JSON if fresh, else refetches, else
 # falls back to a stale cache, else nothing (return 1).
 cp_usage_read() {
@@ -116,7 +137,7 @@ cp_usage_resets_at() {
 # stdout when it parses AND lies in the future; nothing with return 1
 # otherwise. Cached usage is served regardless of age, so a high number in
 # it may describe a window that has since reset — not something to warn
-# about. Used by doctor's 5-hour warning.
+# about or swap for. Shared by doctor, swap-out, and `which`.
 cp_usage_window_open() {
   local resets_at epoch
   resets_at="$(cp_usage_resets_at "${1:-}" "${2:-five_hour}")"

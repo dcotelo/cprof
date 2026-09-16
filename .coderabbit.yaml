@@ -1,8 +1,4 @@
 # CodeRabbit configuration — https://docs.coderabbit.ai/reference/yaml-template
-#
-# Re-reviews: comment `@coderabbitai review` (incremental — only commits since
-# the last review). `@coderabbitai full review` re-reads the whole PR, produces
-# a fresh batch of findings every time, and burns the hourly quota.
 language: en-US
 reviews:
   profile: chill
@@ -18,7 +14,7 @@ reviews:
         cp_warn. The stdout reservation is for `cprof env`, whose output is
         eval'd by the shell: nothing but export/unset statements may reach
         its stdout. Report and listing commands (list, which, status, rules,
-        doctor, usage, share) print their data on stdout
+        doctor, usage, fallback <name>, share) print their data on stdout
         like any Unix tool, and their tests capture stdout; do not flag
         that. Paths shown to users go through cp_path_display; stored paths
         stay absolute via cp_path_normalize. Flag any new command output

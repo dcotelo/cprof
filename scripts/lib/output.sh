@@ -95,6 +95,11 @@ cp_cmd_env() {
     cp_warn 'no profile matched; using stock configuration'
     return 0
   fi
+  # Swap-back first, before any check on the profile's current directory: it
+  # restores to the store the marker records, so a profile re-pointed at a
+  # missing directory mid-swap still gets its own credentials back once the
+  # window resets. Swap-out stays below, after the directory is validated.
+  cp_fallback_swap_back "$cfg" "$name"
   if cp_profile_is_native "$cfg" "$name"; then
     cp_unset_line
     cp_warn "profile $name (native) - $reason"
@@ -106,6 +111,7 @@ cp_cmd_env() {
     cp_warn "profile $name directory missing (${dir:-unset}); using stock configuration"
     return 0
   fi
+  cp_fallback_swap_out "$cfg" "$name" "$dir"
   printf 'export CLAUDE_CONFIG_DIR=%s\n' "$(cp_shquote "$dir")"
   cp_warn "profile $name - $reason"
   return 0
@@ -149,7 +155,7 @@ cp_native_name() {
 }
 
 cp_cmd_list() {
-  local cfg names name active default_name st email sub markers dir data CP_COLOR_ON=0
+  local cfg names name active default_name st email sub markers dir data display_name CP_COLOR_ON=0
   cfg="$(cp_config_read)" || return 1
   # Decide once, here: the rows below are piped into cp_table, and inside a
   # pipeline stdout is never a terminal. cp_colorize (color.sh) reads
@@ -186,8 +192,12 @@ cp_cmd_list() {
         [ -d "$dir" ] || markers="$markers [dir missing]"
       fi
       data="$(cp_usage_read "$cfg" "$name")"
+      display_name="$name"
+      if [ -f "$(cp_fallback_marker_file "$name")" ]; then
+        display_name="${name}→$(jq -r '.fallback // "?"' "$(cp_fallback_marker_file "$name")" 2>/dev/null)"
+      fi
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" \
+        "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$display_name")" \
         "$sub" "$email" \
         "$(cp_usage_render "$(cp_usage_pct "$data" five_hour)")" \
         "$(cp_usage_render "$(cp_usage_pct "$data" seven_day)")" \
@@ -197,7 +207,7 @@ cp_cmd_list() {
 }
 
 cp_cmd_which() {
-  local cfg line name reason dir CP_COLOR_ON=0
+  local cfg line name reason dir fallback pct note CP_COLOR_ON=0 cached
   cfg="$(cp_config_read)" || return 1
   # cp_colorize (color.sh) reads CP_COLOR_ON via dynamic scoping, a cross-file
   # read shellcheck can't trace.
@@ -216,6 +226,21 @@ cp_cmd_which() {
     'rule '*) reason="rule $(cp_path_display "${reason#rule }")" ;;
     'pin '*)  reason="pin $(cp_path_display "${reason#pin }")" ;;
   esac
+  note=''
+  if [ ! -f "$(cp_fallback_marker_file "$name")" ]; then
+    fallback="$(cp_profile_field "$cfg" "$name" fallback)"
+    if [ -n "$fallback" ]; then
+      cached="$(cp_usage_read_cached_only "$name")"
+      pct="$(cp_usage_pct "$cached" five_hour)"
+      case "$pct" in
+        ''|*[!0-9]*) : ;;
+        *) if [ "$pct" -ge "$(cp_fallback_threshold)" ] && cp_fallback_window_open "$cached" >/dev/null; then
+             note=" (would fall back to $fallback)"
+           fi ;;
+      esac
+    fi
+  fi
+  reason="$reason$note"
   if cp_profile_is_native "$cfg" "$name"; then
     printf '%s\tnative (keychain)\t%s\n' \
       "$(cp_colorize "$(cp_color_for "$cfg" "$name")" "$name")" "$reason" | cp_table

@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
 [![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](#development)
 [![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
-[![Tests](https://img.shields.io/badge/Tests-508%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
+[![Tests](https://img.shields.io/badge/Tests-701%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
 
 </div>
 
@@ -105,7 +105,7 @@ the plugin-only path and updating.
 **Contents** · [Quickstart](#quickstart) · [How it works](#how-it-works) ·
 [Install details](#install-details) · [Resolution order](#resolution-order) ·
 [Commands](#commands) · [Usage headroom](#usage-headroom) ·
-[Statusline](#statusline) ·
+[Statusline](#statusline) · [Fallback accounts](#fallback-accounts) ·
 [Safety](#safety) · [Development](#development) · [Releasing](#releasing)
 
 ## Quickstart
@@ -412,6 +412,7 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof doctor` | Report unauthenticated profiles, expiring tokens, and any profile at 90% or more of its 5-hour usage window |
 | `cprof usage [<name>]` | Usage bars (5h/7d) for every profile, or the full breakdown for one |
 | `cprof usage --render <name>` | Cache-only: a profile's 5h percentage, bar, and colour code, tab-separated, for the statusline; never calls the usage endpoint |
+| `cprof fallback <primary> [<name>\|--clear]` | Show, set, or clear a live-swap fallback for when `<primary>` runs out of usage headroom |
 | `cprof update` | Refresh the marketplace, then update this plugin |
 | `cprof remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
 
@@ -590,6 +591,73 @@ printf '%s' "$payload" | your-existing-statusline
 The segment never fails a statusline: a missing `jq`, an unreadable config, or a
 missing CLI prints nothing and exits 0.
 
+## Fallback accounts
+
+`cprof fallback work personal` makes `personal` a live stand-in for `work`:
+once `work`'s cached 5-hour usage hits 90% (override with
+`CPROF_FALLBACK_THRESHOLD`), the next `cprof env` call overwrites `work`'s
+own credential storage with `personal`'s, so an already-running `claude`
+session under `work` starts authenticating as `personal` on its next token
+use — no restart needed. `work`'s original credentials are backed up first
+and restored by the first `cprof env` call after `work`'s usage window
+resets, once a fresh fetch confirms it is back under threshold — an idle
+session is not restored until something launches `claude` again. Setting up
+a mutual pair (`work`'s fallback is
+`personal`, and `personal`'s fallback is `work`) doesn't corrupt anything —
+each restore correctly re-derives its own backup — but it's pointless: both
+profiles just end up authenticating as whichever one exhausted last.
+
+If a swap or restore is interrupted mid-write (a crash, a killed process),
+it fails safely into one of two stuck states rather than corrupting
+anything:
+
+- **Stuck swapped-out with no marker**: the primary's credentials were
+  overwritten but the marker recording it never got written. `cprof doctor`
+  shows nothing wrong (no marker exists), but the profile is actually
+  running as the fallback, and every subsequent `cprof env` call warns that
+  a backup already exists and refuses to touch it. Recover by restoring the
+  backup file yourself (e.g. `mv <profile-dir>/.credentials.json.bak
+  <profile-dir>/.credentials.json` for a file-backed profile).
+- **Stuck restored with a leftover marker**: the credentials were correctly
+  restored, but the marker survived. `cprof doctor`/`list` show a phantom
+  active swap, and fallback swaps stop firing for that profile. Recover by
+  deleting the marker file under `~/.cprof/fallback-active/` — `<name>.json`
+  for an ordinary name; a name with characters outside `A-Z a-z 0-9 . _ @ + -`
+  is filed under a hashed key instead, so list the directory to find it.
+
+Both states are conservative by design — cprof would rather refuse and ask
+for help than guess wrong and overwrite the wrong account's credentials.
+
+Both directions take a per-profile lock under `~/.cprof/fallback-lock/`
+for the whole check-and-swap, so two `claude` launches racing each other
+cannot both swap or undo each other's work; a launch that finds the lock
+held says so and leaves it to the next one. A lock left by a crashed
+process is reclaimed automatically. `CPROF_FALLBACK_THRESHOLD` must be a
+whole percentage from 1 to 100 (a swap fires at or above it and restores
+below it, so 0 could never restore); anything else is reported and 90 is
+used. A
+swap fires only while the cached 5-hour window is still open — its reset
+time must parse and lie in the future — and only if the fallback's own
+credentials carry an access token; `cprof which` applies the same test
+before it says a swap would fire. Only a directory-backed profile can have
+a fallback: `cprof env` exports nothing for a native one and never reaches
+the swap. A profile is a primary or a fallback target, never both — chains
+such as `work → personal → backup` are refused, and a swap declines a target
+that is itself swapped at that moment. While a swap is active, `cprof remove` is refused with or without
+`--purge`: the marker is the only record of where the profile's own
+credentials are, and the restore needs it. Once the primary's credentials
+are back, the confirming usage response is cached under its name before the
+marker is dropped, so the swap-out check that follows in the same launch
+sees fresh numbers rather than the fallback's.
+`CPROF_NO_USAGE=1` also skips that confirming fetch, so with it set an active
+swap stays in place until fetching is allowed again.
+
+This is the one place cprof changes a live session's credentials rather
+than just choosing a directory. `cprof doctor` shows an active swap and
+when it will restore; `cprof list` marks the row `work→personal`; `cprof
+which` notes when a swap would fire before it actually does. Clear the
+mapping with `cprof fallback work --clear`.
+
 ## Safety
 
 `cprof login` snapshots the shared keychain item to `~/.cprof/keychain.bak`
@@ -617,7 +685,7 @@ plain `-`) is shown instead. A response is cached only when it has the shape
 the renderers read — anything else is treated as a failed fetch, and the
 previous cache stands.
 
-Per-profile state under `~/.cprof/` (the usage cache) is
+Per-profile state under `~/.cprof/` (the usage cache, a fallback marker) is
 filed under a filename-safe key derived from the profile name, so no name —
 however it got into the config — can address a path outside that directory.
 `add` also refuses a name that is `.`, `..`, contains `/`, or contains a

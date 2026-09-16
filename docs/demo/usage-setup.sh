@@ -12,7 +12,7 @@ export HOME
 # no config or state outside this HOME, no usage opt-out or endpoint override.
 unset CLAUDE_PROFILE CLAUDE_CONFIG_DIR
 unset CPROF_CONFIG CLAUDEPROFILE_CONFIG CPROF_STATE_DIR CLAUDEPROFILE_STATE_DIR
-unset CPROF_NO_USAGE CP_USAGE_URL
+unset CPROF_NO_USAGE CP_USAGE_URL CPROF_FALLBACK_THRESHOLD
 mkdir -p "$HOME/.claude-profiles/work" "$HOME/.claude-profiles/personal" "$HOME/dev/acme/api"
 printf '{"claudeAiOauth":{"accessToken":"tok-work","refreshTokenExpiresAt":99999999999999}}' \
   > "$HOME/.claude-profiles/work/.credentials.json"

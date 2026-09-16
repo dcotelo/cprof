@@ -330,6 +330,10 @@ rc=0; CP_USAGE_URL=http://attacker.example/usage cp_usage_fetch "$CFG" work >/de
 assert_eq '1' "$rc" 'a non-https CP_USAGE_URL fails the fetch'
 assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
   'a non-https CP_USAGE_URL never reaches curl'
+rc=0; CP_USAGE_URL=http://attacker.example/usage cp_usage_fetch_raw tok >/dev/null 2>&1 || rc=$?
+assert_eq '1' "$rc" 'a non-https CP_USAGE_URL fails the raw fetch'
+assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
+  'a non-https CP_USAGE_URL never reaches curl on the raw path either'
 
 # --- cprof usage <unknown> -------------------------------------------------
 assert_fail "$CLI" usage nope

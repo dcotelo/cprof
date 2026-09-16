@@ -2,11 +2,12 @@
 
 Satisfies OSPS-SA-03.01: the most likely and most impactful potential security
 problems for cprof, and what stands between them and a user. Last reviewed
-2026-09-15 against v0.10.0, whose per-profile-usage change (the OAuth usage
-endpoint fetch below) is this review's own trigger: a new remote fetch.
-Re-review again when the attack surface changes further — a new credential
-path, another new remote fetch, or a new place cprof writes outside its own
-directories.
+2026-09-15 against v0.10.0, which adds two things this review exists to
+catch: a new remote fetch (the OAuth usage endpoint, below) and a new
+credential path (the fallback swap, the one place cprof writes a profile's
+live credential store — below). Re-review again when the attack surface
+changes further — another credential path, another remote fetch, or a new
+place cprof writes outside its own directories.
 
 ## What cprof protects
 
@@ -16,10 +17,12 @@ cprof's whole job is routing Claude Code at per-profile credential stores:
   `CLAUDE_CONFIG_DIR` holding `.credentials.json` and session data.
 - **macOS keychain items** — Claude Code stores tokens under a service name
   derived from `CLAUDE_CONFIG_DIR` (`scripts/lib/auth.sh`); cprof mostly reads
-  status, but does write keychain items in one narrow case: `cp_cmd_login`'s
+  status, but does write keychain items in three narrow cases: `cp_cmd_login`'s
   safety-net restore (if `claude auth login` writes to the shared keychain
-  item instead of the profile-specific one). `remove --purge` deletes a
-  profile's own item.
+  item instead of the profile-specific one), `cp_fallback_swap_out`'s
+  backup-then-overwrite of a keychain-backed profile's credentials, and
+  `cp_fallback_swap_back`'s restore of that backed-up blob into the primary's
+  own service once its window resets (both in `scripts/lib/fallback.sh`).
 - **The config file** (`~/.config/cprof/config.json`) — controls which
   credentials a directory resolves to. Whoever writes it decides which account
   every repo bills and authenticates as.
@@ -42,6 +45,7 @@ code execution via the installer or hooks.
 | Version-bump automation (`release-bump.yml`) | A pull request steers a write-capable token, or the bot pushes unreviewed code | The versioning script is read from the base revision (`git show "$BASE_SHA:…"`), so a branch cannot choose what the token executes; the job pushes only to the pull request branch it runs on, never to `main`, and skips fork pull requests, whose token is read-only. Residual: the workflow file itself comes from the branch, as `pull_request` always runs the head's definition — so the trust boundary is write access to this repository, which a same-repo pull request already implies |
 | Keychain reads | Credential exposure through cprof output | cprof reads auth *status* via `claude auth status --json` and `security`(1) lookups; token values are never printed — status output carries plan/account, not secrets |
 | Usage endpoint fetch (`list`/`doctor`/`usage`) | Token exposure over the network, or via `ps` | TLS to `api.anthropic.com`; the bearer token is sent only in a request header, never in a URL or body; passed to curl via a `-K -` stdin config block, not argv, so it never appears in `ps`. `CPROF_NO_USAGE=1` disables the call entirely. The statusline never triggers this fetch, only reads a local cache |
+| Fallback swap (`cprof env`) | A live session's credentials change to a different account without the session restarting | Opt-in per profile (`cprof fallback`); the primary's original credentials are backed up (sibling file or `-bak` keychain item) before any overwrite; the overwrite itself is atomic (tmp+chmod+mv, or a single keychain write), and the primary is restored automatically once usage resets and a fresh fetch confirms it. A write failure before the final mv/keychain-write leaves the primary's live credentials untouched |
 
 ## Accepted risks
 
@@ -59,6 +63,28 @@ code execution via the installer or hooks.
   is `unset` immediately after use.
 - **Local same-user malware** can do everything cprof can. No sandbox is
   claimed; cprof is a convenience layer inside the user's own account.
+- **`cp_fallback_swap_out`'s and `cp_fallback_swap_back`'s keychain paths pass
+  a live token through `security`'s argv.** Writing the fallback's blob into
+  the primary's keychain item (swap-out) or writing the backed-up primary
+  blob back into it (swap-back's restore) both go through
+  `cp_keychain_write`, which invokes `security add-generic-password ...
+  -w <value>` — the token is an argument to that subprocess and so is
+  visible to anything reading its argv (e.g. `ps`) for its short lifetime.
+  This is an existing property of `cp_keychain_write` itself, already used
+  the same way (and accepted the same way) by `cp_cmd_login`'s
+  keychain-restore path; the fallback feature just exercises it
+  automatically, in both directions, instead of only during an interactive
+  login. Redesigning `cp_keychain_write` to avoid argv is tracked separately,
+  not fixed here.
+- **A fallback swap changes a live session's credentials underneath it.**
+  This is a deliberate reversal of cprof's normal "directory decides, a
+  session's credentials never change after launch" model, opt-in per
+  profile via `cprof fallback`. If a session with a fallback swapped in
+  never exits cleanly before the primary's window resets, the restore
+  still runs on the next `cprof env` call from *any* session (including a
+  fresh one), and the backup is never deleted until a restore actually
+  succeeds — but there is no guarantee a restore runs promptly if `cprof
+  env` is never invoked again for that profile.
 - **`claude` binary trust** — cprof execs whatever `claude` resolves to
   (or `CP_CLAUDE_BIN`). It does not verify that binary; that is Claude Code's
   installer's job.

@@ -5,11 +5,24 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+### Added
+- `cprof fallback <primary> <name>` — live credential swap to a fallback
+  profile once the primary's cached 5-hour usage reaches the threshold (90%
+  by default, `CPROF_FALLBACK_THRESHOLD`). Both directions run from
+  `cprof env`, i.e. when `claude` is launched: the first call after the
+  primary's window resets fetches its usage afresh and, once it is back
+  under threshold, restores the original credentials. An idle session is
+  not restored until something launches `claude` again. Visible in `cprof
+  doctor` (active swap),
+  `cprof list` (annotated row), and `cprof which` (would-fire note). Override
+  the 90% trigger with `CPROF_FALLBACK_THRESHOLD`.
+
 ### Changed
 - Profile names may no longer be `.`, `..`, contain `/`, or contain a control
-  character (tab, newline), and every per-profile state file under `~/.cprof/`
-  (the usage cache) is filed under a filename-safe key derived from the name,
-  so no profile name can address a path outside the state directory. `remove`
+  character (tab, newline), and every
+  per-profile state file under `~/.cprof/` (the usage cache, a fallback
+  marker) is filed under a filename-safe key derived from the name, so no
+  profile name can address a path outside the state directory. `remove`
   scrubs that state before it rewrites the config, so a failed scrub leaves
   the profile registered for a retry instead of orphaning the files.
 - A usage response is cached only when it has the shape the renderers read
@@ -18,25 +31,69 @@ release workflow reads its notes from the section matching the tag.
   stands.
 - `list`, `doctor`, and `usage` treat a profile name containing spaces or
   glob characters as one profile, not several.
-- `remove --purge` deletes the profile's live keychain item, so a profile
-  re-added at the same directory does not inherit the removed one's
-  credentials. A directory or keychain item that refuses to go — or a
-  keychain that cannot be read — now fails the command and leaves the
-  profile registered; the cached state is scrubbed first and the keychain
-  item before the directory, so a refusal at any step leaves everything
-  after it untouched.
+- Fallback swaps and restores hold a per-profile lock
+  (`~/.cprof/fallback-lock/`), so two concurrent `cprof env` calls cannot
+  both swap or undo each other (a lock left by a dead process is reclaimed
+  through an atomic rename, so two reclaimers cannot both win); the
+  keychain backup is created without update semantics and its presence is
+  checked conclusively (`security`'s not-found exit vs. any other failure),
+  so a keychain that cannot be read never passes for "no backup"; a swap is refused when the cached usage has
+  no parseable reset time, since the restore keys on it; an invalid
+  `CPROF_FALLBACK_THRESHOLD` (anything but a whole number from 1 to 100 — 0
+  would swap on any reading and never restore) is reported and 90 used
+  instead of surfacing a shell error.
+- `remove --purge` deletes the profile's live keychain item as well as any
+  swap backup, so a profile re-added at the same directory does not inherit
+  the removed one's credentials. A directory or keychain item that refuses
+  to go now fails the command and leaves the profile registered; the cached
+  state is scrubbed first and the keychain items before the directory, so a
+  refusal at any step leaves everything after it untouched.
 - `cprof usage <name>` reads a per-model limit's `percent`, the field the
   endpoint sends (the top-level windows use `utilization`), so the model
   rows render instead of showing `-`. A bearer token is only ever sent to an
   `https://` usage URL.
 - `cprof doctor`'s 5-hour warning fires only while that window is still
   open: a stale cache served after a failed refetch may describe a window
-  that has already reset.
+  that has already reset. A fallback swap-out likewise requires the
+  primary's own stored credentials to be a blob with a token in it, for
+  either store, since swap-back could never restore anything else.
 - `resets_at` is parsed as RFC 3339 in every spelling — `...Z`, numeric
   offsets, fractional seconds, or a bare UTC wall clock — rather than only
   the `...Z` form the fixtures use.
-- The statusline badge prints plain text under `NO_COLOR`, with no dim
-  escape sequences.
+- `CPROF_NO_USAGE=1` now also stops the fallback restore's confirming fetch,
+  so no token is sent for usage data on any path; an active swap is then
+  left in place until fetching is allowed again.
+- A swap fires only while the cached 5-hour window is still open (reset
+  time in the future) and only when the fallback's credentials carry an
+  access token; `cprof which` uses the same test for its would-fire note.
+- `cprof fallback` refuses a native profile as the primary (the swap can
+  never fire for one) and refuses chains — a profile is a primary or a
+  fallback target, never both — and a swap-out declines a target that is
+  itself swapped right now, since its live store would hold a third
+  profile's credentials. `cprof remove` — with or without `--purge` — is
+  refused while a swap is active, since the marker is the only record of
+  where the profile's own credentials are.
+- A restore caches the confirming usage response under the primary's name
+  before dropping the marker, so the swap-out check in the same `cprof env`
+  call cannot read the fallback's stale numbers and swap straight back. If
+  that cache write fails, the marker and backup stay for the next call.
+- A fallback restore writes the primary's credentials back to the store the
+  backup was taken from (the marker's recorded path or service), not to
+  wherever the profile's directory points at restore time — and `cprof env`
+  runs it before checking that directory, so a profile re-pointed at a
+  missing one is still restored.
+- A malformed fallback marker (no backup path, or an unknown backup kind)
+  is left in place and reported rather than acted on: acting on an empty
+  backup would have addressed the shared native keychain item.
+- Restore cleanup is retryable: once the credentials are back, the marker is
+  flagged `restored` before the backup and marker are deleted, each step
+  checked, so a failed delete is retried on the next call without another
+  fetch or rewrite, and cleanup itself can no longer leave a backup without
+  a marker or a marker without its backup. (The two stuck states the README
+  describes remain reachable only if a marker commit and its rollback both
+  fail.) `cprof doctor` reports the swap even for a profile
+  that no longer authenticates, and `cprof fallback` rejects surplus
+  arguments instead of ignoring them.
 
 ## [0.10.0]
 ### Added
