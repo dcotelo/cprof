@@ -199,17 +199,27 @@ assert_eq '' "$(cfg_get '.profiles[] | select(.name == "tmpr") | .name')" 'the r
 assert_eq 'false' "$([ -f "$KCD/$service" ] && echo true || echo false)" 'the retried purge deletes the item once the keychain reads'
 
 # ... and when the directory cannot be deleted, the profile stays registered
-# rather than being forgotten with its credentials and sessions still on disk
+# rather than being forgotten with its sessions still on disk. The keychain
+# item goes first and is already gone at that point: the confirmed purge
+# asked for it, and the retry finds it absent and finishes.
 mkdir -p "$CP_T_TMP/lp"
 assert_ok "$CLI" add held --dir "$CP_T_TMP/lp/held" --isolated
+service="$(cp_keychain_service "$CP_T_TMP/lp/held")"
+printf 'live' > "$KCD/$service"
 chmod 500 "$CP_T_TMP/lp"
-rc=0; printf 'y\n' | "$CLI" remove held --purge >/dev/null 2>&1 || rc=$?
+rc=0; out="$(printf 'y\n' | "$CLI" remove held --purge 2>&1)" || rc=$?
 assert_eq '1' "$rc" 'purge fails when the directory cannot be deleted'
 assert_eq 'held' "$(cfg_get '.profiles[] | select(.name == "held") | .name')" \
   'a failed purge leaves the profile registered'
+# (a read-only parent lets rm -rf empty the directory before failing on the
+# entry itself, so only the directory's survival is asserted here)
 assert_eq 'true' "$([ -d "$CP_T_TMP/lp/held" ] && echo true || echo false)" 'a failed purge leaves the directory'
+assert_eq 'false' "$([ -f "$KCD/$service" ] && echo true || echo false)" 'a failed directory delete comes after the keychain item is gone'
+case "$out" in *'keychain credentials are already removed'*) assert_eq ok ok 'a failed directory delete says the credentials are already gone' ;;
+                *) assert_eq '... keychain credentials are already removed ...' "$out" 'a failed directory delete says the credentials are already gone' ;; esac
 chmod 700 "$CP_T_TMP/lp"
 printf 'y\n' | "$CLI" remove held --purge >/dev/null 2>&1
 assert_eq '' "$(cfg_get '.profiles[] | select(.name == "held") | .name')" 'the retried purge unregisters the profile'
+assert_eq 'false' "$([ -d "$CP_T_TMP/lp/held" ] && echo true || echo false)" 'the retried purge deletes the directory'
 
 cp_t_summary
