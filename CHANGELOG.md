@@ -5,6 +5,7 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.11.0]
 ### Added
 - `cprof fallback <primary> <name>` — live credential swap to a fallback
   profile once the primary's cached 5-hour usage reaches the threshold (90%
@@ -99,7 +100,6 @@ release workflow reads its notes from the section matching the tag.
   fail.) `cprof doctor` reports the swap even for a profile
   that no longer authenticates, and `cprof fallback` rejects surplus
   arguments instead of ignoring them.
-
 ## [0.10.0]
 ### Added
 - `cprof usage [<name>]`, usage columns in `cprof list`, a usage warning in
