@@ -19,6 +19,12 @@
 
 ## What a contribution needs
 
+- **A sign-off on every commit.** `git commit -s` adds
+  `Signed-off-by: Your Name <you@example.com>`, which asserts the
+  [Developer Certificate of Origin](https://developercertificate.org): that
+  you wrote the change or otherwise have the right to submit it under this
+  project's license. `format.signOff true` (below) does it for you; edits made
+  in the GitHub web UI are required to carry it.
 - **Tests.** Every behavior change carries an assertion in `tests/`. The suite
   is plain bash: see `tests/lib.sh` for `assert_eq` / `assert_ok` /
   `assert_fail`, and run it with `bash tests/run.sh`.
@@ -43,6 +49,22 @@ Scripts use `set -u` (with `set -eu` in the installer) rather than
 status codes that callers check explicitly, and `set -e` semantics differ
 subtly across the bash 3.2/5.x boundary this project straddles. Match the
 existing style; do not add `set -e` to the CLI scripts in a drive-by.
+
+## Recommended git configuration
+
+Contributor-side settings the repository cannot enforce, so this is the
+recommendation rather than a check. Set them globally once; each one closes a
+class of mistake or attack that the platform-side controls do not reach.
+
+```bash
+git config --global transfer.fsckObjects true   # reject malformed or malicious objects on fetch/push
+git config --global user.useConfigOnly true     # fail when identity is unset instead of guessing a wrong email
+git config --global protocol.file.allow user    # limit file:// submodule tricks (CVE-2022-39253 class)
+git config --global protocol.ext.allow never    # block the ext:: transport, a command-execution vector
+git config --global commit.gpgsign true         # cryptographic commit provenance; SSH signing via gpg.format=ssh is fine
+git config --global format.signOff true         # adds the Signed-off-by trailer automatically
+git config --global pull.ff only                # no surprise merge commits; main requires linear history anyway
+```
 
 ## Releasing
 
