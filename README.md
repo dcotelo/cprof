@@ -277,6 +277,20 @@ into it. It refuses to run without `jq` and warns when `~/.local/bin` is not
 on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0 bash install.sh`;
 uninstall by deleting those two paths.
 
+**Verifying a release.** Each release ships `cprof-<version>.tar.gz` and a
+`checksums.txt`, both attested by the release workflow. To check that a
+download is the artifact CI built from the tagged commit:
+
+```bash
+gh attestation verify cprof-<version>.tar.gz --repo dcotelo/cprof
+shasum -a 256 -c checksums.txt
+```
+
+The first line proves provenance (built by `release.yml` in this repository,
+from this tag); the second proves the bytes match the manifest. The curl
+installer does not do this for you — see
+[docs/security-assessment.md](docs/security-assessment.md) for what it trusts.
+
 <details>
 <summary><strong>Installing the plugin without Homebrew</strong></summary>
 
@@ -653,7 +667,9 @@ Merging then puts the manifest change on `main`, where `tag.yml` tags
 `cprof--v<version>` and calls the release workflow: it re-verifies the tag
 against the manifests, runs the suite on macOS, and publishes a GitHub release
 with that CHANGELOG section as its notes and a `checksums.txt` beside the
-tarball.
+tarball. Both assets carry a [Sigstore provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
+signed by the release workflow's own identity, which is what makes the checksum
+manifest trustworthy rather than merely present.
 
 The version lives in four places that must agree — `CP_VERSION` in
 `scripts/cprof`, `plugin.json`, the `marketplace.json` metadata, and its plugin

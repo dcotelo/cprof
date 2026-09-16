@@ -67,6 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write       # Sigstore identity for the attestation
+      attestations: write   # store it on the repository
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -88,9 +90,10 @@ jobs:
           fi
           cat notes.md
 
-      # OSPS-BR-06.01: every release asset is accounted for in a hash manifest.
-      # The tarball is built here rather than trusting the auto-generated one,
-      # whose bytes GitHub does not guarantee stable over time.
+      # Every release asset is accounted for in a hash manifest, and the
+      # manifest and tarball are then attested below. The tarball is built here
+      # rather than trusting the auto-generated one, whose bytes GitHub does not
+      # guarantee stable over time.
       - name: tarball and checksums
         env:
           VERSION: ${{ needs.verify.outputs.version }}
@@ -99,6 +102,17 @@ jobs:
             -o "cprof-$VERSION.tar.gz" HEAD
           sha256sum "cprof-$VERSION.tar.gz" > checksums.txt
           cat checksums.txt
+
+      # OSPS-BR-06.01 asks for a signed release or a signed hash manifest.
+      # checksums.txt on its own is neither, so both assets get a Sigstore
+      # provenance attestation tied to this workflow run. Consumers verify with
+      #   gh attestation verify cprof-<version>.tar.gz --repo dcotelo/cprof
+      - name: attest the assets
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            cprof-${{ needs.verify.outputs.version }}.tar.gz
+            checksums.txt
 
       - name: create release
         env:
