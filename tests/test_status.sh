@@ -74,6 +74,10 @@ assert_eq '1' "$(CLAUDE_CONFIG_DIR="$CP_T_TMP/p" bash "$SEG" </dev/null 2>/dev/n
 payload='{"cwd":"/tmp"}'
 leftover="$(printf '%s' "$payload" | { bash "$SEG" >/dev/null 2>&1; cat; })"
 assert_eq "$payload" "$leftover" 'segment leaves stdin unconsumed'
+# ... unless told the payload is its to read; one without figures still
+# yields the plain badge
+out="$(printf '%s' "$payload" | CLAUDE_CONFIG_DIR="$CP_T_TMP/p" NO_COLOR=1 bash "$SEG" --stdin 2>/dev/null)"
+assert_eq '⚑ personal' "$out" 'segment --stdin with a payload carrying no figures prints the badge alone'
 
 # never fails the statusline
 ( CPROF_CONFIG=/dev/null bash "$SEG" </dev/null >/dev/null 2>&1 )

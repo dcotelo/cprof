@@ -462,13 +462,23 @@ to turn fetching off everywhere and show whatever is cached (or `-`) instead.
 ⚑ work
 ```
 
-Once `cprof list`, `doctor`, or `usage` has fetched usage data for the
-*active* profile at least once — fetching it for a different profile doesn't
-count — the badge also carries a usage bar for that profile's 5-hour window,
-colored red/yellow/green by how close it is to the cap:
+Given Claude Code's statusline payload (`--stdin`, see the wiring below),
+the badge also carries the session's context window and the 5-hour usage of
+the account it is running as, each bar coloured green/yellow/red by how close
+it is to the cap, with the time until the usage window resets:
 
 ```console
-⚑ work ▓▓▓▓░░░░░░ 42%
+⚑ work │ Context ▓▓▓▓░░░░░░ 37% │ Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)
+```
+
+Both figures come straight from the payload, so they refresh every tick and
+cost no request. Without the payload, the usage bar falls back to what
+`cprof list`, `doctor`, or `usage` last fetched for the *active* profile —
+fetching it for a different profile doesn't count — and there is no context
+bar:
+
+```console
+⚑ work │ Usage ▓▓▓▓░░░░░░ 42%
 ```
 
 The badge carries the profile's colour, and `--text` decides how far it
@@ -570,7 +580,7 @@ cat > ~/.claude/statusline.sh <<'SL'
 #!/usr/bin/env bash
 # Profile badge, then whatever else you already run.
 seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
-[ -r "$seg" ] && bash "$seg" </dev/null
+[ -r "$seg" ] && bash "$seg" --stdin   # the only consumer, so the payload is its to read
 exit 0   # a test as the last command would exit non-zero and fail the statusline
 SL
 chmod +x ~/.claude/statusline.sh
@@ -596,7 +606,7 @@ that ever changes:
 #!/usr/bin/env bash
 payload="$(cat)"
 seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
-[ -r "$seg" ] && bash "$seg" </dev/null
+[ -r "$seg" ] && printf '%s' "$payload" | bash "$seg" --stdin
 printf '%s' "$payload" | your-existing-statusline
 ```
 

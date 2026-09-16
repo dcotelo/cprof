@@ -405,6 +405,76 @@ rm -f "$CP_T_TMP/state/usage/fresh.json"
 out="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/f" NO_COLOR=1 bash "$SEG" </dev/null 2>/dev/null)"
 case "$out" in *'%'*) assert_eq '⚑ fresh' "$out" 'segment omits the badge with no cache' ;;
                 *) assert_eq ok ok 'segment omits the badge with no cache' ;; esac
+
+# --- "resets in" wording ---------------------------------------------------
+now=1700000000
+assert_eq '2h 19m' "$(cp_usage_reset_in $((now + 2*3600 + 19*60 + 30)) "$now")" 'reset_in renders hours and minutes'
+assert_eq '37m' "$(cp_usage_reset_in $((now + 37*60 + 5)) "$now")" 'reset_in renders minutes alone under an hour'
+assert_eq '<1m' "$(cp_usage_reset_in $((now + 20)) "$now")" 'reset_in renders <1m under a minute'
+assert_fail cp_usage_reset_in "$now" "$now" 'reset_in fails on a reset that is due'
+assert_fail cp_usage_reset_in $((now - 5)) "$now" 'reset_in fails on a past reset'
+assert_fail cp_usage_reset_in 'soon' "$now" 'reset_in fails on a non-epoch'
+
+# --- usage --render: a statusline payload on stdin supplies live figures ----
+# No cache for fresh at this point: everything below comes from the payload.
+soon=$(( $(date +%s) + 2*3600 + 19*60 + 40 ))
+payload='{"context_window":{"used_percentage":37.4,"context_window_size":200000},
+          "rate_limits":{"five_hour":{"used_percentage":30.2,"resets_at":'"$soon"'}}}'
+fields="$(printf '%s' "$payload" | "$CLI" usage --render fresh --stdin 2>/dev/null)"
+assert_eq '30' "$(printf '%s' "$fields" | cut -f1)" 'payload: field 1 is the five_hour pct, floored'
+assert_eq "$(cp_usage_bar 30)" "$(printf '%s' "$fields" | cut -f2)" 'payload: field 2 is its bar'
+assert_eq '32' "$(printf '%s' "$fields" | cut -f3)" 'payload: field 3 is its SGR code (green=32)'
+assert_eq '2h 19m' "$(printf '%s' "$fields" | cut -f4)" 'payload: field 4 is the time to reset'
+assert_eq '37' "$(printf '%s' "$fields" | cut -f5)" 'payload: field 5 is the context pct, floored'
+assert_eq "$(cp_usage_bar 37)" "$(printf '%s' "$fields" | cut -f6)" 'payload: field 6 is the context bar'
+assert_eq '32' "$(printf '%s' "$fields" | cut -f7)" 'payload: field 7 is the context SGR code'
+# resets_at as an RFC 3339 string works the same way
+iso="$(TZ=UTC date -j -f '%s' "$soon" '+%Y-%m-%dT%H:%M:%SZ')"
+fields="$(printf '{"rate_limits":{"five_hour":{"used_percentage":91,"resets_at":"%s"}}}' "$iso" | "$CLI" usage --render fresh --stdin 2>/dev/null)"
+assert_eq '91	'"$(cp_usage_bar 91)"'	31	2h 19m' "$(printf '%s' "$fields" | cut -f1-4)" 'payload: an RFC 3339 resets_at is parsed'
+assert_eq '' "$(printf '%s' "$fields" | cut -f5)" 'payload: no context_window means an empty context field'
+# no native percentage yet: context is the current tokens over the window
+fields="$(printf '%s' '{"context_window":{"context_window_size":200000,"used_percentage":0,
+  "current_usage":{"input_tokens":50000,"cache_read_input_tokens":30000}}}' | "$CLI" usage --render fresh --stdin 2>/dev/null)"
+assert_eq '40' "$(printf '%s' "$fields" | cut -f5)" 'payload: context falls back to tokens over window size'
+assert_eq '' "$(printf '%s' "$fields" | cut -f1)" 'payload: no rate_limits and no cache means an empty usage field'
+# a payload without rate_limits still lets the cache supply the usage bar
+cat > "$CP_T_TMP/state/usage/fresh.json" <<'JSON'
+{"fetched_at":1,"five_hour":{"utilization":73,"resets_at":"2030-01-01T00:00:00Z"},"seven_day":{"utilization":10},"limits":[]}
+JSON
+fields="$(printf '%s' '{"context_window":{"used_percentage":12}}' | "$CLI" usage --render fresh --stdin 2>/dev/null)"
+assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" 'payload without rate_limits: usage comes from the cache'
+assert_eq '' "$(printf '%s' "$fields" | cut -f4)" 'payload without rate_limits: no reset text from the cache'
+assert_eq '12' "$(printf '%s' "$fields" | cut -f5)" 'payload without rate_limits: context still rendered'
+# without --stdin the payload is not read at all, even when one is piped in
+fields="$(printf '%s' "$payload" | "$CLI" usage --render fresh 2>/dev/null)"
+assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" '--render without --stdin: usage from the cache'
+assert_eq '' "$(printf '%s' "$fields" | cut -f5)" '--render without --stdin: no context'
+# garbage on stdin is ignored, not fatal
+fields="$(printf 'not json' | "$CLI" usage --render fresh --stdin 2>/dev/null)"
+assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" 'garbage payload: usage from the cache'
+assert_eq '' "$(printf '%s' "$fields" | cut -f5)" 'garbage payload: no context'
+fields="$(printf '%s' '{"rate_limits":{"five_hour":{"used_percentage":"lots","resets_at":"never"}}}' | "$CLI" usage --render fresh --stdin 2>/dev/null)"
+assert_eq '73' "$(printf '%s' "$fields" | cut -f1)" 'non-numeric payload pct: usage from the cache'
+
+# --- the segment with --stdin draws both bars from the payload -------------
+out="$(printf '%s' "$payload" | CLAUDE_CONFIG_DIR="$CP_T_TMP/f" NO_COLOR=1 bash "$SEG" --stdin 2>/dev/null)"
+assert_eq "⚑ fresh │ Context $(cp_usage_bar 37) 37% │ Usage $(cp_usage_bar 30) 30% (resets in 2h 19m)" "$out" \
+  'segment --stdin: labelled context and usage bars with the reset time'
+out="$(printf '%s' "$payload" | CLAUDE_CONFIG_DIR="$CP_T_TMP/f" bash "$SEG" --stdin 2>/dev/null)"
+case "$out" in *$'\033[2mContext\033[0m \033[32m'"$(cp_usage_bar 37)"' 37%'*'(resets in 2h 19m)'*)
+       assert_eq ok ok 'segment --stdin: dim labels, severity-coloured bars' ;;
+    *) assert_eq 'dim Context, green bar, resets' "$out" 'segment --stdin: dim labels, severity-coloured bars' ;; esac
+# without --stdin the payload is not touched and the cache badge stands
+leftover="$(printf '%s' "$payload" | { CLAUDE_CONFIG_DIR="$CP_T_TMP/f" NO_COLOR=1 bash "$SEG" >"$CP_T_TMP/seg.out" 2>/dev/null; cat; })"
+assert_eq "$payload" "$leftover" 'segment without --stdin leaves the payload unconsumed'
+assert_eq "⚑ fresh │ Usage $(cp_usage_bar 73) 73%" "$(cat "$CP_T_TMP/seg.out")" 'segment without --stdin: cached usage bar only'
+# --stdin with nothing on it is the cached badge too
+assert_eq "⚑ fresh │ Usage $(cp_usage_bar 73) 73%" "$(CLAUDE_CONFIG_DIR="$CP_T_TMP/f" NO_COLOR=1 bash "$SEG" --stdin </dev/null 2>/dev/null)" \
+  'segment --stdin with empty input: cached usage bar only'
+# an unknown flag prints nothing rather than a wrong line
+assert_eq '' "$(CLAUDE_CONFIG_DIR="$CP_T_TMP/f" bash "$SEG" --bogus </dev/null 2>/dev/null)" 'segment ignores unknown flags silently'
+rm -f "$CP_T_TMP/state/usage/fresh.json"
 assert_eq 'false' "$([ -f "$CP_T_TMP/curl-called" ] && echo true || echo false)" \
   'segment with no cache still never invokes curl'
 
