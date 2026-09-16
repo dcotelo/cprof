@@ -34,7 +34,7 @@ cp_warn() {
 }
 
 # cp_state_key <name> -> the filename a profile's per-profile state (usage
-# cache) is kept under in $CP_STATE_DIR. A plain name is its
+# cache, fallback marker) is kept under in $CP_STATE_DIR. A plain name is its
 # own key, so those files stay readable; anything else — a slash, "." or
 # "..", whitespace, glob or control characters — is replaced by its sha256,
 # so no profile name, however it got into the config, can address a path

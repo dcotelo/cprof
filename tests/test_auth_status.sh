@@ -201,5 +201,17 @@ out="$(cd "$CP_T_TMP" && "$CLI" doctor 2>&1)"
 rc=$?
 assert_eq '0' "$rc" 'doctor passes when usage data is simply unavailable'
 
+# --- doctor: active-swap line ----------------------------------------------
+mkdir -p "$CP_T_TMP/state/fallback-active"
+cat > "$CP_T_TMP/state/fallback-active/personal.json" <<'JSON'
+{"fallback":"work","backup":"/tmp/whatever.bak","backup_kind":"file","swapped_at":1,"resets_at":"2026-09-14T18:30:00Z"}
+JSON
+out="$(cd "$CP_T_TMP" && "$CLI" doctor 2>&1)"
+case "$out" in *'personal: fallback active (using work'*'2026-09-14T18:30:00Z'*) assert_eq ok ok 'doctor shows the active-swap line' ;;
+                *) assert_eq 'personal: fallback active (using work ... 2026-09-14T18:30:00Z)' "$out" 'doctor shows the active-swap line' ;; esac
+rc=0
+( cd "$CP_T_TMP" && "$CLI" doctor >/dev/null 2>&1 ) || rc=$?
+assert_eq '0' "$rc" 'doctor does not fail just because a fallback swap is active'
+rm -f "$CP_T_TMP/state/fallback-active/personal.json"
 
 cp_t_summary

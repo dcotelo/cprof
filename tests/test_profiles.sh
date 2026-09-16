@@ -120,8 +120,8 @@ assert_eq '' "$([ -f "$CP_T_TMP/state/usage/personal.json" ] && echo present)" \
 assert_ok "$CLI" add tmpp --dir "$CP_T_TMP/tp"
 printf 'n\n' | "$CLI" remove tmpp --purge >/dev/null 2>&1
 assert_eq 'true' "$([ -d "$CP_T_TMP/tp" ] && echo true)" 'declined purge keeps the directory'
-# ... and takes the profile's live keychain item with it (Claude Code 2.1+
-# keeps credentials there, not in the directory)
+# ... and takes the profile's keychain items with it: the live one (Claude
+# Code 2.1+ keeps credentials there, not in the directory) and any -bak
 KCD="$CP_T_TMP/keychain.d"
 mkdir -p "$KCD"
 export CP_T_KEYCHAIN_DIR="$KCD"
@@ -139,9 +139,11 @@ STUB
 chmod +x "$CP_SECURITY_BIN"
 service="$(cp_keychain_service "$CP_T_TMP/tp")"
 printf 'live' > "$KCD/$service"
+printf 'bak'  > "$KCD/$service-bak"
 printf 'y\n' | "$CLI" remove tmpp --purge >/dev/null 2>&1
 assert_eq '' "$([ -d "$CP_T_TMP/tp" ] && echo true)" 'confirmed purge deletes the directory'
 assert_eq 'false' "$([ -f "$KCD/$service" ] && echo true || echo false)" 'purge deletes the live keychain item'
+assert_eq 'false' "$([ -f "$KCD/$service-bak" ] && echo true || echo false)" 'purge deletes the backup keychain item'
 # ... and a keychain item that refuses to go fails the purge with the profile
 # still registered, until it can be deleted
 assert_ok "$CLI" add tmpk --dir "$CP_T_TMP/tk" --isolated

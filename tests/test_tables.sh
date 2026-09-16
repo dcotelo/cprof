@@ -135,11 +135,11 @@ personal  not logged in'
 assert_eq "$expected" "$(printf 'PROFILE\tFLAGS\n\xe2\x9a\x91 work\tok\npersonal\tnot logged in\n' | cp_table)" \
   'a cell containing the flag glyph still aligns with plain-ASCII rows'
 
-# --- cp_table: an arrow glyph is width-normalized like the flag -----------
+# --- cp_table: the fallback annotation's arrow is also width-normalized ---
 expected='PROFILE        FLAGS
 work→personal  (active)
 work           ok'
 assert_eq "$expected" "$(printf 'PROFILE\tFLAGS\nwork\xe2\x86\x92personal\t(active)\nwork\tok\n' | cp_table)" \
-  'a cell containing an arrow glyph still aligns with a plain-ASCII row'
+  'a cell containing the fallback arrow still aligns with a plain-ASCII row'
 
 cp_t_summary

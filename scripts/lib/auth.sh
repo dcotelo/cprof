@@ -87,9 +87,18 @@ cp_keychain_write() {
     -a "${USER:-$(id -un)}" -s "${2:-$CP_KEYCHAIN_SERVICE}" -w "$1" >/dev/null 2>&1
 }
 
+# cp_keychain_create <value> <service>: like cp_keychain_write but without -U,
+# so an item that already exists makes the call fail (errSecDuplicateItem)
+# instead of being overwritten. For the fallback backup: a recovery item must
+# never be clobbered.
+cp_keychain_create() {
+  "$CP_SECURITY_BIN" add-generic-password \
+    -a "${USER:-$(id -un)}" -s "${2:-$CP_KEYCHAIN_SERVICE}" -w "$1" >/dev/null 2>&1
+}
+
 # cp_keychain_status <service> -> 0 present, 1 absent, 2 could not tell. An
 # empty cp_keychain_read is ambiguous — absent or failed — so callers that
-# must know the difference (purge: is there an item to delete?) use this: `security`
+# must know the difference (is there a backup or not?) use this: `security`
 # exits 44 (errSecItemNotFound) for absent and something else for trouble.
 cp_keychain_status() {
   "$CP_SECURITY_BIN" find-generic-password -s "${1:-$CP_KEYCHAIN_SERVICE}" \
@@ -176,6 +185,7 @@ cp_cmd_doctor() {
     logged="$(printf '%s' "$st" | jq -r '.loggedIn // false')"
     if [ "$logged" != 'true' ]; then
       printf '%s: not logged in - run: cprof login %s\n' "$name" "$name"
+      cp_fallback_doctor_line "$name"
       status=1
       continue
     fi
@@ -204,6 +214,7 @@ cp_cmd_doctor() {
           ;;
       esac
     fi
+    cp_fallback_doctor_line "$name"
   done 3<<< "$names"
   printf 'active profile here: %s\n' "${active:-none}"
   return "$status"
