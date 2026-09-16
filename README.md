@@ -278,6 +278,20 @@ into it. It refuses to run without `jq` and warns when `~/.local/bin` is not
 on `PATH`. Pin a version with `CPROF_VERSION=cprof--v0.8.0 bash install.sh`;
 uninstall by deleting those two paths.
 
+**Verifying a release.** Each release ships `cprof-<version>.tar.gz` and a
+`checksums.txt`, both attested by the release workflow. To check that a
+download is the artifact CI built from the tagged commit:
+
+```bash
+gh attestation verify cprof-<version>.tar.gz --repo dcotelo/cprof
+shasum -a 256 -c checksums.txt
+```
+
+The first line proves provenance (built by `release.yml` in this repository,
+from this tag); the second proves the bytes match the manifest. The curl
+installer does not do this for you — see
+[docs/security-assessment.md](docs/security-assessment.md) for what it trusts.
+
 <details>
 <summary><strong>Installing the plugin without Homebrew</strong></summary>
 
@@ -628,7 +642,7 @@ control character.
 ```bash
 bash tests/run.sh                    # run the suite
 shellcheck -x -P scripts -P tests scripts/cprof scripts/lib/*.sh hooks/*.sh \
-  statusline/*.sh tests/*.sh install.sh
+  statusline/*.sh tests/*.sh .github/scripts/*.sh docs/demo/*.sh docs/demo/bin/* install.sh
 claude plugin validate .             # check the manifests
 ```
 
@@ -637,6 +651,35 @@ Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
 Targets bash 3.2 (macOS system bash), with `jq` and (for usage data) `curl`
 as the only external dependencies.
+
+### Dependencies
+
+Runtime, dev, and CI dependencies are chosen and tracked like this:
+
+- **Runtime: `jq`, nothing else.** It reads and validates the JSON config;
+  bash 3.2 has no safe way to do that alone. Any `jq` 1.5 or newer works, so it
+  is not version-pinned. Homebrew installs it through the formula; the curl
+  installer refuses to run without it. Adding a runtime dependency is a design
+  decision, not a convenience — open an issue first.
+- **Dev: `shellcheck`.** Pinned by version in `.github/workflows/ci.yml`
+  (`SHELLCHECK_VERSION`), downloaded from its GitHub release rather than taken
+  from the runner image, so local and CI findings agree. Bumped by hand,
+  deliberately, in its own commit.
+- **CI: `@anthropic-ai/claude-code`.** Installed from npm at a pinned version
+  for `claude plugin validate` only; bumped by hand when the manifest format
+  changes.
+- **GitHub Actions.** Every third-party action is pinned to a full commit SHA
+  with the version as a trailing comment. Bumps are reviewed like any other
+  change.
+
+### Project repositories
+
+- [dcotelo/cprof](https://github.com/dcotelo/cprof) — this repository: the
+  CLI, the plugin, hooks, statusline segment, installer, tests, and release
+  automation.
+- [dcotelo/homebrew-tap](https://github.com/dcotelo/homebrew-tap) — the
+  Homebrew formula. The release workflow dispatches a `cprof-released` event to
+  it so the formula bumps on every release; it also polls daily as a backstop.
 
 Found a bug? [Open an issue](https://github.com/dcotelo/cprof/issues) —
 templates are provided. Security problems go through
@@ -676,7 +719,9 @@ Merging then puts the manifest change on `main`, where `tag.yml` tags
 `cprof--v<version>` and calls the release workflow: it re-verifies the tag
 against the manifests, runs the suite on macOS, and publishes a GitHub release
 with that CHANGELOG section as its notes and a `checksums.txt` beside the
-tarball.
+tarball. Both assets carry a [Sigstore provenance attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations)
+signed by the release workflow's own identity, which is what makes the checksum
+manifest trustworthy rather than merely present.
 
 The version lives in four places that must agree — `CP_VERSION` in
 `scripts/cprof`, `plugin.json`, the `marketplace.json` metadata, and its plugin

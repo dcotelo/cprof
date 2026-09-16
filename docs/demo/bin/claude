@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -u
 # Demo stub for the README GIF — prints the statusline badge the real
 # plugin shows, based on the directory, instead of launching Claude Code.
 case "$PWD" in

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -u
 # Demo stub for the README GIF — canned output matching the README examples.
 case "$1" in
   list)

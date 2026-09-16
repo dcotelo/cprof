@@ -2,11 +2,9 @@
 
 Satisfies OSPS-SA-03.01: the most likely and most impactful potential security
 problems for cprof, and what stands between them and a user. Last reviewed
-2026-09-15 against v0.10.0, whose per-profile-usage change (the OAuth usage
-endpoint fetch below) is this review's own trigger: a new remote fetch.
-Re-review again when the attack surface changes further — a new credential
-path, another new remote fetch, or a new place cprof writes outside its own
-directories.
+2026-09-16 against v0.9.x. Re-review when the attack surface changes — a new
+credential path, a new remote fetch, or a new place cprof writes outside its
+own directories.
 
 ## What cprof protects
 
@@ -32,7 +30,7 @@ code execution via the installer or hooks.
 
 | Surface | Threat | Mitigation |
 |---------|--------|------------|
-| `install.sh` (remote fetch) | Tampered or truncated installer executes | Docs instruct download → review → run, never `curl \| bash`; TLS to github.com; installer runs `set -eu`. Release tarballs ship with `checksums.txt` (release.yml) — verify with `shasum -a 256 -c checksums.txt` next to the downloaded tarball. The checksum covers release archives only; see accepted risks for the installer fetch itself |
+| `install.sh` (remote fetch) | Tampered or truncated installer executes | Docs instruct download → review → run, never `curl \| bash`; TLS to github.com; installer runs `set -eu`. Release tarballs ship with `checksums.txt` (release.yml), and both assets carry a Sigstore provenance attestation — verify with `gh attestation verify cprof-<version>.tar.gz --repo dcotelo/cprof` and `shasum -a 256 -c checksums.txt`. The attestation covers release assets only; see accepted risks for the installer fetch itself |
 | Config file | Malicious or corrupt JSON reroutes credentials or breaks resolution | `cp_config_read` validates with `jq -e` and refuses malformed input; `cp_config_write` is atomic (temp + `mv`), refuses invalid or empty JSON; file lives under the user's own `$HOME` — writing it already requires user-level access |
 | Profile directories | Other local users read credentials | Created `chmod 700`; `~/.claude` refused as a profile dir (`cp_forbidden_dir`) so cprof never manages or purges the native store |
 | `remove --purge` | Destructive deletion of a credential store | Interactive y/N confirmation; refuses `~/.claude` outright |
@@ -62,11 +60,13 @@ code execution via the installer or hooks.
 - **`claude` binary trust** — cprof execs whatever `claude` resolves to
   (or `CP_CLAUDE_BIN`). It does not verify that binary; that is Claude Code's
   installer's job.
-- **No commit signing / DCO** — solo-maintainer repo; merges require a pull
-  request and passing checks under the active `main-protection` ruleset. The
-  repository admin role can bypass it, which is how a sole maintainer merges
-  their own work; no automation holds that bypass, so no workflow can commit to
-  `main`.
+- **No required commit signatures** — solo-maintainer repo; merges require a
+  pull request and passing checks under the active `main-protection` ruleset.
+  The repository admin role can bypass it, which is how a sole maintainer
+  merges their own work; no automation holds that bypass, so no workflow can
+  commit to `main`. Contributions do carry a DCO sign-off (CONTRIBUTING.md;
+  enforced for web edits by `web_commit_signoff_required`), which asserts
+  authorship rights but is not a cryptographic signature.
 
 ## Reporting
 
