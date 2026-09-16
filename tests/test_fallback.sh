@@ -95,15 +95,18 @@ cmd="$1"; shift
 svc='' val=''
 case "$cmd" in
   find-generic-password)
+    want_secret=0
     while [ "$#" -gt 0 ]; do
       case "$1" in
         -s) svc="$2"; shift 2 ;;
-        -w) shift ;;
+        -w) want_secret=1; shift ;;
         *)  shift ;;
       esac
     done
     [ -n "$svc" ] || exit 1
     [ -f "$CP_T_KEYCHAIN_DIR/$svc.readfail" ] && exit 1       # keychain trouble
+    # item exists, but handing over its secret is refused (ACL prompt declined)
+    [ "$want_secret" -eq 1 ] && [ -f "$CP_T_KEYCHAIN_DIR/$svc.wdeny" ] && exit 1
     [ -f "$CP_T_KEYCHAIN_DIR/$svc" ] || exit 44                # errSecItemNotFound
     if [ -f "$CP_T_KEYCHAIN_DIR/$svc.maxreads" ]; then
       echo r >> "$CP_T_KEYCHAIN_DIR/$svc.reads"
@@ -325,7 +328,46 @@ assert_eq 'false' "$([ -f "$pend" ] && echo true || echo false)" 'keychain: inte
 assert_eq 'false' "$([ -f "$KCD/$service-bak" ] && echo true || echo false)" 'keychain: interrupted before the overwrite discards the -bak item'
 assert_eq '{"claudeAiOauth":{"accessToken":"tok-work-kc"}}' "$(cat "$KCD/$service")" 'keychain: the live item is untouched'
 rm -f "$KCD/$service"
+
+# --- ... and the two ways recovery must refuse to decide ------------------
+# Backup item exists but its secret cannot be read: an empty read is not a
+# blob, so it must not compare equal to anything and nothing may be deleted.
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-work-kc"}}' > "$KCD/$service-bak"
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-personal-kc"}}' > "$KCD/$service"
+touch "$KCD/$service-bak.wdeny"
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$service-bak","backup_kind":"keychain","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+out="$(cp_fallback_swap_back "$CFG" work 2>&1)"
+case "$out" in *'backup keychain item cannot be read'*) assert_eq ok ok 'keychain: an unreadable backup secret is reported' ;;
+                *) assert_eq '... backup keychain item cannot be read ...' "$out" 'keychain: an unreadable backup secret is reported' ;; esac
+assert_eq 'true' "$([ -f "$pend" ] && echo true || echo false)" 'keychain: an unreadable backup secret leaves the pending file in place'
+assert_eq 'true' "$([ -f "$KCD/$service-bak" ] && echo true || echo false)" 'keychain: an unreadable backup secret leaves the -bak item in place'
+assert_eq '{"claudeAiOauth":{"accessToken":"tok-personal-kc"}}' "$(cat "$KCD/$service")" 'keychain: an unreadable backup secret leaves the live item alone'
+assert_eq 'false' "$([ -f "$(cp_fallback_marker_file work)" ] && echo true || echo false)" 'keychain: an unreadable backup secret promotes nothing'
+rm -f "$KCD/$service-bak.wdeny" "$KCD/$service-bak" "$KCD/$service" "$pend" "$(cp_fallback_marker_file work)"
+# A backup name without the expected suffix would derive the live store as
+# itself; recovery refuses rather than compare a store with itself.
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$service","backup_kind":"keychain","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-personal-kc"}}' > "$KCD/$service"
+out="$(cp_fallback_swap_back "$CFG" work 2>&1)"
+case "$out" in *'is not named like one'*) assert_eq ok ok 'keychain: a backup name without -bak is refused' ;;
+                *) assert_eq '... is not named like one ...' "$out" 'keychain: a backup name without -bak is refused' ;; esac
+assert_eq 'true' "$([ -f "$pend" ] && echo true || echo false)" 'keychain: a backup name without -bak leaves the pending file in place'
+assert_eq 'true' "$([ -f "$KCD/$service" ] && echo true || echo false)" 'keychain: a backup name without -bak deletes no item'
+rm -f "$KCD/$service" "$pend" "$(cp_fallback_marker_file work)"
 printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/w/.credentials.json"
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$CP_T_TMP/w/.credentials.json","backup_kind":"file","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+out="$(cp_fallback_swap_back "$CFG" work 2>&1)"
+case "$out" in *'is not named like one'*) assert_eq ok ok 'file: a backup name without .bak is refused' ;;
+                *) assert_eq '... is not named like one ...' "$out" 'file: a backup name without .bak is refused' ;; esac
+assert_eq 'true' "$([ -f "$pend" ] && echo true || echo false)" 'file: a backup name without .bak leaves the pending file in place'
+assert_eq 'true' "$([ -f "$CP_T_TMP/w/.credentials.json" ] && echo true || echo false)" 'file: a backup name without .bak deletes nothing'
+rm -f "$pend" "$(cp_fallback_marker_file work)"
 
 # --- the marker must be writable BEFORE any credential changes hands -------
 # A swap whose marker can't be written is the one state swap-back can't see,

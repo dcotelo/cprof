@@ -146,7 +146,7 @@ cp_cmd_fallback() {
 # normal restore take over. Nothing is ever guessed at with a malformed
 # pending file: it is left in place and reported.
 cp_fallback_recover_pending() {
-  local name="$1" marker pending backup kind live service
+  local name="$1" marker pending backup kind live service backup_val live_val
   marker="$(cp_fallback_marker_file "$name")"
   pending="$marker.pending"
   [ -f "$pending" ] || return 0
@@ -161,6 +161,14 @@ cp_fallback_recover_pending() {
     cp_warn "fallback: an interrupted swap left a malformed pending marker for $name; not touching anything — inspect and remove $(cp_path_display "$pending") by hand"
     return 0
   fi
+  # The live store is the backup name minus its suffix. A backup name that
+  # lacks the suffix would name the live store itself, and "backup identical
+  # to live" would then be trivially true and delete the only copy.
+  case "$kind:$backup" in
+    file:*.bak|keychain:*-bak) ;;
+    *) cp_warn "fallback: an interrupted swap left a pending marker for $name whose backup ($(cp_path_display "$backup")) is not named like one; not touching anything — inspect and remove $(cp_path_display "$pending") by hand"
+       return 0 ;;
+  esac
   if [ "$kind" = file ]; then
     live="${backup%.bak}"
     if [ ! -f "$backup" ]; then
@@ -185,11 +193,23 @@ cp_fallback_recover_pending() {
       *) cp_warn "fallback: an interrupted swap of $name cannot be recovered while the keychain cannot be read; leaving $(cp_path_display "$pending") in place"
          return 0 ;;
     esac
-    if [ "$(cp_keychain_read "$backup")" = "$(cp_keychain_read "$service")" ]; then
+    # An item can exist yet refuse to hand over its secret (ACL prompt
+    # declined, locked keychain). Two empty reads are not two equal blobs:
+    # deciding "nothing changed" on them would delete the backup while the
+    # fallback's credentials may well be live.
+    backup_val="$(cp_keychain_read "$backup")"
+    live_val="$(cp_keychain_read "$service")"
+    if [ -z "$backup_val" ]; then
+      unset backup_val live_val
+      cp_warn "fallback: an interrupted swap of $name cannot be recovered while its backup keychain item cannot be read; leaving $(cp_path_display "$pending") in place"
+      return 0
+    fi
+    if [ "$backup_val" = "$live_val" ]; then
+      unset backup_val live_val
       cp_keychain_delete "$backup"
       rm -f "$pending"
       cp_warn "fallback: an interrupted swap of $name never changed its credentials; backup discarded, nothing to restore"
-    elif mv "$pending" "$marker" 2>/dev/null; then
+    elif unset backup_val live_val && mv "$pending" "$marker" 2>/dev/null; then
       cp_warn "fallback: an interrupted swap of $name had already changed its credentials; marker recovered, the restore will run as usual"
     fi
   fi
