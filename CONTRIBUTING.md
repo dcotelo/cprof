@@ -19,6 +19,12 @@
 
 ## What a contribution needs
 
+- **A sign-off on every commit.** `git commit -s` adds
+  `Signed-off-by: Your Name <you@example.com>`, which asserts the
+  [Developer Certificate of Origin](https://developercertificate.org): that
+  you wrote the change or otherwise have the right to submit it under this
+  project's license. `format.signOff true` (below) does it for you; edits made
+  in the GitHub web UI are required to carry it.
 - **Tests.** Every behavior change carries an assertion in `tests/`. The suite
   is plain bash: see `tests/lib.sh` for `assert_eq` / `assert_ok` /
   `assert_fail`, and run it with `bash tests/run.sh`.

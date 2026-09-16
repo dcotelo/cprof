@@ -50,11 +50,13 @@ code execution via the installer or hooks.
 - **`claude` binary trust** — cprof execs whatever `claude` resolves to
   (or `CP_CLAUDE_BIN`). It does not verify that binary; that is Claude Code's
   installer's job.
-- **No commit signing / DCO** — solo-maintainer repo; merges require a pull
-  request and passing checks under the active `main-protection` ruleset. The
-  repository admin role can bypass it, which is how a sole maintainer merges
-  their own work; no automation holds that bypass, so no workflow can commit to
-  `main`.
+- **No required commit signatures** — solo-maintainer repo; merges require a
+  pull request and passing checks under the active `main-protection` ruleset.
+  The repository admin role can bypass it, which is how a sole maintainer
+  merges their own work; no automation holds that bypass, so no workflow can
+  commit to `main`. Contributions do carry a DCO sign-off (CONTRIBUTING.md;
+  enforced for web edits by `web_commit_signoff_required`), which asserts
+  authorship rights but is not a cryptographic signature.
 
 ## Reporting
 
