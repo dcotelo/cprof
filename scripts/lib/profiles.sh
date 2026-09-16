@@ -155,8 +155,24 @@ cp_cmd_rule() {
   esac
 }
 
+# cp_cmd_remove <name> [--purge]: runs under the profile's fallback lock, so
+# a swap-out racing this cannot create a marker (and backup) after the
+# active-swap check and before the state scrub deletes them.
 cp_cmd_remove() {
-  local name='' purge=0 cfg dir reply marker fb_active fb_backup service item
+  local name="${1:-}" rc
+  [ -n "$name" ] || { cp_warn 'remove: missing profile name'; return 2; }
+  if ! cp_fallback_lock "$name"; then
+    cp_warn "remove: another cprof is working on $name's credentials (lock $(cp_path_display "$(cp_fallback_lock_dir "$name")")); try again in a moment"
+    return 1
+  fi
+  cp_cmd_remove_locked "$@"
+  rc=$?
+  cp_fallback_unlock "$name"
+  return "$rc"
+}
+
+cp_cmd_remove_locked() {
+  local name='' purge=0 cfg dir reply marker src fb_active fb_backup service item
   name="${1:-}"
   [ -n "$name" ] || { cp_warn 'remove: missing profile name'; return 2; }
   shift
@@ -172,15 +188,17 @@ cp_cmd_remove() {
   dir="$(cp_profile_dir "$cfg" "$name")"
 
   marker="$(cp_fallback_marker_file "$name")"
-  if [ -f "$marker" ]; then
-    fb_active="$(jq -r '.fallback // "unknown"' "$marker" 2>/dev/null)"
-    fb_backup="$(jq -r '.backup // "unknown"' "$marker" 2>/dev/null)"
+  src="$marker"
+  [ -f "$src" ] || src="$marker.pending"
+  if [ -f "$src" ]; then
+    fb_active="$(jq -r '.fallback // "unknown"' "$src" 2>/dev/null)"
+    fb_backup="$(jq -r '.backup // "unknown"' "$src" 2>/dev/null)"
     # The marker is the only record that this profile's live store holds
     # someone else's credentials and where its own are backed up. Removing
     # the profile would delete that record (and --purge the backup too),
     # leaving the fallback account live under a store a re-added profile
     # would inherit, with no restore able to run. Refuse either form.
-    cp_warn "$name has an active fallback swap (using $fb_active's credentials; its own are backed up at $(cp_path_display "$fb_backup")). Refusing to remove it: wait for the restore, or put the backup back and delete $(cp_path_display "$marker") by hand, then retry"
+    cp_warn "$name has an active (or interrupted) fallback swap (using $fb_active's credentials; its own are backed up at $(cp_path_display "$fb_backup")). Refusing to remove it: wait for the restore, or put the backup back and delete $(cp_path_display "$src") by hand, then retry"
     return 1
   fi
 

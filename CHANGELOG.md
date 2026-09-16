@@ -85,6 +85,11 @@ release workflow reads its notes from the section matching the tag.
 - A malformed fallback marker (no backup path, or an unknown backup kind)
   is left in place and reported rather than acted on: acting on an empty
   backup would have addressed the shared native keychain item.
+- A swap-out interrupted between the credential overwrite and the marker
+  commit is recovered on the next `cprof env`: the marker is staged at a
+  fixed `.pending` name, and the next call compares backup and live store to
+  either promote it or discard it with its backup. `cprof remove` runs under
+  the same per-profile lock as the swaps.
 - Restore cleanup is retryable: once the credentials are back, the marker is
   flagged `restored` before the backup and marker are deleted, each step
   checked, so a failed delete is retried on the next call without another

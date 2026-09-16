@@ -136,6 +136,65 @@ cp_cmd_fallback() {
     '.profiles |= map(if .name == $n then .fallback = $t else . end)' | cp_config_write
 }
 
+# cp_fallback_recover_pending <name>: finish or undo a swap-out that died
+# between staging its marker and committing it. The staged marker sits at
+# <marker>.pending from before the credentials change hands until after; if
+# a process is killed in that window, the next call (under the same lock)
+# looks at what actually happened. Backup identical to the live store: the
+# overwrite never ran, so drop backup and pending — nothing changed. Backup
+# differs: the overwrite ran, so promote pending to the marker and let the
+# normal restore take over. Nothing is ever guessed at with a malformed
+# pending file: it is left in place and reported.
+cp_fallback_recover_pending() {
+  local name="$1" marker pending backup kind live service
+  marker="$(cp_fallback_marker_file "$name")"
+  pending="$marker.pending"
+  [ -f "$pending" ] || return 0
+  if [ -f "$marker" ]; then
+    rm -f "$pending"
+    return 0
+  fi
+  backup="$(jq -r '.backup // empty' "$pending" 2>/dev/null)"
+  kind="$(jq -r '.backup_kind // empty' "$pending" 2>/dev/null)"
+  case "$kind" in file|keychain) ;; *) kind='' ;; esac
+  if [ -z "$backup" ] || [ -z "$kind" ]; then
+    cp_warn "fallback: an interrupted swap left a malformed pending marker for $name; not touching anything — inspect and remove $(cp_path_display "$pending") by hand"
+    return 0
+  fi
+  if [ "$kind" = file ]; then
+    live="${backup%.bak}"
+    if [ ! -f "$backup" ]; then
+      rm -f "$pending"
+      cp_warn "fallback: an interrupted swap of $name never got as far as its backup; nothing changed"
+      return 0
+    fi
+    if cmp -s "$backup" "$live"; then
+      rm -f "$backup" "$pending"
+      cp_warn "fallback: an interrupted swap of $name never changed its credentials; backup discarded, nothing to restore"
+    elif mv "$pending" "$marker" 2>/dev/null; then
+      cp_warn "fallback: an interrupted swap of $name had already changed its credentials; marker recovered, the restore will run as usual"
+    fi
+  else
+    service="${backup%-bak}"
+    cp_keychain_status "$backup"
+    case $? in
+      1) rm -f "$pending"
+         cp_warn "fallback: an interrupted swap of $name never got as far as its backup; nothing changed"
+         return 0 ;;
+      0) ;;
+      *) cp_warn "fallback: an interrupted swap of $name cannot be recovered while the keychain cannot be read; leaving $(cp_path_display "$pending") in place"
+         return 0 ;;
+    esac
+    if [ "$(cp_keychain_read "$backup")" = "$(cp_keychain_read "$service")" ]; then
+      cp_keychain_delete "$backup"
+      rm -f "$pending"
+      cp_warn "fallback: an interrupted swap of $name never changed its credentials; backup discarded, nothing to restore"
+    elif mv "$pending" "$marker" 2>/dev/null; then
+      cp_warn "fallback: an interrupted swap of $name had already changed its credentials; marker recovered, the restore will run as usual"
+    fi
+  fi
+}
+
 # cp_fallback_swap_out <cfg> <name> <dir> -> always returns 0. Overwrites
 # <name>'s own credential storage with its configured fallback's blob, once
 # the cached 5h usage is at/above threshold. No-ops (with a cp_warn) whenever
@@ -164,6 +223,7 @@ cp_fallback_swap_out_locked() {
   [ "$fallback" != "$name" ] || return 0
 
   marker="$(cp_fallback_marker_file "$name")"
+  cp_fallback_recover_pending "$name"
   [ -f "$marker" ] && return 0
 
   cached="$(cp_usage_read_cached_only "$name")"
@@ -244,11 +304,12 @@ cp_fallback_swap_out_locked() {
     esac
   fi
 
-  # Stage the marker before any credential changes hands. A swap whose marker
-  # never got written is the one state cp_fallback_swap_back cannot see and
-  # every later swap-out refuses (the backup already exists), so if the marker
-  # cannot be written here, nothing is swapped. It is committed with a same-
-  # directory mv only after the swap has succeeded.
+  # Stage the marker before any credential changes hands, at a fixed name
+  # (<marker>.pending) rather than a per-process temp file: if this process
+  # dies between the credential overwrite and the commit below, the next
+  # call finds the pending file and finishes or undoes the swap
+  # (cp_fallback_recover_pending) instead of leaving a swapped profile with
+  # no record of it. If the marker cannot even be staged, nothing is swapped.
   mkdir -p "$(dirname "$marker")" 2>/dev/null
   chmod 700 "$(dirname "$marker")" 2>/dev/null
   if ! { jq -n --arg fb "$fallback" --arg backup "$backup" --arg kind "$kind" \
@@ -257,7 +318,8 @@ cp_fallback_swap_out_locked() {
       '{fallback: $fb, backup: $backup, backup_kind: $kind,
         swapped_at: $swapped_at, resets_at: $resets_at}' \
       > "$marker.tmp.$$" 2>/dev/null \
-      && chmod 600 "$marker.tmp.$$" 2>/dev/null; }; then
+      && chmod 600 "$marker.tmp.$$" 2>/dev/null \
+      && mv "$marker.tmp.$$" "$marker.pending" 2>/dev/null; }; then
     rm -f "$marker.tmp.$$"
     cp_warn "fallback: cannot write a swap marker under $(cp_path_display "$(dirname "$marker")") for $name; not swapping"
     unset blob before
@@ -266,7 +328,7 @@ cp_fallback_swap_out_locked() {
 
   if [ "$kind" = file ]; then
     if ! { ( umask 077; cp "$file" "$backup" ) 2>/dev/null && chmod 600 "$backup" 2>/dev/null; }; then
-      rm -f "$backup" "$marker.tmp.$$"
+      rm -f "$backup" "$marker.pending"
       cp_warn "fallback: could not back up $(cp_path_display "$file")"
       unset blob
       return 0
@@ -274,14 +336,14 @@ cp_fallback_swap_out_locked() {
     if ! { ( umask 077; printf '%s' "$blob" > "$file.tmp.$$" ) 2>/dev/null \
         && chmod 600 "$file.tmp.$$" 2>/dev/null \
         && mv "$file.tmp.$$" "$file" 2>/dev/null; }; then
-      rm -f "$file.tmp.$$" "$backup" "$marker.tmp.$$"
+      rm -f "$file.tmp.$$" "$backup" "$marker.pending"
       cp_warn "fallback: could not write $fallback's credentials for $name"
       unset blob
       return 0
     fi
   else
     if ! cp_keychain_create "$before" "$backup"; then
-      rm -f "$marker.tmp.$$"
+      rm -f "$marker.pending"
       cp_warn "fallback: could not back up the keychain item for $name"
       unset blob before
       return 0
@@ -290,7 +352,7 @@ cp_fallback_swap_out_locked() {
       # The backup was just taken; leaving it would make every later swap-out
       # refuse on "a backup already exists" after one transient keychain
       # error. Remove it while the primary item is provably unchanged.
-      rm -f "$marker.tmp.$$"
+      rm -f "$marker.pending"
       unset blob
       if [ "$(cp_keychain_read "$service")" = "$before" ]; then
         cp_keychain_delete "$backup"
@@ -304,11 +366,11 @@ cp_fallback_swap_out_locked() {
   fi
   unset blob
 
-  # Commit the marker. Same directory as the staged file, so this only fails
-  # when the directory itself changed under us; roll the swap back rather
-  # than leave a swapped profile with no record of it.
-  if ! mv "$marker.tmp.$$" "$marker" 2>/dev/null; then
-    rm -f "$marker.tmp.$$"
+  # Commit the marker. Same directory as the pending file, so this only
+  # fails when the directory itself changed under us; roll the swap back
+  # rather than leave a swapped profile with no record of it.
+  if ! mv "$marker.pending" "$marker" 2>/dev/null; then
+    rm -f "$marker.pending"
     if [ "$kind" = file ]; then
       if mv "$backup" "$file" 2>/dev/null; then
         cp_warn "fallback: marker could not be committed for $name; swap rolled back, nothing changed"
@@ -337,7 +399,7 @@ cp_fallback_swap_out_locked() {
 # until the restore and its cleanup are done.
 cp_fallback_swap_back() {
   local name="$2"
-  [ -f "$(cp_fallback_marker_file "$name")" ] || return 0
+  [ -f "$(cp_fallback_marker_file "$name")" ] || [ -f "$(cp_fallback_marker_file "$name").pending" ] || return 0
   if ! cp_fallback_lock "$name"; then
     cp_warn "fallback: another cprof is working on $name's credentials (lock $(cp_path_display "$(cp_fallback_lock_dir "$name")")); skipping this check"
     return 0
@@ -353,6 +415,10 @@ cp_fallback_swap_back() {
 cp_fallback_doctor_line() {
   local marker
   marker="$(cp_fallback_marker_file "${1:-}")"
+  if [ ! -f "$marker" ] && [ -f "$marker.pending" ]; then
+    printf '%s: fallback swap interrupted; recovered on the next cprof env\n' "$1"
+    return 0
+  fi
   [ -f "$marker" ] || return 0
   if [ "$(jq -r '.restored // false' "$marker" 2>/dev/null)" = 'true' ]; then
     printf '%s: fallback restore done, cleanup pending (backup %s)\n' "$1" \
@@ -413,6 +479,7 @@ cp_fallback_swap_back_locked() {
   local backup_blob primary_token fresh pct
 
   marker="$(cp_fallback_marker_file "$name")"
+  cp_fallback_recover_pending "$name"
   [ -f "$marker" ] || return 0
 
   # Validate the marker before either path acts on it. An empty backup

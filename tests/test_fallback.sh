@@ -262,6 +262,71 @@ assert_eq 'false' "$([ -f "$(cp_fallback_marker_file work)" ] && echo true || ec
   'an existing backup refuses the swap: no marker is written'
 rm -f "$CP_T_TMP/w/.credentials.json.bak"
 
+# --- an interrupted swap-out leaves <marker>.pending; the next call either
+# promotes it (credentials were changed) or discards it with the backup
+# (they were not) — file-backed --------------------------------------------
+pend="$(cp_fallback_marker_file work).pending"
+mkdir -p "$(dirname "$pend")"
+printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/w/.credentials.json.bak"
+printf '{"claudeAiOauth":{"accessToken":"tok-personal"}}' > "$CP_T_TMP/w/.credentials.json"
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$CP_T_TMP/w/.credentials.json.bak","backup_kind":"file","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+out="$(cd "$CP_T_TMP" && NO_COLOR=1 "$CLI" doctor 2>&1)"
+case "$out" in *'work: fallback swap interrupted'*) assert_eq ok ok 'doctor reports an interrupted swap' ;;
+                *) assert_eq 'work: fallback swap interrupted ...' "$out" 'doctor reports an interrupted swap' ;; esac
+cp_fallback_swap_out "$CFG" work "$CP_T_TMP/w"
+assert_eq 'true' "$([ -f "$(cp_fallback_marker_file work)" ] && echo true || echo false)" \
+  'interrupted after the overwrite: the pending marker is promoted'
+assert_eq 'false' "$([ -f "$pend" ] && echo true || echo false)" 'interrupted after the overwrite: no pending file remains'
+assert_eq '{"claudeAiOauth":{"accessToken":"tok-personal"}}' "$(cat "$CP_T_TMP/w/.credentials.json")" \
+  'interrupted after the overwrite: the live credentials are left as they are'
+assert_eq 'personal' "$(jq -r .fallback "$(cp_fallback_marker_file work)")" 'the promoted marker carries the staged content'
+rm -f "$(cp_fallback_marker_file work)" "$CP_T_TMP/w/.credentials.json.bak"
+printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/w/.credentials.json"
+printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/w/.credentials.json.bak"
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$CP_T_TMP/w/.credentials.json.bak","backup_kind":"file","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+cat > "$CP_T_TMP/state/usage/work.json" <<'JSON'
+{"fetched_at":1,"five_hour":{"utilization":42,"resets_at":"2030-01-01T00:00:00Z"},"seven_day":{"utilization":10},"limits":[]}
+JSON
+cp_fallback_swap_back "$CFG" work
+assert_eq 'false' "$([ -f "$pend" ] && echo true || echo false)" 'interrupted before the overwrite: the pending file is discarded'
+assert_eq 'false' "$([ -e "$CP_T_TMP/w/.credentials.json.bak" ] && echo true || echo false)" \
+  'interrupted before the overwrite: the backup is discarded'
+assert_eq 'false' "$([ -f "$(cp_fallback_marker_file work)" ] && echo true || echo false)" \
+  'interrupted before the overwrite: no marker is created'
+cat > "$CP_T_TMP/state/usage/work.json" <<'JSON'
+{"fetched_at":1,"five_hour":{"utilization":92,"resets_at":"2030-01-01T00:00:00Z"},"seven_day":{"utilization":10,"resets_at":"2030-01-05T00:00:00Z"},"limits":[]}
+JSON
+
+# --- ... and keychain-backed, both outcomes --------------------------------
+rm -f "$CP_T_TMP/w/.credentials.json"
+service="$(cp_keychain_service "$CP_T_TMP/w")"
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-work-kc"}}' > "$KCD/$service-bak"
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-personal-kc"}}' > "$KCD/$service"
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$service-bak","backup_kind":"keychain","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+cp_fallback_swap_out "$CFG" work "$CP_T_TMP/w"
+assert_eq 'true' "$([ -f "$(cp_fallback_marker_file work)" ] && echo true || echo false)" \
+  'keychain: interrupted after the overwrite promotes the pending marker'
+assert_eq '{"claudeAiOauth":{"accessToken":"tok-personal-kc"}}' "$(cat "$KCD/$service")" \
+  'keychain: interrupted after the overwrite leaves the live item alone'
+rm -f "$(cp_fallback_marker_file work)" "$KCD/$service" "$KCD/$service-bak"
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-work-kc"}}' > "$KCD/$service-bak"
+printf '%s' '{"claudeAiOauth":{"accessToken":"tok-work-kc"}}' > "$KCD/$service"
+cat > "$pend" <<JSON
+{"fallback":"personal","backup":"$service-bak","backup_kind":"keychain","swapped_at":1,"resets_at":"2030-01-01T00:00:00Z"}
+JSON
+cp_fallback_swap_back "$CFG" work
+assert_eq 'false' "$([ -f "$pend" ] && echo true || echo false)" 'keychain: interrupted before the overwrite discards the pending file'
+assert_eq 'false' "$([ -f "$KCD/$service-bak" ] && echo true || echo false)" 'keychain: interrupted before the overwrite discards the -bak item'
+assert_eq '{"claudeAiOauth":{"accessToken":"tok-work-kc"}}' "$(cat "$KCD/$service")" 'keychain: the live item is untouched'
+rm -f "$KCD/$service"
+printf '{"claudeAiOauth":{"accessToken":"tok-work"}}' > "$CP_T_TMP/w/.credentials.json"
+
 # --- the marker must be writable BEFORE any credential changes hands -------
 # A swap whose marker can't be written is the one state swap-back can't see,
 # so an unwritable marker directory means no swap at all.
@@ -1034,7 +1099,7 @@ cat > "$(cp_fallback_marker_file work)" <<JSON
 JSON
 rc=0; STDERR_OUT="$("$CLI" remove work 2>&1 1>/dev/null)" || rc=$?
 case "$STDERR_OUT" in
-  *'active fallback swap'*'personal'*"$CP_T_TMP/w/.credentials.json.bak"*) result=true ;;
+  *'fallback swap'*'personal'*"$CP_T_TMP/w/.credentials.json.bak"*) result=true ;;
   *) result=false ;;
 esac
 assert_eq 'true' "$result" 'remove refuses an active fallback swap, naming the fallback and backup'
@@ -1043,6 +1108,15 @@ assert_eq 'true' "$([ -f "$(cp_fallback_marker_file work)" ] && echo true || ech
   'refused remove keeps the marker, so the restore can still run'
 assert_eq 'work' "$(jq -r '.profiles[] | select(.name == "work") | .name' "$CPROF_CONFIG")" \
   'refused remove keeps the profile registered'
+# remove runs under the same lock as the swaps: a held lock makes it back off
+lock="$(cp_fallback_lock_dir work)"
+mkdir -p "$lock"; printf '%s' "$$" > "$lock/pid"
+rc=0; STDERR_OUT="$("$CLI" remove work 2>&1 1>/dev/null)" || rc=$?
+assert_eq '1' "$rc" 'remove fails while another cprof holds the profile lock'
+case "$STDERR_OUT" in *'another cprof'*) assert_eq ok ok 'remove reports the held lock' ;;
+                      *) assert_eq 'cprof: remove: another cprof ...' "$STDERR_OUT" 'remove reports the held lock' ;; esac
+assert_eq 'work' "$(jq -r '.profiles[] | select(.name == "work") | .name' "$CPROF_CONFIG")" 'a lock-blocked remove keeps the profile'
+cp_fallback_unlock work
 rm -f "$(cp_fallback_marker_file work)"
 assert_ok "$CLI" remove work
 

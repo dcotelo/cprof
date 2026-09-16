@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
 [![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](#development)
 [![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
-[![Tests](https://img.shields.io/badge/Tests-701%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
+[![Tests](https://img.shields.io/badge/Tests-717%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
 
 </div>
 
@@ -601,23 +601,19 @@ session under `work` starts authenticating as `personal` on its next token
 use — no restart needed. `work`'s original credentials are backed up first
 and restored by the first `cprof env` call after `work`'s usage window
 resets, once a fresh fetch confirms it is back under threshold — an idle
-session is not restored until something launches `claude` again. Setting up
-a mutual pair (`work`'s fallback is
-`personal`, and `personal`'s fallback is `work`) doesn't corrupt anything —
-each restore correctly re-derives its own backup — but it's pointless: both
-profiles just end up authenticating as whichever one exhausted last.
+session is not restored until something launches `claude` again. A mutual
+pair (`work → personal` and `personal → work`) is refused, like any chain: a
+profile is a primary or a fallback target, never both.
 
 If a swap or restore is interrupted mid-write (a crash, a killed process),
-it fails safely into one of two stuck states rather than corrupting
-anything:
+it recovers or fails safely rather than corrupting anything:
 
-- **Stuck swapped-out with no marker**: the primary's credentials were
-  overwritten but the marker recording it never got written. `cprof doctor`
-  shows nothing wrong (no marker exists), but the profile is actually
-  running as the fallback, and every subsequent `cprof env` call warns that
-  a backup already exists and refuses to touch it. Recover by restoring the
-  backup file yourself (e.g. `mv <profile-dir>/.credentials.json.bak
-  <profile-dir>/.credentials.json` for a file-backed profile).
+- **Interrupted swap-out**: the marker is staged as `<name>.json.pending`
+  before any credential changes hands. On the next `cprof env`, cprof
+  compares the backup with the live store: identical means the overwrite
+  never ran, so the backup and the pending file are discarded; different
+  means it did, so the pending file becomes the marker and the normal
+  restore takes over. `cprof doctor` reports the interrupted swap until then.
 - **Stuck restored with a leftover marker**: the credentials were correctly
   restored, but the marker survived. `cprof doctor`/`list` show a phantom
   active swap, and fallback swaps stop firing for that profile. Recover by
@@ -625,8 +621,10 @@ anything:
   for an ordinary name; a name with characters outside `A-Z a-z 0-9 . _ @ + -`
   is filed under a hashed key instead, so list the directory to find it.
 
-Both states are conservative by design — cprof would rather refuse and ask
-for help than guess wrong and overwrite the wrong account's credentials.
+Anything cprof cannot decide from the evidence on disk is left in place and
+reported — it would rather refuse and ask for help than guess wrong and
+overwrite the wrong account's credentials. `cprof remove` takes the same
+per-profile lock as the swaps, so it can never race one.
 
 Both directions take a per-profile lock under `~/.cprof/fallback-lock/`
 for the whole check-and-swap, so two `claude` launches racing each other
