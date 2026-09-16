@@ -214,10 +214,14 @@ cp_cmd_remove() {
              return 1 ;;
         esac
         # A directory that will not go is a profile that must stay
-        # registered: forgetting it would leave its credentials and
-        # sessions on disk under a name cprof no longer knows.
+        # registered: forgetting it would leave its sessions on disk under a
+        # name cprof no longer knows. Its keychain item is already gone by
+        # now — the confirmed purge asked for exactly that, and the retry
+        # finds it absent and finishes the job. The other order would be
+        # worse: a directory gone and an item that refuses to go leaves live
+        # credentials that a re-added profile at the same path inherits.
         if ! rm -rf "$dir"; then
-          cp_warn "purge: could not delete $(cp_path_display "$dir"); profile left registered"
+          cp_warn "purge: could not delete $(cp_path_display "$dir"); its keychain credentials are already removed; profile left registered — fix the directory and retry"
           return 1
         fi
         ;;
