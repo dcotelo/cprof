@@ -3,6 +3,6 @@
 # subagent-driven-development scratch: ledgers, briefs, review packages
 .superpowers/
 # planning docs generated during design/brainstorming — not project docs
-docs/superpowers/specs/
+docs/superpowers/
 # per-machine tool permissions, not part of the plugin
 .claude/settings.local.json
