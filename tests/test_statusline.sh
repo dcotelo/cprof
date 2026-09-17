@@ -261,4 +261,31 @@ out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
 case "$out" in *"${ESC}[33m"*) assert_eq ok ok 'a configured warn threshold reaches the context bar' ;;
                 *) assert_eq 'yellow context bar' "$out" 'a configured warn threshold reaches the context bar' ;; esac
 
+# --- colours ---------------------------------------------------------------
+assert_eq '2'  "$(cp_sl_code dim)"           'dim is the one name cp_color_code does not carry'
+assert_eq '36' "$(cp_sl_code cyan)"          'a palette name goes through cp_color_code'
+assert_eq '91' "$(cp_sl_code bright-red)"    'a bright variant resolves too'
+assert_eq ''   "$(cp_sl_code nonsense)"      'an unknown name resolves to nothing, so the caller renders plain'
+mkcfg '{"lines":[["model","dir"]],"colors":{"model":"red","dir":"bright-green"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in *"${ESC}[31m[M]${ESC}[0m"*"${ESC}[92mrepo${ESC}[0m"*) assert_eq ok ok 'configured colours reach the output' ;;
+                *) assert_eq 'red model, bright-green dir' "$out" 'configured colours reach the output' ;; esac
+mkcfg '{"lines":[["context"]],"colors":{"label":"blue"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in *"${ESC}[34mContext${ESC}[0m"*) assert_eq ok ok 'the label colour covers the Context word' ;;
+                *) assert_eq 'blue label' "$out" 'the label colour covers the Context word' ;; esac
+mkcfg '{"lines":[["model"]],"colors":{"model":"nonsense"}}'
+assert_eq '[M]' "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'an unknown colour still renders the segment'
+# The same, with colour actually enabled: NO_COLOR alone proves nothing about
+# cp_sl_code, since a plain render is the NO_COLOR path regardless.
+assert_eq '[M]' "$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)" \
+  'an unknown colour still renders the segment plain when colour is otherwise on'
+# The badge takes its colour from `cprof color`, so a profile's colour lives in
+# one place; a colors.badge setting is not a way in.
+mkcfg '{"lines":[["badge"]],"colors":{"badge":"green"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in *"${ESC}[35m⚑ work${ESC}[0m"*) assert_eq ok ok 'the badge keeps the profile colour, not a configured one' ;;
+                *) assert_eq 'magenta badge' "$out" 'the badge keeps the profile colour, not a configured one' ;; esac
+
 cp_t_summary

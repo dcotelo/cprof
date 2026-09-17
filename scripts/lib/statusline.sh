@@ -132,6 +132,18 @@ cp_sl_config() {
       "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
 }
 
+# cp_sl_code <name> -> an SGR parameter for a configured colour name, or
+# nothing when the name is not one cprof knows, in which case the caller
+# renders the segment plain rather than dropping it. `dim` is handled here
+# because it is an attribute rather than a colour, so cp_color_code, which
+# owns the palette `cprof color` documents, does not carry it.
+cp_sl_code() {
+  case "${1:-}" in
+    dim) printf '2\n' ;;
+    *)   cp_color_code "${1:-}" ;;
+  esac
+}
+
 # cp_sl_wants <layout> <segment> -> 0 when the layout names that segment,
 # anywhere in any line. A helper rather than a pattern match on the layout
 # string, which would have to special-case a segment at the start or end of
@@ -196,6 +208,8 @@ cp_cmd_statusline() {
   local u_pct u_bar u_code u_reset c_pct c_bar c_code
   local colour_on=1 config layout bar_cfg b_fill b_empty b_width
   local thresh_cfg th_warn th_crit
+  local colors_cfg col_model col_dir col_git col_branch col_label
+  local label_open='' label_close=''
   # These are read by cp_sl_assemble through `eval` on a name built from the
   # layout's own segment names, which is why nothing in this function appears
   # to use them.
@@ -224,11 +238,24 @@ cp_cmd_statusline() {
   thresh_cfg="$(printf '%s' "$config" | sed -n '3p')"
   th_warn="$(printf '%s' "$thresh_cfg" | cut -f1)"
   th_crit="$(printf '%s' "$thresh_cfg" | cut -f2)"
+  colors_cfg="$(printf '%s' "$config" | sed -n '4p')"
+  col_model="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f1)" 2>/dev/null)"
+  col_dir="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f2)" 2>/dev/null)"
+  col_git="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f3)" 2>/dev/null)"
+  col_branch="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f4)" 2>/dev/null)"
+  col_label="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f5)" 2>/dev/null)"
+
+  if [ "$colour_on" -eq 1 ] && [ -n "$col_label" ]; then
+    label_open="$(printf '\033[%sm' "$col_label")"
+    label_close="$(printf '\033[0m')"
+  fi
 
   if [ "$colour_on" -eq 0 ]; then
     sep=' │ '
+  elif [ -n "$col_label" ]; then
+    sep="$(printf '\033[%sm │ \033[0m' "$col_label")"
   else
-    sep="$(printf '\033[2m │ \033[0m')"
+    sep=' │ '
   fi
 
   if cp_sl_wants "$layout" badge; then
@@ -255,8 +282,8 @@ cp_cmd_statusline() {
   fi
 
   if cp_sl_wants "$layout" model && [ -n "${model:-}" ]; then
-    if [ "$colour_on" -eq 1 ]; then
-      CP_SL_model="$(printf '\033[36m[%s]\033[0m' "$model")"
+    if [ "$colour_on" -eq 1 ] && [ -n "$col_model" ]; then
+      CP_SL_model="$(printf '\033[%sm[%s]\033[0m' "$col_model" "$model")"
     else
       # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
       CP_SL_model="[$model]"
@@ -266,8 +293,8 @@ cp_cmd_statusline() {
   if cp_sl_wants "$layout" dir; then
     dir_label="$(cp_sl_dir_label "${dir:-}")"
     if [ -n "$dir_label" ]; then
-      if [ "$colour_on" -eq 1 ]; then
-        CP_SL_dir="$(printf '\033[33m%s\033[0m' "$dir_label")"
+      if [ "$colour_on" -eq 1 ] && [ -n "$col_dir" ]; then
+        CP_SL_dir="$(printf '\033[%sm%s\033[0m' "$col_dir" "$dir_label")"
       else
         # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
         CP_SL_dir="$dir_label"
@@ -280,8 +307,9 @@ cp_cmd_statusline() {
     if [ -n "$git_fields" ]; then
       branch="$(printf '%s' "$git_fields" | cut -f1)"
       dirty="$(printf '%s' "$git_fields" | cut -f2)"
-      if [ "$colour_on" -eq 1 ]; then
-        CP_SL_git="$(printf '\033[35mgit:(\033[0m\033[36m%s%s\033[0m\033[35m)\033[0m' "$branch" "$dirty")"
+      if [ "$colour_on" -eq 1 ] && [ -n "$col_git" ] && [ -n "$col_branch" ]; then
+        CP_SL_git="$(printf '\033[%smgit:(\033[0m\033[%sm%s%s\033[0m\033[%sm)\033[0m' \
+          "$col_git" "$col_branch" "$branch" "$dirty" "$col_git")"
       else
         # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
         CP_SL_git="git:($branch$dirty)"
@@ -317,7 +345,8 @@ cp_cmd_statusline() {
 
     if cp_sl_wants "$layout" context && [ -n "$c_pct" ]; then
       if [ "$colour_on" -eq 1 ]; then
-        CP_SL_context="$(printf '\033[2mContext\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$c_bar" "$c_code" "$b_empty")" "$c_code" "$c_pct")"
+        CP_SL_context="$(printf '%sContext%s %s \033[%sm%s%%\033[0m' \
+          "$label_open" "$label_close" "$(cp_sl_bar "$c_bar" "$c_code" "$b_empty")" "$c_code" "$c_pct")"
       else
         # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
         CP_SL_context="Context $c_bar $c_pct%"
@@ -325,8 +354,9 @@ cp_cmd_statusline() {
     fi
     if cp_sl_wants "$layout" usage && [ -n "$u_pct" ]; then
       if [ "$colour_on" -eq 1 ]; then
-        CP_SL_usage="$(printf '\033[2mUsage\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$u_bar" "$u_code" "$b_empty")" "$u_code" "$u_pct")"
-        [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage$(printf ' \033[2m(resets in %s)\033[0m' "$u_reset")"
+        CP_SL_usage="$(printf '%sUsage%s %s \033[%sm%s%%\033[0m' \
+          "$label_open" "$label_close" "$(cp_sl_bar "$u_bar" "$u_code" "$b_empty")" "$u_code" "$u_pct")"
+        [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage$(printf ' %s(resets in %s)%s' "$label_open" "$u_reset" "$label_close")"
       else
         CP_SL_usage="Usage $u_bar $u_pct%"
         [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage (resets in $u_reset)"
