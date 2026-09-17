@@ -200,4 +200,39 @@ assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'an empty config argument yields the de
 assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config 'not json')" \
   'the fallback and the jq defaults cannot drift apart'
 
+# --- the configured layout drives the output -------------------------------
+mkcfg() { cp_t_write_config <<JSON
+{"default":"work","profiles":[{"name":"work","native":true,"color":"magenta"}],
+ "rules":[],"repos":{},"statusline":$1}
+JSON
+}
+SOON=$(( $(date +%s) + 2*3600 + 5*60 + 30 ))
+PAY2="$(printf '{"cwd":"%s","model":{"display_name":"M"},"context_window":{"used_percentage":30},"rate_limits":{"five_hour":{"used_percentage":40,"resets_at":%s}}}' "$R" "$SOON")"
+mkcfg '{"lines":[["badge"],["model"],["context"],["usage"]]}'
+assert_eq "⚑ work
+[M]
+Context $(cp_usage_bar 30) 30%
+Usage $(cp_usage_bar 40) 40% (resets in 2h 5m)" \
+  "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'one segment per line renders one line each'
+mkcfg '{"lines":[["dir","git"]]}'
+assert_eq "repo git:($(gitq rev-parse --short HEAD))" \
+  "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'git attaches to dir with a space, not a separator'
+mkcfg '{"lines":[["git"]]}'
+assert_eq "git:($(gitq rev-parse --short HEAD))" \
+  "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'git alone on a line stands by itself'
+mkcfg '{"lines":[["badge","model"],["dir"]]}'
+assert_eq "⚑ work │ [M]
+repo" "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'segments on one line are joined with the separator'
+mkcfg '{"lines":[["badge"],["model"]]}'
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a line whose every segment is empty prints no line at all'
+mkcfg '{"lines":[["context","usage"],["badge"]]}'
+assert_eq "Context $(cp_usage_bar 30) 30% │ Usage $(cp_usage_bar 40) 40% (resets in 2h 5m)
+⚑ work" "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'the badge is not pinned to the first line'
+
 cp_t_summary

@@ -130,13 +130,61 @@ cp_sl_config() {
       "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
 }
 
-# cp_cmd_statusline [--stdin]: the whole statusline, one line or two.
+# cp_sl_wants <layout> <segment> -> 0 when the layout names that segment,
+# anywhere in any line. A helper rather than a pattern match on the layout
+# string, which would have to special-case a segment at the start or end of
+# a line.
+cp_sl_wants() {
+  local seg
+  # shellcheck disable=SC2046,SC2086 # layout is a ';'- and space-separated
+  # list of segment names; splitting it into words is the point.
+  for seg in $(printf '%s' "${1:-}" | tr ';' ' '); do
+    [ "$seg" = "${2:-}" ] && return 0
+  done
+  return 1
+}
+
+# cp_sl_assemble <layout> <sep>: prints one output line per configured line,
+# skipping a line whose segments all came back empty. Each segment's
+# rendered text comes from the shell variable CP_SL_<segment>, set by
+# cp_cmd_statusline before calling this. `git` attaches to `dir` with a
+# single space so that a directory and its branch read as one thing; every
+# other adjacency takes the separator.
+cp_sl_assemble() {
+  local layout="${1:-}" sep="${2:-}" line seg text out prev
+  # A trailing newline before tr, not just the ';' separators, or the last
+  # configured line reaches `read` as a no-newline EOF read: `read` returns
+  # non-zero for it, and `while read` treats that as the end of input, so
+  # the final line of the layout is silently dropped.
+  printf '%s\n' "$layout" | tr ';' '\n' | while IFS= read -r line; do
+    out=''; prev=''
+    # shellcheck disable=SC2086 # line is a space-separated list of segment
+    # names; splitting it into words is the point.
+    for seg in $line; do
+      eval "text=\${CP_SL_$seg:-}"
+      [ -n "$text" ] || continue
+      if [ -z "$out" ]; then
+        out="$text"
+      elif [ "$seg" = git ] && [ "$prev" = dir ]; then
+        out="$out $text"
+      else
+        out="$out$sep$text"
+      fi
+      prev="$seg"
+    done
+    [ -n "$out" ] && printf '%s\n' "$out"
+  done
+}
+
+# cp_cmd_statusline [--stdin]: the whole statusline, laid out the way the
+# resolved configuration says.
 #
-# Line one names the account, then the model and the directory with its git
-# branch. Line two carries the context and usage bars. Everything but the
-# account needs the payload, so without --stdin this is the badge plus
-# whatever usage the profile has cached — exactly what the segment printed
-# before this command existed.
+# Each segment renders into its own shell variable -- CP_SL_badge,
+# CP_SL_model, CP_SL_dir, CP_SL_git, CP_SL_context, CP_SL_usage -- holding
+# only that segment's own text, with no separator. cp_sl_assemble then walks
+# the configured layout and joins what is there. A segment the layout does
+# not name is never rendered at all, so an unconfigured git segment runs no
+# git commands, and a segment with nothing to say leaves no stray separator.
 #
 # Colour is decided here the way the segment decides it, on NO_COLOR alone,
 # rather than through cp_color_enabled: a statusline's stdout is a pipe, so
@@ -146,7 +194,12 @@ cp_cmd_statusline() {
   local read_stdin=0 payload='' cfg name colour code text sep=''
   local meta model dir dir_label git_fields branch dirty
   local u_pct u_bar u_code u_reset c_pct c_bar c_code
-  local line1 line2='' colour_on=1
+  local colour_on=1 config layout
+  # shellcheck disable=SC2034 # read by cp_sl_assemble via `eval` on a name
+  # built from the layout's own segment names, which shellcheck cannot trace.
+  local CP_SL_badge='' CP_SL_model='' CP_SL_dir='' CP_SL_git=''
+  # shellcheck disable=SC2034
+  local CP_SL_context='' CP_SL_usage=''
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -161,22 +214,29 @@ cp_cmd_statusline() {
   name="$(CPROF_COLOR=never cp_cmd_status 2>/dev/null)" || return 0
   case "$name" in ''|stock) return 0 ;; esac
 
-  colour="$(cp_color_for "$cfg" "$name" 2>/dev/null)"
-  code="$(cp_color_code "$colour" 2>/dev/null)"
-  text="$(printf '%s' "$cfg" | jq -r 'if .colorText == false then "off" else "on" end' 2>/dev/null)"
-  [ -n "$text" ] || text='off'
+  config="$(cp_sl_config "$cfg")"
+  layout="$(printf '%s' "$config" | sed -n '1p')"
 
   if [ "$colour_on" -eq 0 ]; then
-    line1="⚑ $name"
     sep=' │ '
   else
     sep="$(printf '\033[2m │ \033[0m')"
-    if [ -z "$code" ]; then
-      line1="$(printf '\033[2m⚑ %s\033[0m' "$name")"
+  fi
+
+  if cp_sl_wants "$layout" badge; then
+    colour="$(cp_color_for "$cfg" "$name" 2>/dev/null)"
+    code="$(cp_color_code "$colour" 2>/dev/null)"
+    text="$(printf '%s' "$cfg" | jq -r 'if .colorText == false then "off" else "on" end' 2>/dev/null)"
+    [ -n "$text" ] || text='off'
+    if [ "$colour_on" -eq 0 ]; then
+      CP_SL_badge="⚑ $name"
+    elif [ -z "$code" ]; then
+      CP_SL_badge="$(printf '\033[2m⚑ %s\033[0m' "$name")"
     elif [ "$text" = 'on' ]; then
-      line1="$(printf '\033[%sm⚑ %s\033[0m' "$code" "$name")"
+      CP_SL_badge="$(printf '\033[%sm⚑ %s\033[0m' "$code" "$name")"
     else
-      line1="$(printf '\033[%sm⚑\033[0m \033[2m%s\033[0m' "$code" "$name")"
+      # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
+      CP_SL_badge="$(printf '\033[%sm⚑\033[0m \033[2m%s\033[0m' "$code" "$name")"
     fi
   fi
 
@@ -186,67 +246,77 @@ cp_cmd_statusline() {
     dir="$(printf '%s' "$meta" | cut -f2)"
   fi
 
-  if [ -n "${model:-}" ]; then
+  if cp_sl_wants "$layout" model && [ -n "${model:-}" ]; then
     if [ "$colour_on" -eq 1 ]; then
-      line1="$line1$sep$(printf '\033[36m[%s]\033[0m' "$model")"
+      CP_SL_model="$(printf '\033[36m[%s]\033[0m' "$model")"
     else
-      line1="${line1}${sep}[$model]"
+      # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
+      CP_SL_model="[$model]"
     fi
   fi
 
-  dir_label="$(cp_sl_dir_label "${dir:-}")"
-  if [ -n "$dir_label" ]; then
-    if [ "$colour_on" -eq 1 ]; then
-      line1="$line1$sep$(printf '\033[33m%s\033[0m' "$dir_label")"
-    else
-      line1="$line1$sep$dir_label"
+  if cp_sl_wants "$layout" dir; then
+    dir_label="$(cp_sl_dir_label "${dir:-}")"
+    if [ -n "$dir_label" ]; then
+      if [ "$colour_on" -eq 1 ]; then
+        CP_SL_dir="$(printf '\033[33m%s\033[0m' "$dir_label")"
+      else
+        # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
+        CP_SL_dir="$dir_label"
+      fi
     fi
-    git_fields="$(cp_sl_git_fields "$dir")"
+  fi
+
+  if cp_sl_wants "$layout" git; then
+    git_fields="$(cp_sl_git_fields "${dir:-}")"
     if [ -n "$git_fields" ]; then
       branch="$(printf '%s' "$git_fields" | cut -f1)"
       dirty="$(printf '%s' "$git_fields" | cut -f2)"
       if [ "$colour_on" -eq 1 ]; then
-        line1="$line1 $(printf '\033[35mgit:(\033[0m\033[36m%s%s\033[0m\033[35m)\033[0m' "$branch" "$dirty")"
+        CP_SL_git="$(printf '\033[35mgit:(\033[0m\033[36m%s%s\033[0m\033[35m)\033[0m' "$branch" "$dirty")"
       else
-        line1="$line1 git:($branch$dirty)"
+        # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
+        CP_SL_git="git:($branch$dirty)"
       fi
     fi
   fi
 
   # The bars come from the same renderer the one-line segment uses, so the
-  # two entry points can never disagree about a percentage or a colour.
-  if [ -n "$payload" ]; then
-    u_pct="$(printf '%s' "$payload" | cp_usage_render_fields "$name" --stdin)"
-  else
-    u_pct="$(cp_usage_render_fields "$name" </dev/null)"
-  fi
-  c_code="$(printf '%s' "$u_pct" | cut -f7)"
-  c_bar="$(printf '%s' "$u_pct" | cut -f6)"
-  c_pct="$(printf '%s' "$u_pct" | cut -f5)"
-  u_reset="$(printf '%s' "$u_pct" | cut -f4)"
-  u_code="$(printf '%s' "$u_pct" | cut -f3)"
-  u_bar="$(printf '%s' "$u_pct" | cut -f2)"
-  u_pct="$(printf '%s' "$u_pct" | cut -f1)"
-
-  if [ -n "$c_pct" ]; then
-    if [ "$colour_on" -eq 1 ]; then
-      line2="$(printf '\033[2mContext\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$c_bar" "$c_code")" "$c_code" "$c_pct")"
+  # two entry points can never disagree about a percentage or a colour. Only
+  # spent when the layout actually asks for one of the two.
+  if cp_sl_wants "$layout" context || cp_sl_wants "$layout" usage; then
+    if [ -n "$payload" ]; then
+      u_pct="$(printf '%s' "$payload" | cp_usage_render_fields "$name" --stdin)"
     else
-      line2="Context $c_bar $c_pct%"
+      u_pct="$(cp_usage_render_fields "$name" </dev/null)"
+    fi
+    c_code="$(printf '%s' "$u_pct" | cut -f7)"
+    c_bar="$(printf '%s' "$u_pct" | cut -f6)"
+    c_pct="$(printf '%s' "$u_pct" | cut -f5)"
+    u_reset="$(printf '%s' "$u_pct" | cut -f4)"
+    u_code="$(printf '%s' "$u_pct" | cut -f3)"
+    u_bar="$(printf '%s' "$u_pct" | cut -f2)"
+    u_pct="$(printf '%s' "$u_pct" | cut -f1)"
+
+    if cp_sl_wants "$layout" context && [ -n "$c_pct" ]; then
+      if [ "$colour_on" -eq 1 ]; then
+        CP_SL_context="$(printf '\033[2mContext\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$c_bar" "$c_code")" "$c_code" "$c_pct")"
+      else
+        # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
+        CP_SL_context="Context $c_bar $c_pct%"
+      fi
+    fi
+    if cp_sl_wants "$layout" usage && [ -n "$u_pct" ]; then
+      if [ "$colour_on" -eq 1 ]; then
+        CP_SL_usage="$(printf '\033[2mUsage\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$u_bar" "$u_code")" "$u_code" "$u_pct")"
+        [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage$(printf ' \033[2m(resets in %s)\033[0m' "$u_reset")"
+      else
+        CP_SL_usage="Usage $u_bar $u_pct%"
+        [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage (resets in $u_reset)"
+      fi
     fi
   fi
-  if [ -n "$u_pct" ]; then
-    [ -n "$line2" ] && line2="$line2$sep"
-    if [ "$colour_on" -eq 1 ]; then
-      line2="$line2$(printf '\033[2mUsage\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$u_bar" "$u_code")" "$u_code" "$u_pct")"
-      [ -n "$u_reset" ] && line2="$line2$(printf ' \033[2m(resets in %s)\033[0m' "$u_reset")"
-    else
-      line2="${line2}Usage $u_bar $u_pct%"
-      [ -n "$u_reset" ] && line2="$line2 (resets in $u_reset)"
-    fi
-  fi
 
-  printf '%s\n' "$line1"
-  [ -n "$line2" ] && printf '%s\n' "$line2"
+  cp_sl_assemble "$layout" "$sep"
   return 0
 }
