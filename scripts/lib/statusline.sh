@@ -14,7 +14,7 @@
 # empty field either way, so a malformed payload needs no special case here.
 cp_sl_meta_fields() {
   jq -r '
-    def s(v): if (v|type) == "string" and (v|length) > 0 and (v|length) < 200
+    def s(v): if (v|type) == "string" and (v|length) > 0 and (v|length) <= 200
               then v else "" end;
     [s(.model.display_name), s(.workspace.current_dir // .cwd)] | @tsv
   ' 2>/dev/null

@@ -31,8 +31,17 @@ assert_eq "	" "$(meta '{}')" 'an empty payload yields empty fields'
 assert_eq '' "$(meta 'not json')" 'a malformed payload prints nothing, not an error'
 assert_eq "	/tmp/x" "$(meta '{"model":{"display_name":42},"cwd":"/tmp/x"}')" 'a non-string model name is dropped'
 long="$(printf 'x%.0s' $(seq 1 250))"
-assert_eq '' "$(meta "{\"model\":{\"display_name\":\"$long\"},\"cwd\":\"$long\"}")" \
+payload="$(printf '{"model":{"display_name":"%s"},"cwd":"%s"}' "$long" "$long")"
+assert_eq "	" "$(meta "$payload")" \
   'absurdly long strings are dropped: the payload is untrusted and a statusline has one line'
+boundary200="$(printf 'x%.0s' $(seq 1 200))"
+payload200="$(printf '{"model":{"display_name":"%s"},"cwd":"/tmp"}' "$boundary200")"
+assert_eq "$boundary200	/tmp" "$(meta "$payload200")" \
+  'a 200-character model name survives'
+boundary201="$(printf 'x%.0s' $(seq 1 201))"
+payload201="$(printf '{"model":{"display_name":"%s"},"cwd":"/tmp"}' "$boundary201")"
+assert_eq "	/tmp" "$(meta "$payload201")" \
+  'a 201-character model name is dropped'
 
 # --- what to show for a directory ------------------------------------------
 assert_eq 'cprof' "$(cp_sl_dir_label /Users/x/dev/cprof)" 'the last path segment names the directory'
