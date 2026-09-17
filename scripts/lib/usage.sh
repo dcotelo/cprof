@@ -270,24 +270,103 @@ cp_usage_detail() {
   return 0
 }
 
-# cp_usage_render_fields <name> -> "<pct>\t<bar>\t<sgr-code>", cache-only,
-# nothing when there is no cache or it's unreadable. Never fetches — this is
-# the statusline's rendering entry point via `cprof usage --render`.
+# cp_usage_reset_in <reset-epoch> [<now-epoch>] -> "4h 37m", "37m" or "<1m";
+# nothing, return 1, when the reset is not a future epoch.
+cp_usage_reset_in() {
+  local at="${1:-}" now="${2:-}" left h m
+  case "$at" in ''|*[!0-9]*) return 1 ;; esac
+  [ -n "$now" ] || now="$(date +%s)"
+  case "$now" in ''|*[!0-9]*) return 1 ;; esac
+  left=$(( at - now ))
+  [ "$left" -gt 0 ] || return 1
+  h=$(( left / 3600 )); m=$(( (left % 3600) / 60 ))
+  if   [ "$h" -gt 0 ]; then printf '%sh %sm\n' "$h" "$m"
+  elif [ "$m" -gt 0 ]; then printf '%sm\n' "$m"
+  else printf '<1m\n'
+  fi
+}
+
+# cp_usage_payload_fields: a Claude Code statusline payload on stdin ->
+# "<context-pct>\t<five-hour-pct>\t<resets-at>". Context is the native
+# used_percentage when Claude Code sends one (2.1.6+), else the current
+# tokens over the window size; the 5-hour figure and its reset come from
+# rate_limits.five_hour, resets_at as an epoch or an RFC 3339 string.
+# Anything malformed yields empty fields, never an error.
+cp_usage_payload_fields() {
+  local payload
+  payload="$(cat 2>/dev/null)"
+  [ -n "$payload" ] || return 0
+  printf '%s' "$payload" | jq -r '
+    def pct(v): if (v|type) == "number" and v >= 0
+                then (if v > 100 then 100 else v end | floor | tostring) else "" end;
+    def ctx:
+      (.context_window // {}) as $c
+      | if ($c.used_percentage|type) == "number" and $c.used_percentage > 0
+        then pct($c.used_percentage)
+        elif ($c.context_window_size|type) == "number" and $c.context_window_size > 0
+        then (($c.current_usage // {}) as $u
+              | (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0)
+                 + ($u.cache_read_input_tokens // 0)) as $t
+              | if $t > 0 then pct($t * 100 / $c.context_window_size) else "" end)
+        else "" end;
+    def reset:
+      (.rate_limits.five_hour.resets_at // "") as $r
+      | if ($r|type) == "number" then ($r|floor|tostring)
+        elif ($r|type) == "string" then $r else "" end;
+    [ctx, pct(.rate_limits.five_hour.used_percentage), reset] | @tsv
+  ' 2>/dev/null
+}
+
+# cp_usage_render_fields <name> [--stdin] -> seven tab-separated fields, the
+# statusline's rendering entry point via `cprof usage --render`:
+#   1 five-hour pct  2 its bar  3 its SGR code  4 "resets in" text
+#   5 context pct    6 its bar  7 its SGR code
+# With --stdin, a Claude Code statusline payload on stdin supplies the live
+# figures — context, and the 5-hour window of the account the session is
+# actually running as, refreshed every tick. Stdin is read only on request:
+# a caller whose stdin is an open pipe with nothing coming (a test runner, a
+# script) must never block here. Without the flag, or with an empty or
+# malformed payload, the 5-hour figure falls back to this profile's cache,
+# cache-only (never fetches — see cp_usage_read_cached_only), so this never
+# adds latency. Nothing at all when there is nothing to show; empty fields
+# otherwise.
 cp_usage_render_fields() {
-  local name="${1:-}" cached pct bar colour code
-  cached="$(cp_usage_read_cached_only "$name")"
-  [ -n "$cached" ] || return 0
-  pct="$(cp_usage_pct "$cached" five_hour)"
-  bar="$(cp_usage_bar "$pct")" || return 0
-  colour="$(cp_usage_severity_colour "$pct")"
-  code="$(cp_color_code "$colour")"
-  printf '%s\t%s\t%s\n' "$pct" "$bar" "$code"
+  local name="${1:-}" cached pf pct='' bar='' code='' reset='' at='' c_pct='' c_bar='' c_code='' colour
+  pf=''
+  [ "${2:-}" = '--stdin' ] && [ ! -t 0 ] && pf="$(cp_usage_payload_fields)"
+  c_pct="$(printf '%s' "$pf" | cut -f1)"
+  pct="$(printf '%s' "$pf" | cut -f2)"
+  at="$(printf '%s' "$pf" | cut -f3)"
+  if [ -n "$pct" ]; then
+    case "$at" in
+      '') ;;
+      *[!0-9]*) at="$(cp_time_epoch "$at")" || at='' ;;
+    esac
+    [ -z "$at" ] || reset="$(cp_usage_reset_in "$at")" || reset=''
+  else
+    cached="$(cp_usage_read_cached_only "$name")"
+    [ -z "$cached" ] || pct="$(cp_usage_pct "$cached" five_hour)"
+  fi
+  if bar="$(cp_usage_bar "$pct")"; then
+    colour="$(cp_usage_severity_colour "$pct")"
+    code="$(cp_color_code "$colour")"
+  else
+    pct=''; bar=''; reset=''
+  fi
+  if c_bar="$(cp_usage_bar "$c_pct")"; then
+    colour="$(cp_usage_severity_colour "$c_pct")"
+    c_code="$(cp_color_code "$colour")"
+  else
+    c_pct=''; c_bar=''
+  fi
+  [ -n "$pct" ] || [ -n "$c_pct" ] || return 0
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pct" "$bar" "$code" "$reset" "$c_pct" "$c_bar" "$c_code"
 }
 
 cp_cmd_usage() {
   local cfg name CP_COLOR_ON=0
   case "${1:-}" in
-    --render) cp_usage_render_fields "${2:-}"; return 0 ;;
+    --render) cp_usage_render_fields "${2:-}" "${3:-}"; return 0 ;;
   esac
   cfg="$(cp_config_read)" || return 1
   # shellcheck disable=SC2034

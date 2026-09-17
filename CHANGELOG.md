@@ -5,6 +5,14 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.12.0]
+### Added
+- The statusline segment draws a context bar and a 5-hour usage bar with the
+  time to reset — `⚑ work │ Context ▓▓▓▓░░░░░░ 37% │ Usage ▓▓▓░░░░░░░ 30%
+  (resets in 2h 19m)` — from Claude Code's statusline payload when run with
+  `--stdin`. Without the flag stdin is left alone as before and the usage bar
+  comes from the profile's cache, now labelled `Usage`. `cprof usage --render
+  <name> --stdin` reads the payload and returns seven fields instead of three.
 ## [0.11.0]
 ### Added
 - `cprof fallback <primary> <name>` — live credential swap to a fallback
