@@ -49,16 +49,18 @@ cp_sl_git_fields() {
   printf '%s\t%s\n' "$branch" "$dirty"
 }
 
-# cp_sl_bar <bar> <sgr-code> -> the bar with its filled run in the severity
-# colour and the remainder dim, so the empty part reads as background rather
-# than as a second value. Plain when there is no colour to use.
+# cp_sl_bar <bar> <sgr-code> <empty-glyph> -> the bar with its filled run in
+# the severity colour and its remainder dim, so the empty part reads as
+# background rather than as a second value. Plain when there is no colour.
+# The empty glyph is a parameter because it is configurable: cutting at a
+# hardcoded one would colour the whole bar as filled.
 cp_sl_bar() {
-  local bar="${1:-}" code="${2:-}" filled rest
+  local bar="${1:-}" code="${2:-}" empty_g="${3:-░}" filled rest
   if [ -z "$bar" ] || [ -z "$code" ]; then
     printf '%s\n' "$bar"
     return 0
   fi
-  filled="${bar%%░*}"
+  filled="${bar%%"$empty_g"*}"
   rest="${bar#"$filled"}"
   printf '\033[%sm%s\033[2m%s\033[0m\n' "$code" "$filled" "$rest"
 }
@@ -192,7 +194,7 @@ cp_cmd_statusline() {
   local read_stdin=0 payload='' cfg name colour code text sep=''
   local meta model dir dir_label git_fields branch dirty
   local u_pct u_bar u_code u_reset c_pct c_bar c_code
-  local colour_on=1 config layout
+  local colour_on=1 config layout bar_cfg b_fill b_empty b_width
   # These are read by cp_sl_assemble through `eval` on a name built from the
   # layout's own segment names, which is why nothing in this function appears
   # to use them.
@@ -214,6 +216,10 @@ cp_cmd_statusline() {
 
   config="$(cp_sl_config "$cfg")"
   layout="$(printf '%s' "$config" | sed -n '1p')"
+  bar_cfg="$(printf '%s' "$config" | sed -n '2p')"
+  b_fill="$(printf '%s' "$bar_cfg" | cut -f1)"
+  b_empty="$(printf '%s' "$bar_cfg" | cut -f2)"
+  b_width="$(printf '%s' "$bar_cfg" | cut -f3)"
 
   if [ "$colour_on" -eq 0 ]; then
     sep=' │ '
@@ -289,16 +295,20 @@ cp_cmd_statusline() {
       u_pct="$(cp_usage_render_fields "$name" </dev/null)"
     fi
     c_code="$(printf '%s' "$u_pct" | cut -f7)"
-    c_bar="$(printf '%s' "$u_pct" | cut -f6)"
     c_pct="$(printf '%s' "$u_pct" | cut -f5)"
     u_reset="$(printf '%s' "$u_pct" | cut -f4)"
     u_code="$(printf '%s' "$u_pct" | cut -f3)"
-    u_bar="$(printf '%s' "$u_pct" | cut -f2)"
     u_pct="$(printf '%s' "$u_pct" | cut -f1)"
+    # The bars are redrawn here from the percentages with the configured
+    # glyphs and width, rather than taking the pre-drawn ten-cell bar out of
+    # cp_usage_render_fields, so the statusline can never disagree with the
+    # tables about what a percentage looks like.
+    u_bar="$(cp_usage_bar "$u_pct" "$b_fill" "$b_empty" "$b_width")"
+    c_bar="$(cp_usage_bar "$c_pct" "$b_fill" "$b_empty" "$b_width")"
 
     if cp_sl_wants "$layout" context && [ -n "$c_pct" ]; then
       if [ "$colour_on" -eq 1 ]; then
-        CP_SL_context="$(printf '\033[2mContext\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$c_bar" "$c_code")" "$c_code" "$c_pct")"
+        CP_SL_context="$(printf '\033[2mContext\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$c_bar" "$c_code" "$b_empty")" "$c_code" "$c_pct")"
       else
         # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
         CP_SL_context="Context $c_bar $c_pct%"
@@ -306,7 +316,7 @@ cp_cmd_statusline() {
     fi
     if cp_sl_wants "$layout" usage && [ -n "$u_pct" ]; then
       if [ "$colour_on" -eq 1 ]; then
-        CP_SL_usage="$(printf '\033[2mUsage\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$u_bar" "$u_code")" "$u_code" "$u_pct")"
+        CP_SL_usage="$(printf '\033[2mUsage\033[0m %s \033[%sm%s%%\033[0m' "$(cp_sl_bar "$u_bar" "$u_code" "$b_empty")" "$u_code" "$u_pct")"
         [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage$(printf ' \033[2m(resets in %s)\033[0m' "$u_reset")"
       else
         CP_SL_usage="Usage $u_bar $u_pct%"

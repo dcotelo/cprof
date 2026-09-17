@@ -220,6 +220,15 @@ assert_eq '▓▓▓▓▓▓▓▓▓▓' "$(cp_usage_bar 250)" 'bar clamps abo
 assert_fail cp_usage_bar ''
 assert_fail cp_usage_bar 'nope'
 
+# --- the bar's glyphs and width are parameters, with today's defaults -------
+assert_eq '▓▓▓░░░░░░░' "$(cp_usage_bar 30)" 'one argument still means cprof own ten-cell bar'
+assert_eq '███░░░░░░░' "$(cp_usage_bar 30 '█' '░' 10)" 'the filled glyph is a parameter'
+assert_eq '██·······' "$(cp_usage_bar 25 '█' '·' 9)" 'the empty glyph and the width are parameters'
+assert_eq '█████' "$(cp_usage_bar 100 '█' '·' 5)" 'a full bar at any width is all filled'
+assert_eq '·····' "$(cp_usage_bar 0 '█' '·' 5)" 'an empty bar at any width is all empty'
+assert_eq '██' "$(cp_usage_bar 100 '█' '·' 2)" 'a two-cell bar still rounds to full'
+assert_fail cp_usage_bar 'x' '█' '·' 5 'a non-numeric percentage still fails'
+
 # --- cp_usage_pct: floors a fractional utilization instead of passing it
 # through raw, which would fail cp_usage_bar/render's plain-integer check
 # and silently degrade every UI surface to "-" ------------------------------

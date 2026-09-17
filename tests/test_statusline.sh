@@ -73,10 +73,12 @@ assert_eq '' "$(cp_sl_git_fields "$CP_T_TMP/nowhere")" 'a directory that does no
 assert_eq '' "$(cp_sl_git_fields '')" 'no directory reports nothing'
 
 # --- the bar's filled run is the value, the rest is background --------------
-assert_eq "${ESC}[32m▓▓▓${ESC}[2m░░░░░░░${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 30)" 32)" 'the filled run carries the colour'
-assert_eq "${ESC}[32m${ESC}[2m░░░░░░░░░░${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 0)" 32)" 'an empty bar is all background'
-assert_eq "${ESC}[31m▓▓▓▓▓▓▓▓▓▓${ESC}[2m${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 100)" 31)" 'a full bar is all value'
-assert_eq '▓▓░░░░░░░░' "$(cp_sl_bar "$(cp_usage_bar 20)" '')" 'no colour to use, plain bar'
+assert_eq "${ESC}[32m▓▓▓${ESC}[2m░░░░░░░${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 30)" 32 '░')" 'the filled run carries the colour'
+assert_eq "${ESC}[32m${ESC}[2m░░░░░░░░░░${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 0)" 32 '░')" 'an empty bar is all background'
+assert_eq "${ESC}[31m▓▓▓▓▓▓▓▓▓▓${ESC}[2m${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 100)" 31 '░')" 'a full bar is all value'
+assert_eq '▓▓░░░░░░░░' "$(cp_sl_bar "$(cp_usage_bar 20)" '' '░')" 'no colour to use, plain bar'
+assert_eq "${ESC}[32m██${ESC}[2m···${ESC}[0m" "$(cp_sl_bar "$(cp_usage_bar 40 '█' '·' 5)" 32 '·')" \
+  'the filled run is found by cutting at the configured empty glyph'
 
 # --- the whole statusline, plain -------------------------------------------
 soon=$(( $(date +%s) + 4*3600 + 20*60 + 30 ))
@@ -241,5 +243,11 @@ assert_eq "Context $(cp_usage_bar 30) 30% │ Usage $(cp_usage_bar 40) 40% (rese
 mkcfg '{"lines":[["badge","badge"]]}'
 assert_eq '⚑ work │ ⚑ work' "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
   'a segment named twice renders twice: the layout is taken literally'
+
+# --- the statusline draws the same configured bar as the tables ------------
+mkcfg '{"lines":[["context"]],"bar":{"filled":"█","empty":"·","width":5}}'
+assert_eq 'Context ██··· 30%' \
+  "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'the statusline draws the configured bar'
 
 cp_t_summary
