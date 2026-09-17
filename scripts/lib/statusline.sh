@@ -63,6 +63,53 @@ cp_sl_bar() {
   printf '\033[%sm%s\033[2m%s\033[0m\n' "$code" "$filled" "$rest"
 }
 
+# cp_sl_config: a config JSON blob on stdin -> four lines of resolved
+# configuration:
+#   1  layout:     segments space-separated, lines joined by ';'
+#   2  bar:        filled<TAB>empty<TAB>width
+#   3  thresholds: warn<TAB>critical
+#   4  colours:    model<TAB>dir<TAB>git<TAB>branch<TAB>label   (names)
+#
+# One jq pass, so a tick spends one call here and the renderers never read a
+# raw value. Every rejected value is replaced by its default and nothing is
+# said about it: this runs every few seconds with its stderr discarded, so a
+# warning here would be invisible and endless. `cprof doctor` does the
+# reporting instead, from cp_sl_config_problems.
+#
+# Colour names, not SGR parameters: cp_color_code owns that mapping and knows
+# the palette `cprof color` documents. `dim` is the one name it does not
+# carry, and the renderers translate it.
+cp_sl_config() {
+  jq -r '
+    def known: ["badge","model","dir","git","context","usage"];
+    def deflayout: [["badge","model","dir","git"],["context","usage"]];
+    def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20
+                      then $v else $d end;
+    def glyph($v; $d): if ($v|type) == "string" and ($v|length) == 1 then $v else $d end;
+    def whole($v; $lo; $hi; $d): if ($v|type) == "number" and $v == ($v|floor)
+                                    and $v >= $lo and $v <= $hi
+                                 then $v else $d end;
+    (.statusline // {}) as $s
+    | (if ($s.lines|type) == "array" then $s.lines else [] end) as $raw
+    | ([ $raw[] | select(type == "array")
+         | [ .[] | select(type == "string") | select(. as $seg | known | index($seg)) ]
+         | select(length > 0) ]) as $clean
+    | (if ($clean|length) > 0 then $clean else deflayout end) as $layout
+    | ($s.bar // {}) as $b
+    | ($s.thresholds // {}) as $t
+    | ($s.colors // {}) as $c
+    | (whole($t.warn; 1; 100; 0)) as $w
+    | (whole($t.critical; 1; 100; 0)) as $cr
+    | (if $w > 0 and $cr > 0 and $w < $cr then [$w, $cr] else [70, 90] end) as $th
+    | ([ $layout[] | join(" ") ] | join(";")),
+      ([glyph($b.filled; "▓"), glyph($b.empty; "░"),
+        (whole($b.width; 1; 40; 10) | tostring)] | join("\t")),
+      ($th | map(tostring) | join("\t")),
+      ([pick($c.model; "cyan"), pick($c.dir; "yellow"), pick($c.git; "magenta"),
+        pick($c.branch; "cyan"), pick($c.label; "dim")] | join("\t"))
+  ' 2>/dev/null || printf 'badge model dir git;context usage\n▓\t░\t10\n70\t90\ncyan\tyellow\tmagenta\tcyan\tdim\n'
+}
+
 # cp_cmd_statusline [--stdin]: the whole statusline, one line or two.
 #
 # Line one names the account, then the model and the directory with its git

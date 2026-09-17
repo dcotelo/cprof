@@ -155,4 +155,37 @@ assert_eq "$PAY" "$leftover" 'the flagless segment still leaves the payload for 
 ( CPROF_CONFIG=/dev/null bash "$SEG" --full </dev/null >/dev/null 2>&1 )
 assert_eq '0' "$?" 'segment --full never fails the statusline'
 
+# --- resolved configuration -------------------------------------------------
+cfgline() { printf '%s' "$1" | cp_sl_config | sed -n "${2}p"; }
+DEFLAYOUT='badge model dir git;context usage'
+assert_eq "$DEFLAYOUT" "$(cfgline '{}' 1)" 'no statusline block: the default layout'
+assert_eq "▓	░	10" "$(cfgline '{}' 2)" 'no statusline block: cprof own bar, ten cells'
+assert_eq "70	90" "$(cfgline '{}' 3)" 'no statusline block: the documented thresholds'
+assert_eq "cyan	yellow	magenta	cyan	dim" "$(cfgline '{}' 4)" 'no statusline block: the default palette'
+assert_eq 'badge;context usage' "$(cfgline '{"statusline":{"lines":[["badge"],["context","usage"]]}}' 1)" \
+  'a configured layout is honoured, line by line'
+assert_eq 'badge model' "$(cfgline '{"statusline":{"lines":[["badge","nonsense","model"]]}}' 1)" \
+  'an unknown segment name is dropped, the rest of the line survives'
+assert_eq "$DEFLAYOUT" "$(cfgline '{"statusline":{"lines":"nonsense"}}' 1)" \
+  'a layout that is not an array falls back whole'
+assert_eq "$DEFLAYOUT" "$(cfgline '{"statusline":{"lines":[[],["also-nonsense"]]}}' 1)" \
+  'a layout that validates to nothing falls back whole'
+assert_eq "█	·	24" "$(cfgline '{"statusline":{"bar":{"filled":"█","empty":"·","width":24}}}' 2)" \
+  'bar glyphs and width are configurable'
+assert_eq "▓	░	10" "$(cfgline '{"statusline":{"bar":{"filled":"ab","empty":5,"width":99}}}' 2)" \
+  'a multi-character glyph, a non-string glyph and an out-of-range width each fall back'
+assert_eq "50	80" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":80}}}' 3)" \
+  'thresholds are configurable'
+assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":80,"critical":50}}}' 3)" \
+  'a warn threshold at or above critical falls back to both defaults'
+assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":0,"critical":101}}}' 3)" \
+  'thresholds outside one to a hundred fall back'
+assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":50.5,"critical":80}}}' 3)" \
+  'a fractional threshold falls back'
+assert_eq "red	blue	green	bright-cyan	dim" \
+  "$(cfgline '{"statusline":{"colors":{"model":"red","dir":"blue","git":"green","branch":"bright-cyan"}}}' 4)" \
+  'colours are configurable and an unset one keeps its default'
+assert_eq '4' "$(printf '%s' '{}' | cp_sl_config | wc -l | tr -d ' ')" 'always exactly four lines'
+assert_eq "$DEFLAYOUT" "$(cfgline 'not json' 1)" 'an unreadable config yields the defaults'
+
 cp_t_summary
