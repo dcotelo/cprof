@@ -256,4 +256,9 @@ out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
 case "$out" in *"${ESC}[31m"*) assert_eq ok ok 'usage at 40 is critical once critical is 35' ;;
                 *) assert_eq 'red usage' "$out" 'usage at 40 is critical once critical is 35' ;; esac
 
+mkcfg '{"lines":[["context"]],"thresholds":{"warn":30,"critical":35}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in *"${ESC}[33m"*) assert_eq ok ok 'a configured warn threshold reaches the context bar' ;;
+                *) assert_eq 'yellow context bar' "$out" 'a configured warn threshold reaches the context bar' ;; esac
+
 cp_t_summary
