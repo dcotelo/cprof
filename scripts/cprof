@@ -45,6 +45,8 @@ fi
 . "$CP_LIB_DIR/color.sh"
 # shellcheck source=lib/usage.sh
 . "$CP_LIB_DIR/usage.sh"
+# shellcheck source=lib/statusline.sh
+. "$CP_LIB_DIR/statusline.sh"
 # shellcheck source=lib/fallback.sh
 . "$CP_LIB_DIR/fallback.sh"
 # shellcheck source=lib/share.sh
@@ -79,6 +81,10 @@ usage:
   cprof login <name>
   cprof doctor
   cprof usage [<name>]              usage bars (5h/7d), or full breakdown for one profile
+  cprof statusline [--stdin]        the whole statusline: account, model, directory and
+                                    branch, context and usage bars. --stdin reads Claude
+                                    Code's payload, without which only the account and
+                                    the cached usage can be filled in
   cprof update                      refresh the marketplace, then update this plugin
   cprof remove <name> [--purge]
   cprof version
@@ -108,6 +114,7 @@ case "$cmd" in
   login)   cp_cmd_login "$@" ;;
   doctor)  cp_cmd_doctor "$@" ;;
   usage)   cp_cmd_usage "$@" ;;
+  statusline) cp_cmd_statusline "$@" ;;
   update)  cp_cmd_update "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
   version|--version|-v) printf 'cprof %s\n' "$CP_VERSION" ;;
