@@ -250,4 +250,10 @@ assert_eq 'Context ██··· 30%' \
   "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
   'the statusline draws the configured bar'
 
+# --- the statusline derives bar colour from the configured thresholds ------
+mkcfg '{"lines":[["usage"]],"thresholds":{"warn":30,"critical":35}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in *"${ESC}[31m"*) assert_eq ok ok 'usage at 40 is critical once critical is 35' ;;
+                *) assert_eq 'red usage' "$out" 'usage at 40 is critical once critical is 35' ;; esac
+
 cp_t_summary

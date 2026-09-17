@@ -245,6 +245,15 @@ assert_eq 'yellow' "$(cp_usage_severity_colour 70)" 'severity: yellow at 70'
 assert_eq 'yellow' "$(cp_usage_severity_colour 89)" 'severity: yellow just under 90'
 assert_eq 'red'    "$(cp_usage_severity_colour 90)" 'severity: red at 90'
 
+# --- severity thresholds are parameters, with today's defaults -------------
+assert_eq 'green'  "$(cp_usage_severity_colour 69)" 'below warn is green by default'
+assert_eq 'yellow' "$(cp_usage_severity_colour 70)" 'warn is inclusive by default'
+assert_eq 'red'    "$(cp_usage_severity_colour 90)" 'critical is inclusive by default'
+assert_eq 'yellow' "$(cp_usage_severity_colour 50 50 80)" 'a configured warn is inclusive'
+assert_eq 'green'  "$(cp_usage_severity_colour 49 50 80)" 'below a configured warn is green'
+assert_eq 'red'    "$(cp_usage_severity_colour 80 50 80)" 'a configured critical is inclusive'
+assert_fail cp_usage_severity_colour '' 50 80 'an empty percentage still fails'
+
 # --- cp_usage_render: plain (CP_COLOR_ON unset/0) --------------------------
 assert_eq '▓▓▓▓░░░░░░ 42%' "$(cp_usage_render 42)" 'render is plain text without CP_COLOR_ON'
 assert_eq '-' "$(cp_usage_render '')" 'render shows a dash for empty input'

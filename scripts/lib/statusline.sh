@@ -195,6 +195,7 @@ cp_cmd_statusline() {
   local meta model dir dir_label git_fields branch dirty
   local u_pct u_bar u_code u_reset c_pct c_bar c_code
   local colour_on=1 config layout bar_cfg b_fill b_empty b_width
+  local thresh_cfg th_warn th_crit
   # These are read by cp_sl_assemble through `eval` on a name built from the
   # layout's own segment names, which is why nothing in this function appears
   # to use them.
@@ -220,6 +221,9 @@ cp_cmd_statusline() {
   b_fill="$(printf '%s' "$bar_cfg" | cut -f1)"
   b_empty="$(printf '%s' "$bar_cfg" | cut -f2)"
   b_width="$(printf '%s' "$bar_cfg" | cut -f3)"
+  thresh_cfg="$(printf '%s' "$config" | sed -n '3p')"
+  th_warn="$(printf '%s' "$thresh_cfg" | cut -f1)"
+  th_crit="$(printf '%s' "$thresh_cfg" | cut -f2)"
 
   if [ "$colour_on" -eq 0 ]; then
     sep=' │ '
@@ -294,10 +298,8 @@ cp_cmd_statusline() {
     else
       u_pct="$(cp_usage_render_fields "$name" </dev/null)"
     fi
-    c_code="$(printf '%s' "$u_pct" | cut -f7)"
     c_pct="$(printf '%s' "$u_pct" | cut -f5)"
     u_reset="$(printf '%s' "$u_pct" | cut -f4)"
-    u_code="$(printf '%s' "$u_pct" | cut -f3)"
     u_pct="$(printf '%s' "$u_pct" | cut -f1)"
     # The bars are redrawn here from the percentages with the configured
     # glyphs and width, rather than taking the pre-drawn ten-cell bar out of
@@ -305,6 +307,13 @@ cp_cmd_statusline() {
     # tables about what a percentage looks like.
     u_bar="$(cp_usage_bar "$u_pct" "$b_fill" "$b_empty" "$b_width")"
     c_bar="$(cp_usage_bar "$c_pct" "$b_fill" "$b_empty" "$b_width")"
+    # The colours are likewise derived here, from each bar's own percentage
+    # and the configured thresholds, rather than taking cp_usage_render_fields'
+    # SGR codes -- those are computed against the hardcoded 70/90 for the
+    # helper's own callers, so reading them here would make a configured
+    # threshold change nothing on screen.
+    u_code="$(cp_color_code "$(cp_usage_severity_colour "$u_pct" "$th_warn" "$th_crit" 2>/dev/null)" 2>/dev/null)"
+    c_code="$(cp_color_code "$(cp_usage_severity_colour "$c_pct" "$th_warn" "$th_crit" 2>/dev/null)" 2>/dev/null)"
 
     if cp_sl_wants "$layout" context && [ -n "$c_pct" ]; then
       if [ "$colour_on" -eq 1 ]; then
