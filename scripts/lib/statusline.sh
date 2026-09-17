@@ -80,7 +80,9 @@ cp_sl_bar() {
 # the palette `cprof color` documents. `dim` is the one name it does not
 # carry, and the renderers translate it.
 cp_sl_config() {
-  jq -r '
+  local raw
+  raw="$(cat 2>/dev/null)"
+  printf '%s' "${raw:-{\}}" | jq -r '
     def known: ["badge","model","dir","git","context","usage"];
     def deflayout: [["badge","model","dir","git"],["context","usage"]];
     def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20

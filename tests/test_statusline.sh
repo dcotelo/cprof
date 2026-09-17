@@ -187,5 +187,8 @@ assert_eq "red	blue	green	bright-cyan	dim" \
   'colours are configurable and an unset one keeps its default'
 assert_eq '4' "$(printf '%s' '{}' | cp_sl_config | wc -l | tr -d ' ')" 'always exactly four lines'
 assert_eq "$DEFLAYOUT" "$(cfgline 'not json' 1)" 'an unreadable config yields the defaults'
+assert_eq '4' "$(printf '%s' '' | cp_sl_config | wc -l | tr -d ' ')" \
+  'a genuinely empty config (a read failure upstream) still yields exactly four lines'
+assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'a genuinely empty config yields the defaults'
 
 cp_t_summary
