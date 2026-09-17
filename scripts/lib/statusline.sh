@@ -77,13 +77,29 @@ cp_sl_bar() {
 #
 # Colour names, not SGR parameters: cp_color_code owns that mapping and knows
 # the palette `cprof color` documents. `dim` is the one name it does not
-# carry, and the renderers translate it.
+# carry, and the renderers translate it. A colour name over 20 characters is
+# rejected too: that length is not part of the documented palette, it is a
+# defensive bound against an untrusted config, and it fails the same way
+# every other rejected value does -- silently, to its default.
+#
+# Every default below is a shell variable, defined exactly once, passed into
+# the jq program with --argjson/--arg and reused to build the `||` fallback
+# for a config jq cannot even parse. That fallback derives its layout line
+# from the same JSON the jq program uses, rather than a second hand-typed
+# copy, so the two paths cannot silently drift apart.
 cp_sl_config() {
   local cfg="${1:-}"
+  local d_layout='[["badge","model","dir","git"],["context","usage"]]'
+  local d_fill='▓' d_empty='░' d_width=10 d_warn=70 d_crit=90
+  local d_model=cyan d_dir=yellow d_git=magenta d_branch=cyan d_label=dim
   [ -n "$cfg" ] || cfg='{}'
-  printf '%s' "$cfg" | jq -r '
+  printf '%s' "$cfg" | jq -r \
+    --argjson deflayout "$d_layout" \
+    --arg fill "$d_fill" --arg empty "$d_empty" \
+    --argjson width "$d_width" --argjson warn "$d_warn" --argjson crit "$d_crit" \
+    --arg model "$d_model" --arg dir "$d_dir" --arg git "$d_git" \
+    --arg branch "$d_branch" --arg label "$d_label" '
     def known: ["badge","model","dir","git","context","usage"];
-    def deflayout: [["badge","model","dir","git"],["context","usage"]];
     def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20
                       then $v else $d end;
     def glyph($v; $d): if ($v|type) == "string" and ($v|length) == 1 then $v else $d end;
@@ -95,20 +111,23 @@ cp_sl_config() {
     | ([ $raw[] | select(type == "array")
          | [ .[] | select(type == "string") | select(. as $seg | known | index($seg)) ]
          | select(length > 0) ]) as $clean
-    | (if ($clean|length) > 0 then $clean else deflayout end) as $layout
+    | (if ($clean|length) > 0 then $clean else $deflayout end) as $layout
     | ($s.bar // {}) as $b
     | ($s.thresholds // {}) as $t
     | ($s.colors // {}) as $c
     | (whole($t.warn; 1; 100; 0)) as $w
     | (whole($t.critical; 1; 100; 0)) as $cr
-    | (if $w > 0 and $cr > 0 and $w < $cr then [$w, $cr] else [70, 90] end) as $th
+    | (if $w > 0 and $cr > 0 and $w < $cr then [$w, $cr] else [$warn, $crit] end) as $th
     | ([ $layout[] | join(" ") ] | join(";")),
-      ([glyph($b.filled; "▓"), glyph($b.empty; "░"),
-        (whole($b.width; 1; 40; 10) | tostring)] | join("\t")),
+      ([glyph($b.filled; $fill), glyph($b.empty; $empty),
+        (whole($b.width; 1; 40; $width) | tostring)] | join("\t")),
       ($th | map(tostring) | join("\t")),
-      ([pick($c.model; "cyan"), pick($c.dir; "yellow"), pick($c.git; "magenta"),
-        pick($c.branch; "cyan"), pick($c.label; "dim")] | join("\t"))
-  ' 2>/dev/null || printf 'badge model dir git;context usage\n▓\t░\t10\n70\t90\ncyan\tyellow\tmagenta\tcyan\tdim\n'
+      ([pick($c.model; $model), pick($c.dir; $dir), pick($c.git; $git),
+        pick($c.branch; $branch), pick($c.label; $label)] | join("\t"))
+  ' 2>/dev/null || printf '%s\n%s\t%s\t%s\n%s\t%s\n%s\t%s\t%s\t%s\t%s\n' \
+      "$(printf '%s' "$d_layout" | jq -r '[.[] | join(" ")] | join(";")')" \
+      "$d_fill" "$d_empty" "$d_width" "$d_warn" "$d_crit" \
+      "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
 }
 
 # cp_cmd_statusline [--stdin]: the whole statusline, one line or two.

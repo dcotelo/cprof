@@ -174,20 +174,30 @@ assert_eq "█	·	24" "$(cfgline '{"statusline":{"bar":{"filled":"█","empty":"
   'bar glyphs and width are configurable'
 assert_eq "▓	░	10" "$(cfgline '{"statusline":{"bar":{"filled":"ab","empty":5,"width":99}}}' 2)" \
   'a multi-character glyph, a non-string glyph and an out-of-range width each fall back'
+assert_eq "▓	░	1" "$(cfgline '{"statusline":{"bar":{"width":1}}}' 2)" 'a width of exactly one is accepted'
+assert_eq "▓	░	40" "$(cfgline '{"statusline":{"bar":{"width":40}}}' 2)" 'a width of exactly forty is accepted'
 assert_eq "50	80" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":80}}}' 3)" \
   'thresholds are configurable'
 assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":80,"critical":50}}}' 3)" \
   'a warn threshold at or above critical falls back to both defaults'
+assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":50}}}' 3)" \
+  'a warn threshold equal to critical falls back too, proving the comparison is strict'
 assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":0,"critical":101}}}' 3)" \
   'thresholds outside one to a hundred fall back'
+assert_eq "1	100" "$(cfgline '{"statusline":{"thresholds":{"warn":1,"critical":100}}}' 3)" \
+  'thresholds at exactly one and exactly a hundred are accepted'
 assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":50.5,"critical":80}}}' 3)" \
   'a fractional threshold falls back'
 assert_eq "red	blue	green	bright-cyan	dim" \
   "$(cfgline '{"statusline":{"colors":{"model":"red","dir":"blue","git":"green","branch":"bright-cyan"}}}' 4)" \
   'colours are configurable and an unset one keeps its default'
+assert_eq "cyan	yellow	magenta	cyan	dim" "$(cfgline '{"statusline":{"colors":{"model":123}}}' 4)" \
+  'a non-string colour value falls back to its default'
 assert_eq '4' "$(cp_sl_config '{}' | wc -l | tr -d ' ')" 'always exactly four lines'
 assert_eq "$DEFLAYOUT" "$(cfgline 'not json' 1)" 'an unreadable config yields the defaults'
 assert_eq '4' "$(cp_sl_config '' | wc -l | tr -d ' ')" 'an empty config argument still yields four lines'
 assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'an empty config argument yields the default layout'
+assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config 'not json')" \
+  'the fallback and the jq defaults cannot drift apart'
 
 cp_t_summary
