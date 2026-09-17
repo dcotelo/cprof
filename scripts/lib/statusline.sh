@@ -136,8 +136,6 @@ cp_sl_config() {
 # a line.
 cp_sl_wants() {
   local seg
-  # shellcheck disable=SC2046,SC2086 # layout is a ';'- and space-separated
-  # list of segment names; splitting it into words is the point.
   for seg in $(printf '%s' "${1:-}" | tr ';' ' '); do
     [ "$seg" = "${2:-}" ] && return 0
   done
@@ -149,7 +147,9 @@ cp_sl_wants() {
 # rendered text comes from the shell variable CP_SL_<segment>, set by
 # cp_cmd_statusline before calling this. `git` attaches to `dir` with a
 # single space so that a directory and its branch read as one thing; every
-# other adjacency takes the separator.
+# other adjacency takes the separator. A segment named more than once in a
+# line renders every time it appears -- the layout is taken literally, not
+# deduplicated.
 cp_sl_assemble() {
   local layout="${1:-}" sep="${2:-}" line seg text out prev
   # A trailing newline before tr, not just the ';' separators, or the last
@@ -158,8 +158,6 @@ cp_sl_assemble() {
   # the final line of the layout is silently dropped.
   printf '%s\n' "$layout" | tr ';' '\n' | while IFS= read -r line; do
     out=''; prev=''
-    # shellcheck disable=SC2086 # line is a space-separated list of segment
-    # names; splitting it into words is the point.
     for seg in $line; do
       eval "text=\${CP_SL_$seg:-}"
       [ -n "$text" ] || continue
@@ -195,10 +193,10 @@ cp_cmd_statusline() {
   local meta model dir dir_label git_fields branch dirty
   local u_pct u_bar u_code u_reset c_pct c_bar c_code
   local colour_on=1 config layout
-  # shellcheck disable=SC2034 # read by cp_sl_assemble via `eval` on a name
-  # built from the layout's own segment names, which shellcheck cannot trace.
+  # These are read by cp_sl_assemble through `eval` on a name built from the
+  # layout's own segment names, which is why nothing in this function appears
+  # to use them.
   local CP_SL_badge='' CP_SL_model='' CP_SL_dir='' CP_SL_git=''
-  # shellcheck disable=SC2034
   local CP_SL_context='' CP_SL_usage=''
 
   while [ "$#" -gt 0 ]; do

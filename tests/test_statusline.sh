@@ -223,6 +223,10 @@ mkcfg '{"lines":[["git"]]}'
 assert_eq "git:($(gitq rev-parse --short HEAD))" \
   "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
   'git alone on a line stands by itself'
+mkcfg '{"lines":[["model","git"]]}'
+assert_eq "[M] │ git:($(gitq rev-parse --short HEAD))" \
+  "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'git after a segment that is not dir takes the ordinary separator'
 mkcfg '{"lines":[["badge","model"],["dir"]]}'
 assert_eq "⚑ work │ [M]
 repo" "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
@@ -234,5 +238,8 @@ mkcfg '{"lines":[["context","usage"],["badge"]]}'
 assert_eq "Context $(cp_usage_bar 30) 30% │ Usage $(cp_usage_bar 40) 40% (resets in 2h 5m)
 ⚑ work" "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
   'the badge is not pinned to the first line'
+mkcfg '{"lines":[["badge","badge"]]}'
+assert_eq '⚑ work │ ⚑ work' "$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)" \
+  'a segment named twice renders twice: the layout is taken literally'
 
 cp_t_summary
