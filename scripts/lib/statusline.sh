@@ -63,8 +63,7 @@ cp_sl_bar() {
   printf '\033[%sm%s\033[2m%s\033[0m\n' "$code" "$filled" "$rest"
 }
 
-# cp_sl_config: a config JSON blob on stdin -> four lines of resolved
-# configuration:
+# cp_sl_config <cfg> -> four lines of resolved configuration:
 #   1  layout:     segments space-separated, lines joined by ';'
 #   2  bar:        filled<TAB>empty<TAB>width
 #   3  thresholds: warn<TAB>critical
@@ -80,9 +79,9 @@ cp_sl_bar() {
 # the palette `cprof color` documents. `dim` is the one name it does not
 # carry, and the renderers translate it.
 cp_sl_config() {
-  local raw
-  raw="$(cat 2>/dev/null)"
-  printf '%s' "${raw:-{\}}" | jq -r '
+  local cfg="${1:-}"
+  [ -n "$cfg" ] || cfg='{}'
+  printf '%s' "$cfg" | jq -r '
     def known: ["badge","model","dir","git","context","usage"];
     def deflayout: [["badge","model","dir","git"],["context","usage"]];
     def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20

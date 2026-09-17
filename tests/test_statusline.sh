@@ -156,7 +156,7 @@ assert_eq "$PAY" "$leftover" 'the flagless segment still leaves the payload for 
 assert_eq '0' "$?" 'segment --full never fails the statusline'
 
 # --- resolved configuration -------------------------------------------------
-cfgline() { printf '%s' "$1" | cp_sl_config | sed -n "${2}p"; }
+cfgline() { cp_sl_config "$1" | sed -n "${2}p"; }
 DEFLAYOUT='badge model dir git;context usage'
 assert_eq "$DEFLAYOUT" "$(cfgline '{}' 1)" 'no statusline block: the default layout'
 assert_eq "▓	░	10" "$(cfgline '{}' 2)" 'no statusline block: cprof own bar, ten cells'
@@ -185,10 +185,9 @@ assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":50.5,"critical
 assert_eq "red	blue	green	bright-cyan	dim" \
   "$(cfgline '{"statusline":{"colors":{"model":"red","dir":"blue","git":"green","branch":"bright-cyan"}}}' 4)" \
   'colours are configurable and an unset one keeps its default'
-assert_eq '4' "$(printf '%s' '{}' | cp_sl_config | wc -l | tr -d ' ')" 'always exactly four lines'
+assert_eq '4' "$(cp_sl_config '{}' | wc -l | tr -d ' ')" 'always exactly four lines'
 assert_eq "$DEFLAYOUT" "$(cfgline 'not json' 1)" 'an unreadable config yields the defaults'
-assert_eq '4' "$(printf '%s' '' | cp_sl_config | wc -l | tr -d ' ')" \
-  'a genuinely empty config (a read failure upstream) still yields exactly four lines'
-assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'a genuinely empty config yields the defaults'
+assert_eq '4' "$(cp_sl_config '' | wc -l | tr -d ' ')" 'an empty config argument still yields four lines'
+assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'an empty config argument yields the default layout'
 
 cp_t_summary
