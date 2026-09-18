@@ -377,4 +377,48 @@ case "$out" in *'statusline.thresholds'*) assert_eq ok ok 'a bad thresholds type
 case "$out" in *'statusline.bar.width'*) assert_eq ok ok 'a bad thresholds type does not suppress the bar.width report' ;;
                 *) assert_eq 'statusline.bar.width' "$out" 'a bad thresholds type does not suppress the bar.width report' ;; esac
 
+# --- null and false are not the same "nothing configured here" -------------
+# `null` (explicit, or via an absent key) is a plausible way to write
+# "nothing configured" and stays silent, matching cp_sl_config's own `// $d`.
+# `false` is never a plausible value for an object-valued section or a
+# colour name, so it must be judged the same as any other wrong type rather
+# than folded into "nothing configured" the way jq's `//` would fold it.
+# Both directions are pinned here so the asymmetry rests on tests, not on a
+# comment.
+FALSE_CFG=(
+  '{"statusline":false}'
+  '{"statusline":{"bar":false}}'
+  '{"statusline":{"colors":false}}'
+  '{"statusline":{"colors":{"model":false}}}'
+)
+FALSE_WANT=(
+  'statusline: not a JSON object'
+  'statusline.bar: not a JSON object'
+  'statusline.colors: not a JSON object'
+  'statusline.colors.model: not a usable colour name; using cyan'
+)
+FALSE_DESC=(
+  'a statusline value of false is reported, not treated as nothing configured'
+  'a bar value of false is reported, not treated as nothing configured'
+  'a colors value of false is reported, not treated as nothing configured'
+  'a boolean colour value is reported, not treated as nothing configured'
+)
+i=0
+while [ "$i" -lt "${#FALSE_CFG[@]}" ]; do
+  out="$(cp_sl_config_problems "${FALSE_CFG[$i]}")"
+  case "$out" in
+    *"${FALSE_WANT[$i]}"*) assert_eq ok ok "${FALSE_DESC[$i]}" ;;
+    *) assert_eq "${FALSE_WANT[$i]}" "$out" "${FALSE_DESC[$i]}" ;;
+  esac
+  i=$((i + 1))
+done
+assert_eq '' "$(cp_sl_config_problems '{"statusline":null}')" \
+  'a statusline value of null stays silent, unlike false'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":null}}')" \
+  'a bar value of null stays silent, unlike false'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":null}}')" \
+  'a colors value of null stays silent, unlike false'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"model":null}}}')" \
+  'a null colour value stays silent, unlike false'
+
 cp_t_summary

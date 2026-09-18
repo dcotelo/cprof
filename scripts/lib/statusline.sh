@@ -153,7 +153,15 @@ cp_sl_config_problems() {
     def whole($v; $lo; $hi): ($v|type) == "number" and $v == ($v|floor)
                              and $v >= $lo and $v <= $hi;
     def known: ["badge","model","dir","git","context","usage"];
-    (.statusline // {}) as $s
+    # `null` (explicit or via a missing key) is a plausible way to write
+    # "nothing configured here", so it defaults to $d quietly, exactly like
+    # cp_sl_config does with its own `// $d`. `false` is never a plausible
+    # value for an object-valued section or a colour name, so this does not
+    # fold it in the way `//` would -- a `false` here is a genuine
+    # wrong-type mistake and must still reach the type check below to be
+    # reported.
+    def ifnull($x; $d): if $x == null then $d else $x end;
+    (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then
         "statusline: not a JSON object; using the default configuration"
       else
@@ -175,11 +183,11 @@ cp_sl_config_problems() {
                  | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
                  | "statusline.lines: unknown segment \(.) (known: badge model dir git context usage)" )
           else empty end ),
-        ( ($s.bar // {}) as $b
+        ( (ifnull($s.bar; {})) as $b
           | if ($b|type) != "object"
             then "statusline.bar: not a JSON object; using ▓, ░ and 10"
             else empty end ),
-        ( ($s.bar // {}) as $b
+        ( (ifnull($s.bar; {})) as $b
           | if ($b|type) == "object" then
               ( if ($b|has("filled")) and (($b.filled|type) != "string" or ($b.filled|length) != 1)
                 then "statusline.bar.filled: must be exactly one character; using ▓" else empty end ),
@@ -204,11 +212,15 @@ cp_sl_config_problems() {
   # characters or more) never reaches that judgement -- it is reported
   # against the specific default pick() substitutes for that key, not as an
   # "unknown colour", which is reserved for a name pick() accepted as-is
-  # that simply is not in the palette.
+  # that simply is not in the palette. `null` coalesces to "nothing
+  # configured" the same as an absent key, at both the section (`colors`)
+  # and the individual-value level; `false` is never a plausible colours
+  # value at either level and is judged like any other wrong type.
   colors_ok="$(printf '%s' "$cfg" | jq -r '
-    (.statusline // {}) as $s
+    def ifnull($x; $d): if $x == null then $d else $x end;
+    (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then "skip"
-      else ( ($s.colors // {}) as $c
+      else ( (ifnull($s.colors; {})) as $c
              | if ($c|type) != "object" then "bad" else "ok" end )
       end
   ' 2>/dev/null)"
@@ -227,7 +239,7 @@ cp_sl_config_problems() {
         esac
         kind="$(printf '%s' "$cfg" | jq -r --arg k "$key" '
           ((.statusline.colors // {})[$k]) as $v
-          | if $v == null or $v == false then "skip"
+          | if $v == null then "skip"
             elif ($v|type) != "string" then "badtype"
             elif ($v|length) == 0 then "skip"
             elif ($v|length) >= 20 then "toolong"
