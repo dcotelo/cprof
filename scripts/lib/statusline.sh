@@ -108,7 +108,7 @@ cp_sl_bar() {
 cp_sl_config() {
   local cfg="${1:-}" out rc=0 four=0 nl
   local d_layout='[["badge","model","dir","git"],["context","usage"]]'
-  local d_fill='▓' d_empty='░' d_width=10 d_warn=70 d_crit=90
+  local d_fill='▓' d_empty='░' d_width=10 d_warn=70 d_crit=90 d_weekly=50
   local d_model=cyan d_dir=yellow d_git=magenta d_branch=cyan d_label=dim
   nl='
 '
@@ -117,9 +117,10 @@ cp_sl_config() {
     --argjson deflayout "$d_layout" \
     --arg fill "$d_fill" --arg empty "$d_empty" \
     --argjson width "$d_width" --argjson warn "$d_warn" --argjson crit "$d_crit" \
+    --argjson weekly "$d_weekly" \
     --arg model "$d_model" --arg dir "$d_dir" --arg git "$d_git" \
     --arg branch "$d_branch" --arg label "$d_label" '
-    def known: ["badge","model","dir","git","context","usage"];
+    def known: ["badge","model","dir","git","context","usage","weekly"];
     # Nothing below character 32 in a value that is kept. These four lines are
     # read by their delimiters, and an invisible character collides with them:
     # a tab shifts every field after it on its row -- so the directory colour
@@ -146,10 +147,14 @@ cp_sl_config() {
     | (whole($t.warn; 1; 100; 0)) as $w
     | (whole($t.critical; 1; 100; 0)) as $cr
     | (if $w > 0 and $cr > 0 and $w < $cr then [$w, $cr] else [$warn, $crit] end) as $th
+    # Its own setting, not a third member of the pair above: warn and critical
+    # are colour thresholds validated together, and a bad pair must not drag
+    # the visibility threshold for the weekly bar down with it.
+    | (whole($s.weekly_threshold; 1; 100; $weekly)) as $wk
     | ([ $layout[] | join(" ") ] | join(";")),
       ([glyph($b.filled; $fill), glyph($b.empty; $empty),
         (whole($b.width; 1; 40; $width) | tostring)] | join("\t")),
-      ($th | map(tostring) | join("\t")),
+      (($th + [$wk]) | map(tostring) | join("\t")),
       ([pick($c.model; $model), pick($c.dir; $dir), pick($c.git; $git),
         pick($c.branch; $branch), pick($c.label; $label)] | join("\t"))
   ' 2>/dev/null)" || rc=$?
@@ -161,9 +166,9 @@ cp_sl_config() {
     printf '%s\n' "$out"
     return 0
   fi
-  printf '%s\n%s\t%s\t%s\n%s\t%s\n%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\n' \
     "$(printf '%s' "$d_layout" | jq -r '[.[] | join(" ")] | join(";")')" \
-    "$d_fill" "$d_empty" "$d_width" "$d_warn" "$d_crit" \
+    "$d_fill" "$d_empty" "$d_width" "$d_warn" "$d_crit" "$d_weekly" \
     "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
 }
 
@@ -227,7 +232,7 @@ cp_sl_config() {
 # back to, and one bad section can never suppress another's report.
 cp_sl_config_problems() {
   local cfg="${1:-}" key name default state colors_ok tab defaults esc_def
-  local d_fill='' d_empty='' d_width='' d_warn='' d_crit=''
+  local d_fill='' d_empty='' d_width='' d_warn='' d_crit='' d_weekly=''
   local d_model='' d_dir='' d_git='' d_branch='' d_label=''
   tab="$(printf '\t')"
   # The fallbacks these messages name are read off the resolver itself,
@@ -236,7 +241,7 @@ cp_sl_config_problems() {
   {
     read -r _
     IFS="$tab" read -r d_fill d_empty d_width
-    IFS="$tab" read -r d_warn d_crit
+    IFS="$tab" read -r d_warn d_crit d_weekly
     IFS="$tab" read -r d_model d_dir d_git d_branch d_label
   } <<EOF
 $defaults
@@ -247,7 +252,8 @@ EOF
   # than repeating the ten defaults here as a third hand-typed copy, which
   # could only drift from the resolver it is meant to describe.
   if [ -z "$d_fill" ] || [ -z "$d_empty" ] || [ -z "$d_width" ] \
-     || [ -z "$d_warn" ] || [ -z "$d_crit" ] || [ -z "$d_model" ] \
+     || [ -z "$d_warn" ] || [ -z "$d_crit" ] || [ -z "$d_weekly" ] \
+     || [ -z "$d_model" ] \
      || [ -z "$d_dir" ] || [ -z "$d_git" ] || [ -z "$d_branch" ] \
      || [ -z "$d_label" ]; then
     return 0
@@ -288,8 +294,9 @@ EOF
   '
   printf '%s' "$cfg" | jq -r \
     --arg fill "$d_fill" --arg empty "$d_empty" --argjson width "$d_width" \
-    --argjson warn "$d_warn" --argjson crit "$d_crit" "$esc_def"'
-    def known: ["badge","model","dir","git","context","usage"];
+    --argjson warn "$d_warn" --argjson crit "$d_crit" \
+    --argjson weekly "$d_weekly" "$esc_def"'
+    def known: ["badge","model","dir","git","context","usage","weekly"];
     # The resolver rules, as cp_sl_config states them, so that a value is
     # judged by what the resolver did with it and not by a second reading.
     def clean($v): ($v|type) == "string" and (($v|explode|map(select(. < 32))|length) == 0);
@@ -338,8 +345,8 @@ EOF
         # piped in, the way the unknown-segment check binds $seg: inside the
         # pipe `.` is the list, and index() given a list looks for it as a
         # subsequence instead.
-        ( $s | keys[] | select(. as $k | ["lines","bar","thresholds","colors"] | index($k) | not)
-          | "statusline: unknown key \(safe(.)) (known: lines bar thresholds colors)" ),
+        ( $s | keys[] | select(. as $k | ["lines","bar","thresholds","colors","weekly_threshold"] | index($k) | not)
+          | "statusline: unknown key \(safe(.)) (known: lines bar thresholds colors weekly_threshold)" ),
         ( obj($s.bar) | keys[] | select(. as $k | ["filled","empty","width"] | index($k) | not)
           | "statusline.bar: unknown key \(safe(.)) (known: filled empty width)" ),
         ( obj($s.thresholds) | keys[] | select(. as $k | ["warn","critical"] | index($k) | not)
@@ -366,7 +373,7 @@ EOF
         ( if ($s.lines|type) == "array"
           then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
                  | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
-                 | "statusline.lines: unknown segment \(safe(.)) (known: badge model dir git context usage)" )
+                 | "statusline.lines: unknown segment \(safe(.)) (known: badge model dir git context usage weekly)" )
           else empty end ),
         ( (ifnull($s.bar; {})) as $b
           | if ($b|type) != "object"
@@ -396,7 +403,13 @@ EOF
                  | if rejected($t.warn; $th[0]) or rejected($t.critical; $th[1])
                    then "statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using \($warn) and \($crit)"
                    else empty end
-            end )
+            end ),
+        # Its own line, because it is its own setting: a rejected pair above
+        # says nothing about this, and a rejected value here says nothing
+        # about the pair.
+        ( if rejected($s.weekly_threshold; whole($s.weekly_threshold; 1; 100; $weekly))
+          then "statusline.weekly_threshold: must be a whole number from 1 to 100; using \($weekly)"
+          else empty end )
       end
   ' 2>/dev/null
   # Colours last, and in bash: cp_sl_code decides what a usable name is, and
