@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/dcotelo/cprof/security/advisories/new
+    about: cprof handles credentials and the macOS keychain. Report vulnerabilities through GitHub private vulnerability reporting — see SECURITY.md. Do not open a public issue.
