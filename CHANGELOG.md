@@ -6,12 +6,22 @@ release workflow reads its notes from the section matching the tag.
 ## [Unreleased]
 
 ## [0.15.0]
-
 ### Added
+- A `weekly` statusline segment: the 7-day usage window as a bar, with the time
+  until it resets. It renders only once the window is at or above
+  `statusline.weekly_threshold` — a whole number from 1 to 100, 50 by default —
+  and renders nothing below it, so the line costs no space early in the week and
+  appears before the weekly cap ends a working day. Give it a line of its own in
+  `statusline.lines` and that line disappears with it. The figure comes from the
+  cache `cprof list` fills and is never fetched, because a Claude Code payload
+  carries the 5-hour window and the context but never the week, and because the
+  statusline must not add latency — so a profile whose usage has never been
+  fetched shows no weekly bar.
 
-- a weekly usage bar, shown once the week is worth watching
-- weekly_threshold, and weekly as a known segment
-- render a reset days out as days and hours
+### Changed
+- A reset a day or more away is reported as days and hours, `3d 13h`, rather
+  than as hours and minutes, `85h 40m` — the same instant, told legibly. The
+  5-hour window cannot reach a day, so what it shows is unchanged.
 
 ## [0.14.0]
 ### Added
