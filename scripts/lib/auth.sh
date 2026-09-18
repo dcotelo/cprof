@@ -166,7 +166,7 @@ cp_cmd_login() {
 }
 
 cp_cmd_doctor() {
-  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets problems
+  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets problems skew sl_dir
   cfg="$(cp_config_read)" || return 1
   # cp_usage_render (usage.sh) reads CP_COLOR_ON through bash's dynamic
   # scoping, the same cross-file pattern cp_colorize already relies on.
@@ -221,6 +221,17 @@ cp_cmd_doctor() {
     printf '%s\n' "$problems"
     status=1
   fi
+  # A CLI older than the plugin is a real defect in the install, not a
+  # preference: it silently lacks subcommands the plugin's docs describe.
+  skew="$(cp_skew_problems)"
+  if [ -n "$skew" ]; then
+    printf '%s\n' "$skew"
+    status=1
+  fi
+  # Claude Code reads settings from the config directory of the profile a
+  # session here would use, so that is the file worth reporting on.
+  sl_dir="$(cp_profile_dir "$cfg" "${active:-}")"
+  cp_sl_wiring_problems "${sl_dir:-$HOME/.claude}/settings.json"
   printf 'active profile here: %s\n' "${active:-none}"
   return "$status"
 }

@@ -314,3 +314,52 @@ printf '%s' "$payload" | your-existing-statusline
 Neither entry point fails a statusline: a missing `jq`, an unreadable config,
 an absent `git`, or a missing CLI prints nothing, or as much of the line as
 it can, and exits 0.
+
+## When the line is empty
+
+`cprof doctor` reports the two causes that produce no output at all:
+
+```console
+$ cprof doctor
+work: ok
+cprof on PATH is 0.9.0; the installed plugin is 0.13.0 - run: brew upgrade dcotelo/tap/cprof
+statusLine in ~/.claude/settings.json is set but does not reference cprof - see docs/statusline.md
+active profile here: work
+```
+
+**A CLI older than the plugin.** The two halves update through different
+channels — the CLI through Homebrew or the curl installer, the plugin through
+`cprof update` — so they drift apart, and `cprof statusline` only exists from
+0.13.0. An older CLI on `PATH` treats it as an unknown subcommand, writes usage
+to stderr and exits non-zero, which a statusline shows as nothing. `doctor`
+fails while this is true, because it silently withholds features the rest of
+this page documents. A statusline wired to `segment.sh` is immune either way:
+the segment resolves the CLI beside itself, not through `PATH`.
+
+**A `statusLine` pointing somewhere else.** `doctor` names the settings file
+and says the command does not reference `cprof`. A wrapper script of your own
+counts: when the command names a readable file, `doctor` looks inside it one
+level, so the setup above — whose command line says only
+`bash "$HOME/.claude/statusline.sh"` — is recognised by the script's contents
+rather than reported. It does not fail on this and
+does not quote the command back — running another statusline is a choice, and
+the configured string is data, not something to echo into a terminal.
+
+**Verifying a command by hand takes one precaution.** `cprof` is often a shell
+*function* — the resolver in
+[Installing the plugin without Homebrew](install.md#plugin-without-homebrew)
+is one, and so is anything similar in your own shell config. A function exists
+only in an interactive shell, while Claude Code runs the statusline in a
+subprocess that has none. So test the way the subprocess will run it, with a
+payload on stdin:
+
+```bash
+payload='{"model":{"display_name":"Opus 5"},"workspace":{"current_dir":"'"$PWD"'"},
+          "context_window":{"used_percentage":39},
+          "rate_limits":{"five_hour":{"used_percentage":8}}}'
+printf '%s' "$payload" | sh -c "$(jq -r .statusLine.command ~/.claude/settings.json)"
+```
+
+Two lines of output mean it works. Nothing, or a usage message, means the
+command resolved to something the subprocess cannot run — which is exactly what
+`sh -c` exposes and an interactive shell hides.

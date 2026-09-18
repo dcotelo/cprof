@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
 [![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](CONTRIBUTING.md#development)
 [![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
-[![Tests](https://img.shields.io/badge/Tests-1055%20assertions-1a1b27?style=for-the-badge&color=414868)](CONTRIBUTING.md#development)
+[![Tests](https://img.shields.io/badge/Tests-1109%20assertions-1a1b27?style=for-the-badge&color=414868)](CONTRIBUTING.md#development)
 
 </div>
 

@@ -719,3 +719,75 @@ cp_cmd_statusline() {
   cp_sl_assemble "$layout" "$sep"
   return 0
 }
+
+# cp_sl_wiring_names_cprof <command-line>
+#
+# True when a file named on the command line mentions cprof. The command is
+# split on whitespace and read, never evaluated: $HOME and a leading ~ are
+# substituted textually, and nothing else in it is expanded, so a hostile
+# string reaches nothing but `grep`.
+cp_sl_wiring_names_cprof() {
+  local cmd="${1:-}" tok toks=() i=0
+  # read -a splits on IFS without globbing or expanding.
+  read -r -a toks <<< "$cmd"
+  while [ "$i" -lt "${#toks[@]}" ]; do
+    tok="${toks[$i]}"
+    i=$((i + 1))
+    tok="${tok%\"}"; tok="${tok#\"}"
+    tok="${tok%\'}"; tok="${tok#\'}"
+    # Both patterns match text, not a path this shell should expand: the
+    # configured command holds a literal $HOME or ~ that only Claude Code's
+    # own shell would ever expand, so the substitution is done by hand.
+    # shellcheck disable=SC2016,SC2088
+    case "$tok" in
+      '$HOME'/*) tok="$HOME/${tok#\$HOME/}" ;;
+      '~/'*)     tok="$HOME/${tok#\~/}" ;;
+      /*) : ;;
+      *) continue ;;
+    esac
+    [ -r "$tok" ] || continue
+    [ -f "$tok" ] || continue
+    grep -q cprof "$tok" 2>/dev/null && return 0
+  done
+  return 1
+}
+
+# cp_sl_wiring_problems <settings-file>
+#
+# What Claude Code's `statusLine` is pointed at. Silent when it names cprof and
+# when it is not configured at all — not configuring one is a choice, and so is
+# running a different one, so this reports rather than fails.
+#
+# The configured command is a JSON string that can hold anything, so jq returns
+# only a classification and the command itself is never echoed back. Quoting it
+# would put an attacker-chosen byte sequence in a terminal.
+cp_sl_wiring_problems() {
+  local f="${1:-}" cls shown cmd
+  [ -r "$f" ] || return 0
+  cls="$(jq -r '
+    if (has("statusLine") | not) then "absent"
+    elif (.statusLine | type) != "object" then "malformed"
+    elif (.statusLine.command | type) != "string" then "malformed"
+    elif (.statusLine.command | index("cprof")) != null then "ours"
+    else "foreign"
+    end' "$f" 2>/dev/null)" || return 0
+  # The documented setup points at a wrapper script of the user's own, whose
+  # command line need not mention cprof at all -- so before calling one
+  # foreign, follow it one level and look inside.
+  if [ "$cls" = 'foreign' ]; then
+    cmd="$(jq -r '.statusLine.command' "$f" 2>/dev/null)"
+    cp_sl_wiring_names_cprof "$cmd" && cls='ours'
+  fi
+  shown="$(cp_path_display "$f" | LC_ALL=C tr -d '\000-\037\177')"
+  case "$cls" in
+    foreign)
+      printf 'statusLine in %s is set but does not reference cprof - see docs/statusline.md\n' \
+        "$shown"
+      ;;
+    malformed)
+      printf 'statusLine in %s is not a command object - see docs/statusline.md\n' \
+        "$shown"
+      ;;
+    *) return 0 ;;
+  esac
+}
