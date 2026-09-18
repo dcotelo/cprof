@@ -34,7 +34,8 @@ cli="$root/scripts/cprof"
 [ -x "$cli" ] || exit 0
 
 # --full hands the whole line off to the CLI, which renders every field cprof
-# has in one process instead of the three this file would otherwise spawn.
+# has in one `cprof` invocation instead of the three this file would otherwise
+# spawn. Not one process: a tick still spends about fifty external commands.
 # Failures stay invisible: a statusline that exits non-zero is a statusline
 # Claude Code reports as broken.
 if [ "$full" -eq 1 ]; then
