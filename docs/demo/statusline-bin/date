@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Demo stub: intercepts a bare `date +%s` — the statusline's only way to ask
+# what time it is — and answers with a fixed fixture instant instead of the
+# real clock, so a countdown like "resets in 2h 19m" is the same in every
+# recording. Every other invocation (parsing a resets_at timestamp with
+# `date -j -f ...`, for instance) passes straight through to the real
+# binary untouched.
+if [ "$#" -eq 1 ] && [ "$1" = "+%s" ]; then
+  printf '1893456000\n'   # fixture "now": 2030-01-01T00:00:00Z
+  exit 0
+fi
+exec /bin/date "$@"

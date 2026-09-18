@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Demo stub: `claude auth status --json` for the statusline GIF. Only one
+# profile exists in this fixture, so every call gets the same answer.
+# Only the call cprof actually makes; anything else means the fixture drifted.
+[ "$#" -eq 3 ] && [ "$1" = auth ] && [ "$2" = status ] && [ "$3" = --json ] || exit 1
+printf '{"loggedIn":true,"email":"you@acme.com","subscriptionType":"team"}\n'

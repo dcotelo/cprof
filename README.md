@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
 [![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](#development)
 [![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
-[![Tests](https://img.shields.io/badge/Tests-717%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1004%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
 
 </div>
 
@@ -460,6 +460,10 @@ to turn fetching off everywhere and show whatever is cached (or `-`) instead.
 
 ## Statusline
 
+<p align="center">
+  <img alt="cprof statusline --full rendering the account, model, directory and branch with context and usage bars; the same session after narrowing the layout to a six-cell usage bar; and cprof doctor reporting a rejected statusline.bar.width setting" src="docs/statusline-demo.gif" width="860">
+</p>
+
 ```console
 ⚑ work │ [Opus 5 (1M context)] │ cprof git:(main*)
 Context ▓▓▓▓░░░░░░ 37% │ Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)
@@ -549,8 +553,10 @@ so:
 ```console
 $ cprof doctor
 statusline.bar.width: must be a whole number from 1 to 40; using 10
-...
+statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90
 ```
+
+(one line per rejected setting — a config with only one problem prints only one line)
 
 Two settings don't follow that simple rule, and are worth reading closely if
 something you configured doesn't look right:
