@@ -25,6 +25,9 @@ cp_t_setup() {
   # Usage and fallback controls a developer's shell may carry must not leak
   # into the fixtures (CPROF_NO_USAGE=1 would silently skip every fetch).
   unset CPROF_NO_USAGE CP_USAGE_URL CPROF_FALLBACK_THRESHOLD
+  # The version-skew seam: a developer's shell must not decide which cprof the
+  # fixtures compare against.
+  unset CP_CPROF_BIN
 }
 
 cp_t_teardown() {

@@ -4,13 +4,25 @@ Notable changes per release. Versions follow [semver](https://semver.org); the
 release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
+
+## [0.14.0]
+### Added
+- `cprof doctor` reports two install problems that used to be invisible. It
+  compares the `cprof` on `PATH` against the newest installed plugin and names
+  the fix for whichever is behind — the two halves update through different
+  channels, and a CLI older than the plugin lacks subcommands the plugin's own
+  docs describe, which is enough to render an empty statusline. It also reports
+  when Claude Code's `statusLine` is set to a command that does not reference
+  `cprof`, naming the settings file without quoting the command back. Skew
+  fails `doctor`; the wiring report does not, since running another statusline
+  is a choice.
+
 ### Changed
 - The README is the showcase and the quickstart; the reference material moved
   into `docs/` — routing, install details, commands, the statusline, usage and
   fallback, and safety — with development, the dependency policy and releasing
   in `CONTRIBUTING.md`. Every section kept its heading, so an anchor such as
   `#statusline` still resolves inside the file it moved to.
-
 ## [0.13.0]
 ### Added
 - `cprof statusline` draws the whole statusline in one `cprof` invocation,
