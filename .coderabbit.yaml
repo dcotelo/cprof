@@ -1,7 +1,10 @@
 # CodeRabbit configuration — https://docs.coderabbit.ai/reference/yaml-template
 language: en-US
 reviews:
-  profile: chill
+  # assertive, not chill: at chill an incremental review of #33 missed a
+  # classifier that ignored statusLine.type and so called a broken
+  # configuration correct. Only an explicitly requested full review caught it.
+  profile: assertive
   high_level_summary: true
   poem: false
   auto_review:
@@ -23,7 +26,46 @@ reviews:
       instructions: >-
         Tests use the harness in tests/lib.sh (assert_eq, assert_ok,
         assert_fail). Every behavior change in scripts/ should carry a
-        matching assertion.
+        matching assertion. An assertion that would pass whether or not the
+        code works is the failure mode here: flag any new assertion whose
+        expectation is not derived from, or distinct from, the code under
+        test. Watch for a guard that cannot fail because the condition it
+        checks is unreachable in the fixture -- colour disabled while
+        asserting on colour, a command whose exit status is ignored, an
+        assert_fail on a function that does not exist yet.
+    - path: "statusline/**"
+      instructions: >-
+        Renders inside a live Claude Code session, which re-runs it every few
+        seconds. It must never fail the session and never add latency: a
+        missing jq, an unreadable config, an absent git, a missing CLI or an
+        empty payload prints nothing, or as much of the line as it can, and
+        exits 0. No network calls, ever. Claude Code pipes one JSON payload on
+        stdin and the first reader starves the rest, so stdin is read only
+        when a flag asks for it. Flag anything that could block, exit
+        non-zero, or consume stdin unasked.
+    - path: "hooks/**"
+      instructions: >-
+        Plugin hooks run on session events and must degrade to silence rather
+        than failing the session. Same constraints as statusline/: no
+        blocking, no non-zero exit, no assumption that cprof is on PATH --
+        resolve the CLI relative to the plugin root.
+    - path: "docs/**"
+      instructions: >-
+        Every command, flag, config key and path shown must exist in the code
+        as written; check them rather than assuming. Relative links and
+        anchors must resolve -- the README was split into topic docs, so a
+        moved section's anchors live in a different file now. Do not name any
+        other statusline tool. Version numbers are written by release
+        automation, never by hand.
+    - path: ".github/**"
+      instructions: >-
+        Release automation with write-capable tokens. Every third-party action
+        is pinned to a full commit SHA with the version as a trailing comment;
+        flag a tag or branch ref. A workflow holding a write-capable token
+        must not execute a script from the pull request's own revision --
+        release-bump deliberately runs the base revision's copy. Conventional
+        Commit subjects decide whether a merge publishes a release, so flag
+        changes to that mapping that tests do not pin.
   tools:
     shellcheck:
       enabled: true
