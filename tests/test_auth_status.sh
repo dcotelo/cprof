@@ -214,4 +214,19 @@ rc=0
 assert_eq '0' "$rc" 'doctor does not fail just because a fallback swap is active'
 rm -f "$CP_T_TMP/state/fallback-active/personal.json"
 
+# --- doctor reports a statusline setting that did not take -----------------
+cp_t_write_config <<JSON
+{"default":"personal",
+ "profiles":[{"name":"personal","dir":"$CP_T_TMP/p","note":"Max"},
+             {"name":"work","native":true,"note":"team"},
+             {"name":"kc","dir":"$CP_T_TMP/k","note":"keychain-backed"}],
+ "rules":[],"repos":{},
+ "statusline":{"bar":{"width":99}}}
+JSON
+out="$(NO_COLOR=1 "$CLI" doctor 2>&1)"
+case "$out" in *'statusline.bar.width'*) assert_eq ok ok 'doctor reports a bad statusline config' ;;
+                *) assert_eq 'statusline.bar.width ...' "$out" 'doctor reports a bad statusline config' ;; esac
+rc=0; NO_COLOR=1 "$CLI" doctor >/dev/null 2>&1 || rc=$?
+assert_eq '1' "$rc" 'a bad statusline config makes doctor exit non-zero'
+
 cp_t_summary

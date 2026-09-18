@@ -132,6 +132,46 @@ cp_sl_config() {
       "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
 }
 
+# cp_sl_config_problems <cfg> -> one line per rejected statusline setting,
+# nothing when the block is absent or wholly valid. The statusline itself is
+# silent by design (see cp_sl_config), so this is where a reader finds out
+# that a setting did not take.
+cp_sl_config_problems() {
+  local cfg="${1:-}" key name
+  printf '%s' "$cfg" | jq -r '
+    def whole($v; $lo; $hi): ($v|type) == "number" and $v == ($v|floor)
+                             and $v >= $lo and $v <= $hi;
+    def known: ["badge","model","dir","git","context","usage"];
+    (.statusline // {}) as $s
+    | ( if ($s|has("lines")) and ($s.lines|type) != "array"
+        then "statusline.lines: not a list of segment lists; using the default layout"
+        else empty end ),
+      ( if ($s.lines|type) == "array"
+        then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
+               | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
+               | "statusline.lines: unknown segment \(.) (known: badge model dir git context usage)" )
+        else empty end ),
+      ( if ($s.bar|has("filled")) and (($s.bar.filled|type) != "string" or ($s.bar.filled|length) != 1)
+        then "statusline.bar.filled: must be exactly one character; using ▓" else empty end ),
+      ( if ($s.bar|has("empty")) and (($s.bar.empty|type) != "string" or ($s.bar.empty|length) != 1)
+        then "statusline.bar.empty: must be exactly one character; using ░" else empty end ),
+      ( if ($s.bar|has("width")) and (whole($s.bar.width; 1; 40) | not)
+        then "statusline.bar.width: must be a whole number from 1 to 40; using 10" else empty end ),
+      ( if ($s|has("thresholds"))
+           and ((whole($s.thresholds.warn; 1; 100) and whole($s.thresholds.critical; 1; 100)
+                 and $s.thresholds.warn < $s.thresholds.critical) | not)
+        then "statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90"
+        else empty end )
+  ' 2>/dev/null
+  # Colours last, and in bash: cp_sl_code decides what a usable name is.
+  for key in model dir git branch label; do
+    name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '.statusline.colors[$k] // empty' 2>/dev/null)"
+    [ -n "$name" ] || continue
+    [ -n "$(cp_sl_code "$name")" ] && continue
+    printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" "$name"
+  done
+}
+
 # cp_sl_code <name> -> an SGR parameter for a configured colour name, or
 # nothing when the name is not one cprof knows, in which case the caller
 # renders the segment plain rather than dropping it. `dim` is handled here

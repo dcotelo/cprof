@@ -166,7 +166,7 @@ cp_cmd_login() {
 }
 
 cp_cmd_doctor() {
-  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets
+  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets problems
   cfg="$(cp_config_read)" || return 1
   # cp_usage_render (usage.sh) reads CP_COLOR_ON through bash's dynamic
   # scoping, the same cross-file pattern cp_colorize already relies on.
@@ -216,6 +216,11 @@ cp_cmd_doctor() {
     fi
     cp_fallback_doctor_line "$name"
   done 3<<< "$names"
+  problems="$(cp_sl_config_problems "$cfg")"
+  if [ -n "$problems" ]; then
+    printf '%s\n' "$problems"
+    status=1
+  fi
   printf 'active profile here: %s\n' "${active:-none}"
   return "$status"
 }

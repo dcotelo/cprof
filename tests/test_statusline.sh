@@ -313,4 +313,20 @@ out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
 assert_eq "$(printf '\033[36m[M]\033[0m │ \033[33mrepo\033[0m')" "$out" \
   'an unknown label colour leaves the separator with no escape sequence'
 
+# --- doctor says what the statusline will not say --------------------------
+assert_eq '' "$(cp_sl_config_problems '{}')" 'no statusline block, nothing to report'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"█"}}}')" 'a valid block, nothing to report'
+assert_eq 'statusline.lines: not a list of segment lists; using the default layout' \
+  "$(cp_sl_config_problems '{"statusline":{"lines":"nonsense"}}')" 'a malformed layout is reported'
+assert_eq 'statusline.lines: unknown segment nonsense (known: badge model dir git context usage)' \
+  "$(cp_sl_config_problems '{"statusline":{"lines":[["badge","nonsense"]]}}')" 'an unknown segment is named'
+assert_eq 'statusline.bar.filled: must be exactly one character; using ▓' \
+  "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"ab"}}}')" 'a bad glyph is reported with the fallback'
+assert_eq 'statusline.bar.width: must be a whole number from 1 to 40; using 10' \
+  "$(cp_sl_config_problems '{"statusline":{"bar":{"width":99}}}')" 'a bad width is reported with the fallback'
+assert_eq 'statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90' \
+  "$(cp_sl_config_problems '{"statusline":{"thresholds":{"warn":80,"critical":50}}}')" 'inverted thresholds are reported'
+assert_eq 'statusline.colors.model: unknown colour nonsense; rendering it plain' \
+  "$(cp_sl_config_problems '{"statusline":{"colors":{"model":"nonsense"}}}')" 'an unknown colour is reported'
+
 cp_t_summary
