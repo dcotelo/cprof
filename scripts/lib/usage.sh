@@ -279,17 +279,23 @@ cp_usage_detail() {
   return 0
 }
 
-# cp_usage_reset_in <reset-epoch> [<now-epoch>] -> "4h 37m", "37m" or "<1m";
-# nothing, return 1, when the reset is not a future epoch.
+# cp_usage_reset_in <reset-epoch> [<now-epoch>] -> "3d 13h", "4h 37m", "37m" or
+# "<1m"; nothing, return 1, when the reset is not a future epoch.
+#
+# The coarsest useful pair of units, never three: a 7-day window resets days
+# out, where hours alone stop being readable -- 85h 40m and 3d 13h are the same
+# instant and only one of them is legible. Minutes are dropped once a day is
+# involved for the same reason.
 cp_usage_reset_in() {
-  local at="${1:-}" now="${2:-}" left h m
+  local at="${1:-}" now="${2:-}" left d h m
   case "$at" in ''|*[!0-9]*) return 1 ;; esac
   [ -n "$now" ] || now="$(date +%s)"
   case "$now" in ''|*[!0-9]*) return 1 ;; esac
   left=$(( at - now ))
   [ "$left" -gt 0 ] || return 1
-  h=$(( left / 3600 )); m=$(( (left % 3600) / 60 ))
-  if   [ "$h" -gt 0 ]; then printf '%sh %sm\n' "$h" "$m"
+  d=$(( left / 86400 )); h=$(( left / 3600 )); m=$(( (left % 3600) / 60 ))
+  if   [ "$d" -gt 0 ]; then printf '%sd %sh\n' "$d" "$(( (left % 86400) / 3600 ))"
+  elif [ "$h" -gt 0 ]; then printf '%sh %sm\n' "$h" "$m"
   elif [ "$m" -gt 0 ]; then printf '%sm\n' "$m"
   else printf '<1m\n'
   fi
