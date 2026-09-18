@@ -49,16 +49,22 @@ cp_ver_parseable() {
 # by segment as numbers. String order would rank 0.9.0 above 0.13.0, which is
 # exactly the skew this check exists to catch.
 cp_ver_lt() {
-  local a="${1:-}" b="${2:-}" i=1 ai bi
+  local a="${1:-}" b="${2:-}" i=0 n ai bi
+  local -a av bv
   cp_ver_parseable "$a" || return 1
   cp_ver_parseable "$b" || return 1
-  while [ "$i" -le 4 ]; do
-    ai="$(printf '%s' "$a" | cut -d. -f"$i")"
-    bi="$(printf '%s' "$b" | cut -d. -f"$i")"
-    # A missing segment reads as zero, so 0.13 and 0.13.0 are equal. 10# keeps
-    # a zero-padded segment decimal rather than octal.
-    ai=$((10#0${ai:-0}))
-    bi=$((10#0${bi:-0}))
+  # Split rather than `cut -d. -f<n>`: without -s, cut prints the whole line
+  # when the delimiter is absent, so a single-component "1" reported "1" for
+  # every field and compared as though it were 1.1.1.
+  IFS=. read -r -a av <<< "$a"
+  IFS=. read -r -a bv <<< "$b"
+  n=${#av[@]}
+  [ "${#bv[@]}" -gt "$n" ] && n=${#bv[@]}
+  while [ "$i" -lt "$n" ]; do
+    # A missing component reads as zero, so 0.13 and 0.13.0 are equal. The
+    # 10# prefix keeps a zero-padded component decimal rather than octal.
+    ai=$((10#0${av[$i]:-0}))
+    bi=$((10#0${bv[$i]:-0}))
     [ "$ai" -lt "$bi" ] && return 0
     [ "$ai" -gt "$bi" ] && return 1
     i=$((i + 1))
@@ -88,9 +94,13 @@ cp_plugin_version() {
 # from a binary's stdout, one from a JSON file — so neither is echoed unless it
 # parsed as a dotted number, which is what keeps a control byte in either from
 # reaching the report.
+#
+# Returns non-zero only for a real skew. A version it could not read is a
+# diagnostic, not a defect: a dev build would otherwise fail doctor forever.
 cp_skew_report() {
   local pv="${1:-}" gv="${2:-}" where="${3:-}"
   where="$(printf '%s' "$where" | LC_ALL=C tr -d '\000-\037\177')"
+  where="$(cp_path_display "$where")"
   # No cprof on PATH is a supported install (the plugin carries its own), and
   # no plugin installed leaves nothing to compare against.
   [ -n "$where" ] || return 0
@@ -103,10 +113,13 @@ cp_skew_report() {
   if cp_ver_lt "$pv" "$gv"; then
     printf 'cprof on PATH is %s; the installed plugin is %s - run: brew upgrade dcotelo/tap/cprof\n' \
       "$pv" "$gv"
+    return 1
   elif cp_ver_lt "$gv" "$pv"; then
     printf 'the installed plugin is %s; cprof on PATH is %s - run: cprof update\n' \
       "$gv" "$pv"
+    return 1
   fi
+  return 0
 }
 
 # Resolves both versions and reports. `type -P` deliberately ignores functions

@@ -25,9 +25,21 @@ assert_ok   cp_ver_lt 0.13.0 0.13.1
 assert_ok   cp_ver_lt 0.13.9 0.14.0
 assert_fail cp_ver_lt 1.0.0 0.99.99
 assert_ok   cp_ver_lt 0.99.99 1.0.0
-# A missing segment reads as zero, so these are equal, not less.
+# A missing component reads as zero, so these are equal, not less. The
+# single-component cases are the ones `cut` got wrong: without -s it prints the
+# whole line when the delimiter is absent, so "1" answered "1" for every field.
 assert_fail cp_ver_lt 0.13 0.13.0
 assert_fail cp_ver_lt 0.13.0 0.13
+assert_fail cp_ver_lt 1 1.0
+assert_fail cp_ver_lt 1.0 1
+assert_ok   cp_ver_lt 1 1.0.1
+assert_fail cp_ver_lt 1.0.1 1
+assert_ok   cp_ver_lt 1 2
+# More components than a release ever carries still compare, rather than
+# reading as equal because the loop stopped early.
+assert_ok   cp_ver_lt 1.2.3.4.5 1.2.3.4.6
+assert_fail cp_ver_lt 1.2.3.4.6 1.2.3.4.5
+assert_fail cp_ver_lt 1.2.3.4.5 1.2.3.4.5
 # Nothing comparable is never "less".
 for bad in '' x 1.2.x '0.13.0-rc1' '1..2' ' 1.2.3'; do
   assert_fail cp_ver_lt "$bad" 9.9.9
@@ -51,6 +63,23 @@ esac
 assert_eq 'yes' "$r" 'a stale plugin points at cprof update instead'
 
 assert_eq '' "$(cp_skew_report 0.13.0 0.13.0 /bin/cprof)" 'agreement is silent'
+
+# The status, not the output, is what decides whether doctor fails.
+assert_fail cp_skew_report 0.9.0 0.13.0 /bin/cprof
+assert_fail cp_skew_report 0.13.0 0.12.0 /bin/cprof
+assert_ok   cp_skew_report 0.13.0 0.13.0 /bin/cprof
+assert_ok   cp_skew_report 'weird output' 0.13.0 /bin/cprof
+assert_ok   cp_skew_report '' 0.13.0 ''
+
+# Paths shown to users go through cp_path_display, so the one line that names
+# the CLI shortens a path under HOME the way every other cprof message does.
+out="$(cp_skew_report 'weird output' 0.13.0 "$HOME/.local/bin/cprof")"
+case "$out" in
+  *'~/.local/bin/cprof'*) r=yes ;;
+  *"$HOME"*) r="unshortened: $out" ;;
+  *) r="no: $out" ;;
+esac
+assert_eq 'yes' "$r" 'the CLI path is displayed the way every other path is'
 assert_eq '' "$(cp_skew_report '' 0.13.0 '')"  'no cprof on PATH is silent'
 assert_eq '' "$(cp_skew_report 0.13.0 '' /bin/cprof)" 'no plugin installed is silent'
 
@@ -201,6 +230,27 @@ case "$out" in
 esac
 assert_eq 'yes' "$r" 'doctor surfaces version skew'
 assert_eq '1' "$rc" 'and fails, because a stale CLI is actionable'
+
+# A version it could not read is a diagnostic: reported, but not a failure,
+# or a dev build would fail doctor forever.
+mk_path_cprof 'cprof (dev build)'; mk_plugin 0.13.0
+out="$("$CLI" doctor 2>&1)"; rc=$?
+case "$out" in
+  *'could not read'*) r=yes ;;
+  *) r="no: $out" ;;
+esac
+assert_eq 'yes' "$r" 'doctor reports a CLI whose version it cannot read'
+assert_eq '0' "$rc" 'and does not fail for it'
+
+# A stale plugin is the mirror of a stale CLI, and just as actionable.
+mk_path_cprof 'cprof 0.13.0'; mk_plugin 0.12.0
+out="$("$CLI" doctor 2>&1)"; rc=$?
+case "$out" in
+  *'cprof update'*) r=yes ;;
+  *) r="no: $out" ;;
+esac
+assert_eq 'yes' "$r" 'doctor surfaces a plugin older than the CLI'
+assert_eq '1' "$rc" 'and fails for it too'
 
 mk_path_cprof 'cprof 0.13.0'; mk_plugin 0.13.0
 printf '{"statusLine":{"type":"command","command":"bash /somewhere/else.sh"}}\n' \

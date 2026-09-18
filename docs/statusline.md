@@ -333,7 +333,9 @@ channels — the CLI through Homebrew or the curl installer, the plugin through
 0.13.0. An older CLI on `PATH` treats it as an unknown subcommand, writes usage
 to stderr and exits non-zero, which a statusline shows as nothing. `doctor`
 fails while this is true, because it silently withholds features the rest of
-this page documents. A statusline wired to `segment.sh` is immune either way:
+this page documents — and it fails the same way when the plugin is the older
+half, which `cprof update` fixes. A version `doctor` cannot parse at all is
+reported without failing, so a dev build is not treated as a broken install. A statusline wired to `segment.sh` is immune either way:
 the segment resolves the CLI beside itself, not through `PATH`.
 
 **A `statusLine` pointing somewhere else.** `doctor` names the settings file

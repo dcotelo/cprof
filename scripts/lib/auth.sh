@@ -223,11 +223,12 @@ cp_cmd_doctor() {
   fi
   # A CLI older than the plugin is a real defect in the install, not a
   # preference: it silently lacks subcommands the plugin's docs describe.
-  skew="$(cp_skew_problems)"
-  if [ -n "$skew" ]; then
-    printf '%s\n' "$skew"
+  # Non-zero means a real skew, which is a defect in the install. A version it
+  # could not read still prints, but does not fail: a dev build is not broken.
+  if ! skew="$(cp_skew_problems)"; then
     status=1
   fi
+  [ -n "$skew" ] && printf '%s\n' "$skew"
   # Claude Code reads settings from the config directory of the profile a
   # session here would use, so that is the file worth reporting on.
   sl_dir="$(cp_profile_dir "$cfg" "${active:-}")"
