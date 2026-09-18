@@ -6,7 +6,9 @@ release workflow reads its notes from the section matching the tag.
 ## [Unreleased]
 
 ## [0.15.0]
+
 ### Added
+
 - A `weekly` statusline segment: the 7-day usage window as a bar, with the time
   until it resets. It renders only once the window is at or above
   `statusline.weekly_threshold` — a whole number from 1 to 100, 50 by default —
@@ -19,6 +21,7 @@ release workflow reads its notes from the section matching the tag.
   fetched shows no weekly bar.
 
 ### Changed
+
 - A reset a day or more away is reported as days and hours, `3d 13h`, rather
   than as hours and minutes, `85h 40m` — the same instant, told legibly. The
   5-hour window cannot reach a day, so what it shows is unchanged.
