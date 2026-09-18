@@ -221,10 +221,11 @@ cp_cmd_doctor() {
     printf '%s\n' "$problems"
     status=1
   fi
-  # A CLI older than the plugin is a real defect in the install, not a
-  # preference: it silently lacks subcommands the plugin's docs describe.
-  # Non-zero means a real skew, which is a defect in the install. A version it
-  # could not read still prints, but does not fail: a dev build is not broken.
+  # Either half being the older one is a real defect in the install, not a
+  # preference: each carries behaviour the other cannot supply — subcommands on
+  # the CLI side, the hooks and statusline segment on the plugin side — so a
+  # non-zero status means skew in either direction. A version it could not read
+  # still prints but does not fail; a dev build is not a broken install.
   if ! skew="$(cp_skew_problems)"; then
     status=1
   fi
