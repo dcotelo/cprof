@@ -5,6 +5,28 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+### Added
+- `cprof statusline` draws the whole statusline in one process: the account,
+  the model, the directory with its git branch, and bars for the context
+  window and the 5-hour usage window with the time until it resets. Everything
+  but the branch comes from the payload Claude Code already hands a statusline,
+  so it costs no request and refreshes every tick. `statusline/segment.sh
+  --full` is the wiring for it; without that flag the segment prints the single
+  line it always has and leaves stdin alone.
+- A `statusline` block in the config chooses which segments appear, in what
+  order, and how they group into lines, along with the bar's glyphs and width,
+  the severity thresholds, and the colours of the labels and the fixed text.
+  Absent configuration renders every segment, and the bar keeps its existing
+  glyph, so nothing changes for anyone who does not ask. A setting that is
+  rejected falls back silently, because a statusline re-runs every few seconds
+  with its stderr discarded; `cprof doctor` names the key and the value used
+  instead, and exits non-zero.
+
+### Changed
+- `git` is a new soft runtime dependency, consulted only for the statusline's
+  branch field. No `git` on `PATH`, or a directory in no working tree, skips
+  that field and changes nothing else. `jq` remains the only hard dependency.
+
 ## [0.12.0]
 ### Added
 - The statusline segment draws a context bar and a 5-hour usage bar with the
