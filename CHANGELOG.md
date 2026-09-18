@@ -5,6 +5,7 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.13.0]
 ### Added
 - `cprof statusline` draws the whole statusline in one `cprof` invocation,
   where the one-line segment spent three: the account,
@@ -35,7 +36,6 @@ release workflow reads its notes from the section matching the tag.
   back to the working directory, so a pin made at a repository root stops
   matching from a subdirectory of it and a different profile resolves there.
   `jq` remains the only hard dependency.
-
 ## [0.12.0]
 ### Added
 - The statusline segment draws a context bar and a 5-hour usage bar with the
