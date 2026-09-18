@@ -754,8 +754,12 @@ cp_sl_wiring_names_cprof() {
 
 # cp_sl_wiring_problems <settings-file>
 #
-# What Claude Code's `statusLine` is pointed at. Silent when it names cprof and
-# when it is not configured at all — not configuring one is a choice, and so is
+# What Claude Code's `statusLine` is pointed at. `type` is the discriminator
+# Claude Code requires, and "command" is its only value, so anything else
+# leaves the statusline unrun however good the command is -- which is why the
+# type is checked before the command it would run.
+#
+# Silent when the command names cprof and when nothing is configured at all — not configuring one is a choice, and so is
 # running a different one, so this reports rather than fails.
 #
 # The configured command is a JSON string that can hold anything, so jq returns
@@ -767,6 +771,7 @@ cp_sl_wiring_problems() {
   cls="$(jq -r '
     if (has("statusLine") | not) then "absent"
     elif (.statusLine | type) != "object" then "malformed"
+    elif .statusLine.type != "command" then "malformed"
     elif (.statusLine.command | type) != "string" then "malformed"
     elif (.statusLine.command | index("cprof")) != null then "ours"
     else "foreign"

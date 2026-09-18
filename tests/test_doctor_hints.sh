@@ -197,6 +197,19 @@ printf '{"statusLine":"whatever"}\n' > "$SETTINGS"
 assert_eq '1' "$(cp_sl_wiring_problems "$SETTINGS" | grep -c .)" \
   'a malformed statusLine is reported once'
 
+# type is the discriminator Claude Code requires, and "command" its only value:
+# a wrong one leaves the statusline unrun however good the command is, so it is
+# checked before the command -- otherwise a cprof command would mask it.
+printf '{"statusLine":{"type":"cmd","command":"cprof statusline --stdin"}}\n' > "$SETTINGS"
+assert_eq '1' "$(cp_sl_wiring_problems "$SETTINGS" | grep -c .)" \
+  'a wrong statusLine type is reported even when the command names cprof'
+printf '{"statusLine":{"command":"cprof statusline --stdin"}}\n' > "$SETTINGS"
+assert_eq '1' "$(cp_sl_wiring_problems "$SETTINGS" | grep -c .)" \
+  'and so is a missing type'
+printf '{"statusLine":{"type":"command","command":"cprof statusline --stdin"}}\n' > "$SETTINGS"
+assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS")" \
+  'while the required type with a cprof command stays silent'
+
 # The configured command is data — a JSON string can hold anything — so the
 # report names the file and never echoes the command back.
 jq -n --arg c "run${ESC}[2K me" '{statusLine:{type:"command",command:$c}}' > "$SETTINGS"

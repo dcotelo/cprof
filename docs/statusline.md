@@ -317,7 +317,7 @@ it can, and exits 0.
 
 ## When the line is empty
 
-`cprof doctor` reports the two causes that produce no output at all:
+`cprof doctor` reports the causes that produce no output at all:
 
 ```console
 $ cprof doctor
@@ -346,6 +346,13 @@ level, so the setup above — whose command line says only
 rather than reported. It does not fail on this and
 does not quote the command back — running another statusline is a choice, and
 the configured string is data, not something to echo into a terminal.
+
+**A `statusLine` Claude Code will not run.** `type` is the discriminator, and
+`command` is its only value, so a `statusLine` that omits it or sets something
+else never runs however good its command is. `doctor` reports that as
+`statusLine in <file> is not a command object`, which also covers a
+`statusLine` that is not an object at all and one whose `command` is not a
+string.
 
 **Verifying a command by hand takes one precaution.** `cprof` is often a shell
 *function* — the resolver in
