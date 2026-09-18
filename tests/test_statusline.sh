@@ -43,6 +43,52 @@ payload201="$(printf '{"model":{"display_name":"%s"},"cwd":"/tmp"}' "$boundary20
 assert_eq "	/tmp" "$(meta "$payload201")" \
   'a 201-character model name is dropped'
 
+# A raw control byte (an ESC among them) survives the payload's own @tsv
+# escaping, which covers only tab, newline, carriage return and backslash. It
+# must be rejected by s() itself, the same way an over-long string already
+# is: the whole field drops to empty, never a partial or escaped value.
+DEL="$(printf '\177')"
+esc_model_payload="$(jq -cn '{model:{display_name:("Opus" + ([27] | implode) + "5")}, cwd:"/tmp/x"}')"
+assert_eq "	/tmp/x" "$(meta "$esc_model_payload")" \
+  'an ESC in model.display_name yields an empty model field'
+esc_dir_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:("/tmp" + ([27] | implode) + "/x")}')"
+assert_eq "Opus 5	" "$(meta "$esc_dir_payload")" \
+  'an ESC in the directory yields an empty directory field'
+ctrl1_payload="$(jq -cn '{model:{display_name:("Op" + ([1] | implode) + "us")}, cwd:"/tmp/x"}')"
+assert_eq "	/tmp/x" "$(meta "$ctrl1_payload")" \
+  'control byte 1 in model.display_name yields an empty model field'
+ctrl7_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:("/tmp" + ([7] | implode) + "/dir")}')"
+assert_eq "Opus 5	" "$(meta "$ctrl7_payload")" \
+  'control byte 7 (bell) in the directory yields an empty directory field'
+# The rule stops at "below 32", matching the resolver's own cutoff on this
+# branch: DEL (127) cannot start a terminal escape sequence by itself, and a
+# lone right-to-left override reorders one field's glyphs rather than
+# repainting the screen on every tick the way ESC does, so neither is worth
+# widening the payload rule beyond the configured-value precedent.
+del_payload="$(jq -cn '{model:{display_name:("Opus" + ([127] | implode) + "5")}, cwd:"/tmp/x"}')"
+assert_eq "Opus${DEL}5	/tmp/x" "$(meta "$del_payload")" \
+  'DEL is left alone: the rule matches the below-32 cutoff, not below-128'
+rtl_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:("/tmp/" + ([8238] | implode) + "dir")}')"
+assert_eq "Opus 5	/tmp/$(printf '\xe2\x80\xae')dir" "$(meta "$rtl_payload")" \
+  'a right-to-left override in the directory is left alone too'
+# and the rule does not overreach: ordinary values still render, space and
+# non-ASCII included
+space_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:"/tmp/my dir"}')"
+assert_eq "Opus 5	/tmp/my dir" "$(meta "$space_payload")" \
+  'a directory name with a space renders normally'
+accent_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:"/tmp/café"}')"
+assert_eq "Opus 5	/tmp/café" "$(meta "$accent_payload")" \
+  'a non-ASCII directory name is unaffected'
+accent_model_payload="$(jq -cn '{model:{display_name:"Opús 5"}, cwd:"/tmp/x"}')"
+assert_eq "Opús 5	/tmp/x" "$(meta "$accent_model_payload")" \
+  'a non-ASCII model name is unaffected'
+# end-to-end: an ESC in both fields must not reach the rendered statusline
+esc_both_payload="$(jq -cn --arg dir "$CP_T_TMP" '{model:{display_name:("Opus" + ([27] | implode) + "5")}, cwd:($dir + ([27] | implode))}')"
+sl_out="$(printf '%s' "$esc_both_payload" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+ctrlcount="$(printf '%s' "$sl_out" | LC_ALL=C od -An -v -tu1 | tr -s ' ' '\n' | awk 'NF && $1 < 32 && $1 != 10')"
+assert_eq '' "$ctrlcount" \
+  'a statusline rendered from a payload with ESC in both fields carries zero raw control bytes'
+
 # --- what to show for a directory ------------------------------------------
 assert_eq 'cprof' "$(cp_sl_dir_label /Users/x/dev/cprof)" 'the last path segment names the directory'
 assert_eq '~' "$(cp_sl_dir_label "$HOME")" 'home itself shows as ~'
