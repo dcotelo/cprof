@@ -99,8 +99,10 @@ cp_sl_bar() {
 # that is a string, the layout line lands where the bar configuration
 # should be and the statusline draws its usage bar out of the layout string.
 # So the resolved lines are used only when jq succeeded and produced exactly
-# four of them, which also rules out a configured value carrying a newline
-# of its own into the contract.
+# four of them. No value the jq program keeps can carry a newline of its own
+# any more -- clean() refuses every character below 32 -- so that count is
+# belt and braces now rather than the thing standing between a configured
+# newline and a consumer reading the wrong row.
 cp_sl_config() {
   local cfg="${1:-}" out rc=0 four=0 nl
   local d_layout='[["badge","model","dir","git"],["context","usage"]]'
@@ -116,9 +118,17 @@ cp_sl_config() {
     --arg model "$d_model" --arg dir "$d_dir" --arg git "$d_git" \
     --arg branch "$d_branch" --arg label "$d_label" '
     def known: ["badge","model","dir","git","context","usage"];
-    def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20
+    # Nothing below character 32 in a value that is kept. These four lines are
+    # read by their delimiters, and an invisible character collides with them:
+    # a tab shifts every field after it on its row -- so the directory colour
+    # would take the value meant for the branch and the label colour would
+    # fall off the end -- and a newline forges a row outright. A tab also passes "one
+    # character" on its own terms, which is how one reached the bar glyphs.
+    # explode, not a regex: jq 1.5 has no regex functions.
+    def clean($v): ($v|type) == "string" and (($v|explode|map(select(. < 32))|length) == 0);
+    def pick($v; $d): if clean($v) and ($v|length) > 0 and ($v|length) < 20
                       then $v else $d end;
-    def glyph($v; $d): if ($v|type) == "string" and ($v|length) == 1 then $v else $d end;
+    def glyph($v; $d): if clean($v) and ($v|length) == 1 then $v else $d end;
     def whole($v; $lo; $hi; $d): if ($v|type) == "number" and $v == ($v|floor)
                                     and $v >= $lo and $v <= $hi
                                  then $v else $d end;
@@ -232,7 +242,8 @@ EOF
     def known: ["badge","model","dir","git","context","usage"];
     # The resolver rules, as cp_sl_config states them, so that a value is
     # judged by what the resolver did with it and not by a second reading.
-    def glyph($v; $d): if ($v|type) == "string" and ($v|length) == 1 then $v else $d end;
+    def clean($v): ($v|type) == "string" and (($v|explode|map(select(. < 32))|length) == 0);
+    def glyph($v; $d): if clean($v) and ($v|length) == 1 then $v else $d end;
     def whole($v; $lo; $hi; $d): if ($v|type) == "number" and $v == ($v|floor)
                                     and $v >= $lo and $v <= $hi
                                  then $v else $d end;
@@ -247,12 +258,12 @@ EOF
     # A section of any other type can be read past safely here, which is how
     # this function reports one without crashing the way the resolver does.
     def obj($x): if ($x|type) == "object" then $x else {} end;
-    # A value that the resolver keeps -- a glyph is one character, a colour
-    # name is one to nineteen -- and that carries a newline of its own into
-    # the four-line output breaks the contract those lines are read by, so
-    # the resolver discards the resolution whole.
-    def carriesnl($v; $lo; $hi): ($v|type) == "string" and ($v|length) >= $lo
-                                 and ($v|length) <= $hi and ($v|contains("\n"));
+    # A value the length rules would have kept -- a glyph is one character, a
+    # colour name is one to nineteen -- and that clean() rejects for carrying
+    # an invisible character. It needs its own message: "must be exactly one
+    # character" is not the truth about a tab, which is exactly one character.
+    def invisible($v; $lo; $hi): ($v|type) == "string" and ($v|length) >= $lo
+                                 and ($v|length) <= $hi and (clean($v) | not);
     (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then
         "statusline: not a JSON object; using the default configuration"
@@ -264,12 +275,6 @@ EOF
         ( if ( [$s.bar, $s.thresholds, $s.colors]
                | map(. != null and . != false and (type != "object")) | any )
           then "statusline: a section that is not a JSON object takes the whole block with it; using the default configuration"
-          else empty end ),
-        ( if ( [ carriesnl(obj($s.bar).filled; 1; 1), carriesnl(obj($s.bar).empty; 1; 1),
-                 carriesnl(obj($s.colors).model; 1; 19), carriesnl(obj($s.colors).dir; 1; 19),
-                 carriesnl(obj($s.colors).git; 1; 19), carriesnl(obj($s.colors).branch; 1; 19),
-                 carriesnl(obj($s.colors).label; 1; 19) ] | any )
-          then "statusline: a configured value with a newline in it takes the whole block with it; using the default configuration"
           else empty end ),
         ( if $s.lines == null then empty
           elif ($s.lines|type) != "array"
@@ -292,10 +297,14 @@ EOF
             then "statusline.bar: not a JSON object; using \($fill), \($empty) and \($width)"
             else
               ( if rejected($b.filled; glyph($b.filled; $fill))
-                then "statusline.bar.filled: must be exactly one character; using \($fill)"
+                then (if invisible($b.filled; 1; 1)
+                      then "statusline.bar.filled: must not contain an invisible character such as a tab; using \($fill)"
+                      else "statusline.bar.filled: must be exactly one character; using \($fill)" end)
                 else empty end ),
               ( if rejected($b.empty; glyph($b.empty; $empty))
-                then "statusline.bar.empty: must be exactly one character; using \($empty)"
+                then (if invisible($b.empty; 1; 1)
+                      then "statusline.bar.empty: must not contain an invisible character such as a tab; using \($empty)"
+                      else "statusline.bar.empty: must be exactly one character; using \($empty)" end)
                 else empty end ),
               ( if rejected($b.width; whole($b.width; 1; 40; $width))
                 then "statusline.bar.width: must be a whole number from 1 to 40; using \($width)"
@@ -317,8 +326,10 @@ EOF
   # Colours last, and in bash: cp_sl_code decides what a usable name is, and
   # the resolver resolves a colour in two stages, so a colour falls back in
   # two ways. pick() replaces a value it would never consider -- not a
-  # string, empty, or 20 characters or more -- with that key's own default
-  # colour, which is what the first message names. A name pick() keeps but
+  # string, empty, 20 characters or more, or carrying an invisible character
+  # (which gets its own message, since "not a usable colour name" would leave
+  # someone who typed a trailing tab after `red` none the wiser) -- with that
+  # key's own default colour, which is what the first message names. A name pick() keeps but
   # the palette does not know is rendered plain instead, which is the
   # second. `null` is nothing configured at either level, as everywhere
   # else; `false` is a rejected value, as everywhere else.
@@ -329,20 +340,12 @@ EOF
   # all name a default, which is exactly what a discarded block uses.
   colors_ok="$(printf '%s' "$cfg" | jq -r '
     def ifnull($x; $d): if $x == null then $d else $x end;
-    def obj($x): if ($x|type) == "object" then $x else {} end;
-    def carriesnl($v; $lo; $hi): ($v|type) == "string" and ($v|length) >= $lo
-                                 and ($v|length) <= $hi and ($v|contains("\n"));
     (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then "skip"
       else ( (ifnull($s.colors; {})) as $c
              | if ($c|type) != "object" then "bad"
                elif ( [$s.bar, $s.thresholds, $s.colors]
                       | map(. != null and . != false and (type != "object")) | any )
-               then "noplain"
-               elif ( [ carriesnl(obj($s.bar).filled; 1; 1), carriesnl(obj($s.bar).empty; 1; 1),
-                        carriesnl($c.model; 1; 19), carriesnl($c.dir; 1; 19),
-                        carriesnl($c.git; 1; 19), carriesnl($c.branch; 1; 19),
-                        carriesnl($c.label; 1; 19) ] | any )
                then "noplain"
                else "ok" end )
       end
@@ -362,16 +365,24 @@ EOF
           label)  default="$d_label" ;;
         esac
         state="$(printf '%s' "$cfg" | jq -r --arg k "$key" '
-          def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20
+          def clean($v): ($v|type) == "string" and (($v|explode|map(select(. < 32))|length) == 0);
+          def pick($v; $d): if clean($v) and ($v|length) > 0 and ($v|length) < 20
                             then $v else $d end;
           def ifnull($x; $d): if $x == null then $d else $x end;
           ((ifnull(.statusline; {})) | ifnull(.colors; {}) | .[$k]) as $v
           | if $v == null then "skip"
+            elif ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20
+                 and (clean($v) | not) then "invisible"
             elif pick($v; null) == null then "bad"
             else "ok" end
         ' 2>/dev/null)"
         case "$state" in
           ok) ;;
+          invisible)
+            printf 'statusline.colors.%s: must not contain an invisible character such as a tab; using %s\n' \
+              "$key" "$default"
+            continue
+            ;;
           bad)
             printf 'statusline.colors.%s: not a usable colour name; using %s\n' "$key" "$default"
             continue

@@ -159,6 +159,11 @@ assert_eq '0' "$?" 'segment --full never fails the statusline'
 
 # --- resolved configuration -------------------------------------------------
 cfgline() { cp_sl_config "$1" | sed -n "${2}p"; }
+# How many fields one resolved line actually has. This is the part the derived
+# oracle further down cannot check: it splits the resolver's output on tabs,
+# the same split every consumer uses, so a tab inside a kept value shifts a
+# row and the oracle inherits the shift instead of seeing it.
+slfields() { cp_sl_config "$1" | sed -n "${2}p" | awk -F'\t' '{print NF}'; }
 DEFLAYOUT='badge model dir git;context usage'
 assert_eq "$DEFLAYOUT" "$(cfgline '{}' 1)" 'no statusline block: the default layout'
 assert_eq "▓	░	10" "$(cfgline '{}' 2)" 'no statusline block: cprof own bar, ten cells'
@@ -216,10 +221,18 @@ assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config 'not json')" \
 # zero and produced exactly four lines, so the contract is one assertion per
 # shape and the shapes are enumerated rather than chosen.
 sllines() { cp_sl_config "$1" | awk 'END {print NR}'; }
-# A value the resolver keeps that carries a newline of its own would break
-# the contract from the inside, so it is covered here too.
+# A value the resolver would otherwise keep that carries an invisible
+# character breaks the contract from the inside -- a newline forges a row, a
+# tab shifts every field after it on its own row -- so those shapes are
+# covered here too. A tab is the one that reads as valid: it is exactly one
+# character, so it used to pass the bar glyphs' own rule.
 nlglyph="$(printf '{"statusline":{"bar":{"filled":"\\n"}}}')"
 nlcolour="$(printf '{"statusline":{"colors":{"model":"a\\nb"}}}')"
+tabglyph="$(printf '{"statusline":{"bar":{"filled":"\\t"}}}')"
+tabcolour="$(printf '{"statusline":{"colors":{"model":"a\\tb"}}}')"
+# One colour with a newline, one without: the block is not discarded whole,
+# so a report saying it was would be false.
+nlpartial="$(printf '{"statusline":{"colors":{"model":"red","label":"\\n"}}}')"
 SL_SHAPE=(
   '{}'
   'not json'
@@ -264,6 +277,9 @@ SL_SHAPE=(
   '{"statusline":{"colors":"x","bar":{"width":20}}}'
   "$nlglyph"
   "$nlcolour"
+  "$tabglyph"
+  "$tabcolour"
+  "$nlpartial"
   '{"statusline":{"lines":[["context"]],"bar":{"filled":"█","empty":"·","width":20},"thresholds":{"warn":50,"critical":60},"colors":{"model":"red"}}}'
 )
 i=0
@@ -282,7 +298,20 @@ assert_eq "▓	░	10" "$(cfgline '{"statusline":{"bar":"x","lines":[["context"]
 assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config '{"statusline":{"colors":"x","bar":{"width":20}}}')" \
   'a discarded block resolves to exactly the defaults, every line of it'
 assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config "$nlglyph")" \
-  'a kept value with a newline in it discards the block rather than breaking the contract'
+  'a value with a newline in it falls back to its default rather than breaking the contract'
+
+# ... and the field counts, asserted on the rows themselves rather than
+# through a tab split, which is the one thing a tab-shifted row survives.
+assert_eq '3' "$(slfields "$tabglyph" 2)" \
+  'a tab as a bar glyph leaves three fields on the bar row, not four'
+assert_eq "▓	░	10" "$(cfgline "$tabglyph" 2)" \
+  'a tab as a bar glyph falls back like any other glyph the resolver will not keep'
+assert_eq '5' "$(slfields "$tabcolour" 4)" \
+  'a tab inside a colour value leaves five fields on the colour row, not six'
+assert_eq "cyan	yellow	magenta	cyan	dim" "$(cfgline "$tabcolour" 4)" \
+  'a tab inside a colour value falls back to the default for that key'
+assert_eq "red	yellow	magenta	cyan	dim" "$(cfgline "$nlpartial" 4)" \
+  'a newline in one colour falls back alone: the rest of the block still resolves'
 
 # --- the configured layout drives the output -------------------------------
 mkcfg() { cp_t_write_config <<JSON
@@ -428,6 +457,34 @@ assert_eq 'statusline.thresholds: warn must be a whole number below critical, bo
   "$(cp_sl_config_problems '{"statusline":{"thresholds":{"warn":80,"critical":50}}}')" 'inverted thresholds are reported'
 assert_eq 'statusline.colors.model: unknown colour nonsense; rendering it plain' \
   "$(cp_sl_config_problems '{"statusline":{"colors":{"model":"nonsense"}}}')" 'an unknown colour is reported'
+
+# --- a value nobody can see is named for what it is ------------------------
+# A tab passes "exactly one character" on its own terms, so that message would
+# be an untruth here -- and the bar used to fall back with doctor saying
+# nothing at all. A newline in one colour is not the whole block falling back
+# either, which is what doctor used to announce.
+assert_eq 'statusline.bar.filled: must not contain an invisible character such as a tab; using ▓' \
+  "$(cp_sl_config_problems "$tabglyph")" \
+  'a tab as a bar glyph is reported, and not as the wrong length'
+assert_eq 'statusline.bar.empty: must be exactly one character; using ░' \
+  "$(cp_sl_config_problems '{"statusline":{"bar":{"empty":"ab"}}}')" \
+  'a glyph that really is the wrong length keeps the original message'
+assert_eq 'statusline.colors.model: must not contain an invisible character such as a tab; using cyan' \
+  "$(cp_sl_config_problems "$tabcolour")" 'a tab inside a colour value is reported'
+assert_eq 'statusline.colors.label: must not contain an invisible character such as a tab; using dim' \
+  "$(cp_sl_config_problems "$nlpartial")" \
+  'a newline in one colour is reported against that key, not against the block'
+# An escape byte used to reach the report verbatim, through the one message
+# that echoes the configured value. Built with jq, so that no raw control
+# byte lives in this file.
+escname="$(jq -cn '{statusline:{colors:{model:("re"+([27]|implode)+"d")}}}')"
+assert_eq 'statusline.colors.model: must not contain an invisible character such as a tab; using cyan' \
+  "$(cp_sl_config_problems "$escname")" 'an escape byte in a colour name is reported'
+# Rendered through od, so that a failure shows the byte rather than printing
+# it invisibly into the test log.
+assert_eq '' "$(cp_sl_config_problems "$escname" \
+                | LC_ALL=C tr -dc '\001-\010\013-\037' | od -An -c)" \
+  'no control byte out of a config reaches doctor output'
 
 # --- a shape nobody thought of fails loudly, not silently -------------------
 # Each of these used to crash the reporter's jq program partway through and
@@ -694,6 +751,9 @@ SL_RULE_CFG=(
   '{"statusline":{"thresholds":[],"colors":{"model":"red"}}}'
   "$nlglyph"
   "$nlcolour"
+  "$tabglyph"
+  "$tabcolour"
+  "$nlpartial"
 )
 i=0
 while [ "$i" -lt "${#SL_RULE_CFG[@]}" ]; do
