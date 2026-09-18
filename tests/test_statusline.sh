@@ -288,4 +288,29 @@ out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
 case "$out" in *"${ESC}[35m⚑ work${ESC}[0m"*) assert_eq ok ok 'the badge keeps the profile colour, not a configured one' ;;
                 *) assert_eq 'magenta badge' "$out" 'the badge keeps the profile colour, not a configured one' ;; esac
 
+# --- the git segment's two colours, both configured and one gone wrong -----
+sha="$(gitq rev-parse --short HEAD)"
+mkcfg '{"lines":[["dir","git"]],"colors":{"git":"blue","branch":"yellow"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in
+  *"${ESC}[34mgit:(${ESC}[0m${ESC}[33m${sha}${ESC}[0m${ESC}[34m)${ESC}[0m"*)
+    assert_eq ok ok 'a configured git colour and branch colour each paint their own part' ;;
+  *) assert_eq 'blue git brackets, yellow branch text' "$out" \
+    'a configured git colour and branch colour each paint their own part' ;;
+esac
+mkcfg '{"lines":[["dir","git"]],"colors":{"git":"green","branch":"nonsense"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+assert_eq "$(printf '\033[33mrepo\033[0m git:(%s)' "$sha")" "$out" \
+  'one unknown colour in the two-tone git segment renders the whole segment plain'
+
+# --- the separator takes the label colour too -------------------------------
+mkcfg '{"lines":[["model","dir"]],"colors":{"label":"blue"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in *"${ESC}[34m │ ${ESC}[0m"*) assert_eq ok ok 'a configured label colour paints the separator' ;;
+                *) assert_eq 'blue separator' "$out" 'a configured label colour paints the separator' ;; esac
+mkcfg '{"lines":[["model","dir"]],"colors":{"label":"nonsense"}}'
+out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
+assert_eq "$(printf '\033[36m[M]\033[0m │ \033[33mrepo\033[0m')" "$out" \
+  'an unknown label colour leaves the separator with no escape sequence'
+
 cp_t_summary
