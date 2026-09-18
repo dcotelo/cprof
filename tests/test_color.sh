@@ -285,4 +285,15 @@ assert_eq '4' "$(cp_color_menu_step 0 up   5)"  'up wraps to the bottom'
 assert_eq '2' "$(cp_color_menu_step 2 x    5)"  'an unknown key does not move'
 assert_eq '0' "$(cp_color_menu_step 0 down 1)"  'a single entry stays put'
 
+# --- how far the badge colour reaches, decided in one place -------------------
+# `color --render` and the statusline badge both need this answer, and the
+# obvious `.colorText // true` is wrong for it, so the reason lives with the
+# helper instead of beside each caller.
+assert_eq 'on'  "$(cp_color_text_flag '{}')" 'an absent colorText means on'
+assert_eq 'on'  "$(cp_color_text_flag '{"colorText":true}')" 'an explicit true means on'
+assert_eq 'off' "$(cp_color_text_flag '{"colorText":false}')" \
+  'an explicit false means off, which jq // would have read as absent'
+assert_eq 'off' "$(cp_color_text_flag 'not json')" 'an unreadable config means off'
+assert_eq 'off' "$(cp_color_text_flag '')" 'no config at all means off'
+
 cp_t_summary

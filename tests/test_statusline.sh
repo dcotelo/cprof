@@ -486,6 +486,21 @@ assert_eq '' "$(cp_sl_config_problems "$escname" \
                 | LC_ALL=C tr -dc '\001-\010\013-\037' | od -An -c)" \
   'no control byte out of a config reaches doctor output'
 
+# --- doctor cannot honestly name a fallback it could not read --------------
+# Every message above names the value the resolver substituted, read off the
+# resolver itself. Handed nothing, there is nothing honest to say: a message
+# with an empty fallback in it is worse than silence. This used to be a third
+# hand-typed copy of all ten defaults -- unreachable, since without jq doctor
+# returns long before the reporter, and one more place for them to drift.
+cp_t_saved_sl_config="$(declare -f cp_sl_config)"
+cp_sl_config() { :; }
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":{"width":99}}}')" \
+  'no defaults out of the resolver, no report at all'
+eval "$cp_t_saved_sl_config"
+assert_eq 'statusline.bar.width: must be a whole number from 1 to 40; using 10' \
+  "$(cp_sl_config_problems '{"statusline":{"bar":{"width":99}}}')" \
+  'and the resolver is back, so the rest of this file still means something'
+
 # --- a misspelled key inside the block is named --------------------------
 # Every one of these used to be silent, while a misspelled *segment* name was
 # reported -- and that asymmetry is the trap: being told `unknown segment

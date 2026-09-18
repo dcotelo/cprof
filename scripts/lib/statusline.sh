@@ -234,18 +234,17 @@ cp_sl_config_problems() {
   } <<EOF
 $defaults
 EOF
-  # Belt and braces: if jq is missing the resolver prints nothing, and a
-  # report with an empty fallback in it would be worse than useless.
-  [ -n "$d_fill" ] || d_fill='▓'
-  [ -n "$d_empty" ] || d_empty='░'
-  [ -n "$d_width" ] || d_width=10
-  [ -n "$d_warn" ] || d_warn=70
-  [ -n "$d_crit" ] || d_crit=90
-  [ -n "$d_model" ] || d_model=cyan
-  [ -n "$d_dir" ] || d_dir=yellow
-  [ -n "$d_git" ] || d_git=magenta
-  [ -n "$d_branch" ] || d_branch=cyan
-  [ -n "$d_label" ] || d_label=dim
+  # Every message below names the value the resolver substituted. Handed no
+  # defaults at all, there is nothing honest to report: a message with an
+  # empty fallback in it would be worse than silence. So say nothing rather
+  # than repeating the ten defaults here as a third hand-typed copy, which
+  # could only drift from the resolver it is meant to describe.
+  if [ -z "$d_fill" ] || [ -z "$d_empty" ] || [ -z "$d_width" ] \
+     || [ -z "$d_warn" ] || [ -z "$d_crit" ] || [ -z "$d_model" ] \
+     || [ -z "$d_dir" ] || [ -z "$d_git" ] || [ -z "$d_branch" ] \
+     || [ -z "$d_label" ]; then
+    return 0
+  fi
   printf '%s' "$cfg" | jq -r \
     --arg fill "$d_fill" --arg empty "$d_empty" --argjson width "$d_width" \
     --argjson warn "$d_warn" --argjson crit "$d_crit" '
@@ -563,8 +562,10 @@ cp_cmd_statusline() {
   if cp_sl_wants "$layout" badge; then
     colour="$(cp_color_for "$cfg" "$name" 2>/dev/null)"
     code="$(cp_color_code "$colour" 2>/dev/null)"
-    text="$(printf '%s' "$cfg" | jq -r 'if .colorText == false then "off" else "on" end' 2>/dev/null)"
-    [ -n "$text" ] || text='off'
+    # The same decision `cprof color --render` answers for the one-line
+    # segment, from the same helper: see cp_color_text_flag for why jq's `//`
+    # cannot be used on it.
+    text="$(cp_color_text_flag "$cfg")"
     if [ "$colour_on" -eq 0 ]; then
       CP_SL_badge="⚑ $name"
     elif [ -z "$code" ]; then

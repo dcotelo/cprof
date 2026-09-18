@@ -88,6 +88,27 @@ cp_color_for() {
   cp_color_auto "${2:-}"
 }
 
+# cp_color_text_flag <cfg> -> "on" or "off": how far the badge's colour
+# reaches. Absent means on. Colour that stops at the flag says which profile
+# in a glyph most people read as decoration; colouring the name puts it on the
+# word they actually read. `--text off` is there for anyone who disagrees.
+#
+# Not `.colorText // true`: jq's alternative operator treats false as absent,
+# so an explicit `--text off` would read as the default and the toggle would
+# do nothing. Test against false directly.
+#
+# One helper for two callers -- `color --render` and the statusline's own
+# badge -- so that reason lives in one place with the code it explains.
+# Never fails: an unreadable config, or none, answers "off", the same way the
+# badge falls back to its dim style.
+cp_color_text_flag() {
+  local flag
+  flag="$(printf '%s' "${1:-}" \
+    | jq -r 'if .colorText == false then "off" else "on" end' 2>/dev/null)"
+  [ -n "$flag" ] || flag='off'
+  printf '%s\n' "$flag"
+}
+
 # cp_cmd_color — set a profile's colour, toggle text colouring, or answer the
 # statusline segment.
 cp_cmd_color() {
@@ -119,14 +140,7 @@ cp_cmd_color() {
       cfg="$(cp_config_read 2>/dev/null)" || cfg=''
       name="${2:-}"
       sgr="$(cp_color_code "$(cp_color_for "$cfg" "$name")" 2>/dev/null)"
-      # Absent means on. Colour that stops at the flag says which profile in a
-      # glyph most people read as decoration; colouring the name puts it on the
-      # word they actually read. `--text off` is there for anyone who disagrees.
-      # Not `.colorText // true`: jq's alternative operator treats false as
-      # absent, so an explicit `--text off` would read as the default and the
-      # toggle would do nothing. Test against false directly.
-      flag="$(printf '%s' "$cfg" | jq -r 'if .colorText == false then "off" else "on" end' 2>/dev/null)"
-      [ -n "$flag" ] || flag='off'
+      flag="$(cp_color_text_flag "$cfg")"
       printf '%s\t%s\n' "$sgr" "$flag"
       return 0
       ;;
