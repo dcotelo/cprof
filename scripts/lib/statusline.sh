@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # The full statusline: everything cprof can say about a session, rendered by
-# one process. `cprof statusline` is the entry point; statusline/segment.sh
-# --full is a thin wrapper around it.
+# one `cprof` invocation where the one-line segment spent three. `cprof
+# statusline` is the entry point; statusline/segment.sh --full is a thin
+# wrapper around it.
 #
 # Claude Code re-runs a statusline every few seconds, so this file spends
 # processes carefully: one jq pass for the payload metadata, one for the usage

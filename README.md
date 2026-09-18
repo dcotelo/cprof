@@ -476,7 +476,8 @@ here but the branch comes straight from the payload Claude Code already hands
 a statusline, so it costs no request and refreshes every tick. Only the branch
 costs anything extra — two `git` calls — and `git` is a soft dependency: no
 `git` on `PATH`, or a directory outside a work tree, skips that field and
-changes nothing else.
+changes nothing else in the statusline (it does change which profile a
+repository pin resolves — see [Dependencies](#dependencies)).
 
 Without a payload there is only the account and, if something has fetched it
 before, the *active* profile's cached usage — fetching it for a different
@@ -687,7 +688,9 @@ real values are named ANSI colours, so they follow your terminal's theme
 instead of fighting it, and what you see is whatever your theme maps them to,
 not what this page shows. `NO_COLOR` is honoured, and
 `CPROF_COLOR=never|always|auto` overrides the terminal detection the same way
-it does for every other command.
+it does for every other command — except in the statusline, which decides on
+`NO_COLOR` alone: its stdout is always a pipe, so terminal detection would
+turn colour off in the one place it is always wanted.
 
 `cprof color --text off` narrows the colour to the flag alone.
 That toggle is statusline-only: `cprof list` and `cprof which` colour the
@@ -869,15 +872,17 @@ control character.
 ```bash
 bash tests/run.sh                    # run the suite
 shellcheck -x -P scripts -P tests scripts/cprof scripts/lib/*.sh hooks/*.sh \
-  statusline/*.sh tests/*.sh .github/scripts/*.sh docs/demo/*.sh docs/demo/bin/* install.sh
+  statusline/*.sh tests/*.sh .github/scripts/*.sh docs/demo/*.sh docs/demo/bin/* \
+  docs/demo/statusline-bin/* docs/demo/usage-bin/* install.sh
 claude plugin validate .             # check the manifests
 ```
 
 CI runs all three on every pull request: shellcheck and the manifest checks on
 Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
-Targets bash 3.2 (macOS system bash), with `jq` and (for usage data) `curl`
-as the only external dependencies.
+Targets bash 3.2 (macOS system bash). Its external dependencies are `jq`,
+`curl` (for usage data) and `git` (for repository-root resolution and the
+statusline's branch field); only `jq` is hard.
 
 ### Dependencies
 
@@ -888,11 +893,17 @@ Runtime, dev, and CI dependencies are chosen and tracked like this:
   newer works, so it is not version-pinned. Homebrew installs it through the
   formula; the curl installer refuses to run without it. Adding a runtime
   dependency is a design decision, not a convenience — open an issue first.
-- **Runtime: `git`, softly.** Consulted only for the statusline's branch
-  field. No `git` on `PATH`, or a directory in no working tree, and that
-  field is skipped while every other field renders. Nothing else in cprof
-  calls it, so it is not a hard requirement and the installer does not check
-  for it.
+- **Runtime: `git`, softly.** Consulted in two places. Repository-root
+  resolution has always asked it for the top level (`git rev-parse
+  --show-toplevel`), and a repository pin is keyed on that answer; the
+  statusline's branch field asks it for the branch and whether the tree is
+  clean. Neither is a hard requirement, and the installer does not check for
+  it, but the consequences differ. Without `git` the branch field is simply
+  skipped while every other field renders — and repository-root resolution
+  falls back to the working directory, so a pin made at a repository root
+  stops matching from a subdirectory of it and whatever rule or default
+  applies there resolves instead. Worth knowing before pinning a repository
+  on a machine with no `git`.
 - **Dev: `shellcheck`.** Pinned by version in `.github/workflows/ci.yml`
   (`SHELLCHECK_VERSION`), downloaded from its GitHub release rather than taken
   from the runner image, so local and CI findings agree. Bumped by hand,

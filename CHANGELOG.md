@@ -6,7 +6,8 @@ release workflow reads its notes from the section matching the tag.
 ## [Unreleased]
 
 ### Added
-- `cprof statusline` draws the whole statusline in one process: the account,
+- `cprof statusline` draws the whole statusline in one `cprof` invocation,
+  where the one-line segment spent three: the account,
   the model, the directory with its git branch, and bars for the context
   window and the 5-hour usage window with the time until it resets. Everything
   but the branch comes from the payload Claude Code already hands a statusline,
@@ -25,9 +26,13 @@ release workflow reads its notes from the section matching the tag.
   ignores one in silence and a misspelling is the likeliest reason for it.
 
 ### Changed
-- `git` is a new soft runtime dependency, consulted only for the statusline's
-  branch field. No `git` on `PATH`, or a directory in no working tree, skips
-  that field and changes nothing else. `jq` remains the only hard dependency.
+- `git` is consulted for the statusline's branch field as well as for
+  repository-root resolution, which has used it all along. It stays soft: no
+  `git` on `PATH`, or a directory in no working tree, skips that field and
+  changes nothing else about the statusline — but root resolution then falls
+  back to the working directory, so a pin made at a repository root stops
+  matching from a subdirectory of it and a different profile resolves there.
+  `jq` remains the only hard dependency.
 
 ## [0.12.0]
 ### Added
