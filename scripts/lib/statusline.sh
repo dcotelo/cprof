@@ -196,7 +196,7 @@ cp_sl_config_problems() {
               ( if ($b|has("width")) and (whole($b.width; 1; 40) | not)
                 then "statusline.bar.width: must be a whole number from 1 to 40; using 10" else empty end )
             else empty end ),
-        ( if ($s|has("thresholds")) then
+        ( if ($s|has("thresholds")) and ($s.thresholds != null) then
             ( if ($s.thresholds|type) != "object"
               then "statusline.thresholds: not a JSON object; using 70 and 90"
               else ( if ((whole($s.thresholds.warn; 1; 100) and whole($s.thresholds.critical; 1; 100)

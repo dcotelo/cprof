@@ -416,6 +416,8 @@ assert_eq '' "$(cp_sl_config_problems '{"statusline":null}')" \
   'a statusline value of null stays silent, unlike false'
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":null}}')" \
   'a bar value of null stays silent, unlike false'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"thresholds":null}}')" \
+  'a thresholds value of null stays silent, unlike false, the same as every other section'
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":null}}')" \
   'a colors value of null stays silent, unlike false'
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"model":null}}}')" \
