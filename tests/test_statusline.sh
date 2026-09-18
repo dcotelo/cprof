@@ -423,4 +423,214 @@ assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":null}}')" \
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"model":null}}}')" \
   'a null colour value stays silent, unlike false'
 
+# --- the rule, asked of the resolver rather than restated -------------------
+# One rule governs every configurable thing in the block -- the block
+# itself, each section, and each field inside each section: a value that was
+# never written (absent, or an explicit null) and a value the resolver kept
+# are both passed over in silence, and a value the resolver replaced is
+# named, together with what replaced it.
+#
+# The two helpers below check exactly that, and neither restates the
+# resolver rules: they ask cp_sl_config what it resolved each key to and
+# compare that with what the config wrote. So the table underneath covers
+# any shape it lists, including shapes nobody has thought about yet, rather
+# than the handful of cases someone happened to notice.
+#
+# The reporter is allowed to answer at a coarser key than the one that fell
+# back -- a `bar` that is not an object is one line about `bar`, not three
+# about its fields -- so a fallback counts as named when its own key, or any
+# key containing it, is named.
+#
+# Two things are deliberately outside this comparison, and are covered by
+# explicit assertions instead:
+#
+#   * `statusline.lines`, because the resolver honours a layout partially,
+#     keeping the usable inner arrays and dropping the rest, so "the
+#     resolver fell back" is not a yes or no there.
+#   * a section that is present and neither null nor false nor an object,
+#     because that makes the resolver abandon its jq program partway
+#     through, so its output is no longer the four positional lines every
+#     caller reads and a field-by-field comparison against it would be
+#     meaningless. The section itself is still compared, which is what the
+#     reporter answers such a config with.
+
+# cp_t_sl_fallbacks <cfg> -> one line per key the resolver did not keep
+cp_t_sl_fallbacks() {
+  local cfg="$1" broken resolved tab key rv state
+  local rfill='' rempty='' rwidth='' rwarn='' rcrit=''
+  local rmodel='' rdir='' rgit='' rbranch='' rlabel=''
+  tab="$(printf '\t')"
+  # The block and the sections: structural, so no resolved value is needed.
+  printf '%s' "$cfg" | jq -r '
+    .statusline as $s
+    | if $s == null then empty
+      elif ($s|type) != "object" then "statusline"
+      else ( ["bar","thresholds","colors"][] as $sec
+             | $s[$sec] as $v
+             | if $v == null or ($v|type) == "object" then empty
+               else "statusline." + $sec end )
+      end' 2>/dev/null
+  broken="$(printf '%s' "$cfg" | jq -r '
+    .statusline as $s
+    | if $s == null then false
+      elif ($s|type) != "object" then true
+      else ([$s.bar, $s.thresholds, $s.colors]
+            | map(. != null and . != false and (type != "object")) | any)
+      end' 2>/dev/null)"
+  [ "$broken" = false ] || return 0
+  resolved="$(cp_sl_config "$cfg")"
+  {
+    read -r _
+    IFS="$tab" read -r rfill rempty rwidth
+    IFS="$tab" read -r rwarn rcrit
+    IFS="$tab" read -r rmodel rdir rgit rbranch rlabel
+  } <<EOF
+$resolved
+EOF
+  printf '%s' "$cfg" | jq -r \
+    --arg fill "$rfill" --arg empty "$rempty" --argjson width "$rwidth" \
+    --argjson warn "$rwarn" --argjson crit "$rcrit" '
+    def fell($v; $r): $v != null and $v != $r;
+    .statusline as $s
+    | ( if ($s.bar|type) == "object" then
+          ( if fell($s.bar.filled; $fill) then "statusline.bar.filled" else empty end ),
+          ( if fell($s.bar.empty; $empty) then "statusline.bar.empty" else empty end ),
+          ( if fell($s.bar.width; $width) then "statusline.bar.width" else empty end )
+        else empty end ),
+      ( if ($s.thresholds|type) == "object" then
+          ( if fell($s.thresholds.warn; $warn) then "statusline.thresholds.warn" else empty end ),
+          ( if fell($s.thresholds.critical; $crit) then "statusline.thresholds.critical" else empty end )
+        else empty end )' 2>/dev/null
+  # The colours have a second resolution stage that cp_sl_code owns: a name
+  # pick() keeps but the palette does not know is rendered plain, which is a
+  # fallback too, so the palette has the last word here as well.
+  for key in model dir git branch label; do
+    case "$key" in
+      model)  rv="$rmodel" ;;
+      dir)    rv="$rdir" ;;
+      git)    rv="$rgit" ;;
+      branch) rv="$rbranch" ;;
+      label)  rv="$rlabel" ;;
+    esac
+    state="$(printf '%s' "$cfg" | jq -r --arg k "$key" --arg rv "$rv" '
+      .statusline as $s
+      | if ($s|type) != "object" then "absent"
+        else ($s.colors) as $c
+        | if ($c|type) != "object" then "absent"
+          else ($c[$k]) as $v
+          | if $v == null then "absent" elif $v == $rv then "kept" else "fell" end
+          end
+        end' 2>/dev/null)"
+    case "$state" in
+      fell) printf 'statusline.colors.%s\n' "$key" ;;
+      kept) [ -n "$(cp_sl_code "$rv")" ] || printf 'statusline.colors.%s\n' "$key" ;;
+    esac
+  done
+}
+
+# cp_t_sl_rule <cfg>: both directions of the rule, in one assertion whose
+# failure names the keys and which way round it went wrong.
+cp_t_sl_rule() {
+  local cfg="$1" fbs reported keys k f found verdict=''
+  fbs="$(cp_t_sl_fallbacks "$cfg")"
+  reported="$(cp_sl_config_problems "$cfg")"
+  keys="$(printf '%s\n' "$reported" | sed -n 's/^\([^:]*\):.*/\1/p' \
+          | grep -v '^statusline\.lines$' | sort -u)"
+  for k in $keys; do
+    found=no
+    for f in $fbs; do
+      case "$f" in "$k"|"$k".*) found=yes ;; esac
+    done
+    [ "$found" = yes ] || verdict="$verdict over-reports:$k"
+  done
+  for f in $fbs; do
+    found=no
+    for k in $keys; do
+      case "$f" in "$k"|"$k".*) found=yes ;; esac
+    done
+    [ "$found" = yes ] || verdict="$verdict under-reports:$f"
+  done
+  assert_eq '' "$verdict" "the rule holds for $cfg"
+}
+
+long31="$(printf 'x%.0s' $(seq 1 31))"
+cfg31="$(printf '{"statusline":{"colors":{"label":"%s"}}}' "$long31")"
+SL_RULE_CFG=(
+  '{}'
+  '{"statusline":null}'
+  '{"statusline":false}'
+  '{"statusline":""}'
+  '{"statusline":5}'
+  '{"statusline":[]}'
+  '{"statusline":{}}'
+  '{"statusline":{"bar":null,"thresholds":null,"colors":null}}'
+  '{"statusline":{"bar":false,"thresholds":false,"colors":false}}'
+  '{"statusline":{"bar":""}}'
+  '{"statusline":{"thresholds":""}}'
+  '{"statusline":{"colors":""}}'
+  '{"statusline":{"bar":[1]}}'
+  '{"statusline":{"thresholds":7}}'
+  '{"statusline":{"colors":true}}'
+  '{"statusline":{"bar":{},"thresholds":{},"colors":{}}}'
+  '{"statusline":{"bar":{"filled":null,"empty":null,"width":null}}}'
+  '{"statusline":{"bar":{"filled":false,"empty":false,"width":false}}}'
+  '{"statusline":{"bar":{"filled":"","empty":"","width":""}}}'
+  '{"statusline":{"bar":{"filled":"ab","empty":[],"width":99}}}'
+  '{"statusline":{"bar":{"filled":"█","empty":"·","width":40}}}'
+  '{"statusline":{"bar":{"width":"10"}}}'
+  '{"statusline":{"bar":{"width":0}}}'
+  '{"statusline":{"bar":{"filled":"▓","empty":"░","width":10}}}'
+  '{"statusline":{"thresholds":{"warn":null,"critical":90}}}'
+  '{"statusline":{"thresholds":{"warn":null,"critical":50}}}'
+  '{"statusline":{"thresholds":{"warn":false,"critical":false}}}'
+  '{"statusline":{"thresholds":{"warn":"","critical":""}}}'
+  '{"statusline":{"thresholds":{"warn":80,"critical":50}}}'
+  '{"statusline":{"thresholds":{"warn":50,"critical":60}}}'
+  '{"statusline":{"thresholds":{"warn":0,"critical":101}}}'
+  '{"statusline":{"thresholds":{"warn":70}}}'
+  '{"statusline":{"thresholds":{"critical":50}}}'
+  '{"statusline":{"colors":{"model":null,"dir":null,"git":null,"branch":null,"label":null}}}'
+  '{"statusline":{"colors":{"model":false,"dir":"","git":5,"branch":[],"label":{}}}}'
+  '{"statusline":{"colors":{"model":"","dir":"","git":"","branch":"","label":""}}}'
+  '{"statusline":{"colors":{"model":"nonsense","dir":"nope","git":"x","branch":"y","label":"z"}}}'
+  '{"statusline":{"colors":{"model":"cyan","dir":"yellow","git":"magenta","branch":"blue","label":"dim"}}}'
+  "$cfg31"
+  '{"statusline":{"lines":[["model"]],"bar":{"width":20},"thresholds":{"warn":50,"critical":60},"colors":{"git":"green"}}}'
+  '{"statusline":{"bar":{"filled":""},"thresholds":{"warn":80,"critical":50},"colors":{"model":""}}}'
+)
+i=0
+while [ "$i" -lt "${#SL_RULE_CFG[@]}" ]; do
+  cp_t_sl_rule "${SL_RULE_CFG[$i]}"
+  i=$((i + 1))
+done
+
+# --- lines, level by level: the one setting the rule above cannot judge ----
+# Absent and null say nothing; every other rejected shape reports; a layout
+# with something usable in it is honoured as far as it goes, and the junk
+# alongside it is dropped in silence (accepted, and pinned here so a
+# refactor cannot quietly start reporting it).
+LINES_BAD='statusline.lines: not a list of segment lists; using the default layout'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":null}}')" \
+  'a lines value of null stays silent, the same as an absent one'
+assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":false}}')" \
+  'a lines value of false is reported, not treated as nothing configured'
+assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":""}}')" \
+  'an empty lines string is reported, not treated as nothing configured'
+assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":5}}')" \
+  'a numeric lines value is reported'
+assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":{}}}')" \
+  'an object lines value is reported'
+assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[]}}')" \
+  'an empty lines array is reported, not treated as nothing configured'
+assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[[]]}}')" \
+  'a lines array of empty lines is reported'
+assert_eq "$LINES_BAD
+statusline.lines: unknown segment nonsense (known: badge model dir git context usage)" \
+  "$(cp_sl_config_problems '{"statusline":{"lines":[["nonsense"]]}}')" \
+  'a layout whose only segment is unknown is reported both ways'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["badge"],"junk"]}}')" \
+  'a layout with one usable line keeps it and drops the junk in silence'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["model"]]}}')" \
+  'a usable layout stays silent'
+
 cp_t_summary

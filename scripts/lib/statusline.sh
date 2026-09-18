@@ -137,6 +137,34 @@ cp_sl_config() {
 # silent by design (see cp_sl_config), so this is where a reader finds out
 # that a setting did not take.
 #
+# One rule, at every level -- the block, each section, and each field inside
+# each section:
+#
+#   absent, or an explicit null   nothing was configured here, so say
+#                                 nothing: that is exactly what cp_sl_config
+#                                 makes of it
+#   kept by the resolver          say nothing
+#   anything else                 configured, and the resolver put something
+#                                 else in its place: name the key and the
+#                                 value it used instead
+#
+# So an empty string and a false are configured values that were rejected,
+# not absent ones, and both are reported.
+#
+# "The resolver put something else in its place" is not a second, hand-typed
+# reading of the resolver rules: for every scalar field it is literally
+# `rejected(written; resolved)`, where the resolved value is computed by the
+# same expression cp_sl_config uses. A shape nobody anticipated is therefore
+# judged by the resolver rather than by a case list. The fallback each
+# message names comes from `cp_sl_config {}` for the same reason, so a
+# message cannot drift from the value the resolver actually substitutes.
+#
+# `lines` is the one setting that cannot be judged that way, because the
+# resolver honours a layout partially: it keeps every inner array that has
+# at least one known segment and drops the rest. So it gets the same $clean
+# computation the resolver performs -- a fallback is a $clean that came out
+# empty -- plus one line per unknown segment.
+#
 # Every section is type-checked before it is indexed. cp_sl_config can get
 # away with indexing straight through, because a crash partway through its
 # jq program is caught whole by its blanket `|| printf <defaults>` -- the
@@ -148,36 +176,66 @@ cp_sl_config() {
 # guard and its own line, naming the default the resolver actually falls
 # back to, and one bad section can never suppress another's report.
 cp_sl_config_problems() {
-  local cfg="${1:-}" key name default kind colors_ok
-  printf '%s' "$cfg" | jq -r '
-    def whole($v; $lo; $hi): ($v|type) == "number" and $v == ($v|floor)
-                             and $v >= $lo and $v <= $hi;
+  local cfg="${1:-}" key name default state colors_ok tab defaults
+  local d_fill='' d_empty='' d_width='' d_warn='' d_crit=''
+  local d_model='' d_dir='' d_git='' d_branch='' d_label=''
+  tab="$(printf '\t')"
+  # The fallbacks these messages name are read off the resolver itself,
+  # rather than typed out a second time here where they could drift.
+  defaults="$(cp_sl_config '{}')"
+  {
+    read -r _
+    IFS="$tab" read -r d_fill d_empty d_width
+    IFS="$tab" read -r d_warn d_crit
+    IFS="$tab" read -r d_model d_dir d_git d_branch d_label
+  } <<EOF
+$defaults
+EOF
+  # Belt and braces: if jq is missing the resolver prints nothing, and a
+  # report with an empty fallback in it would be worse than useless.
+  [ -n "$d_fill" ] || d_fill='▓'
+  [ -n "$d_empty" ] || d_empty='░'
+  [ -n "$d_width" ] || d_width=10
+  [ -n "$d_warn" ] || d_warn=70
+  [ -n "$d_crit" ] || d_crit=90
+  [ -n "$d_model" ] || d_model=cyan
+  [ -n "$d_dir" ] || d_dir=yellow
+  [ -n "$d_git" ] || d_git=magenta
+  [ -n "$d_branch" ] || d_branch=cyan
+  [ -n "$d_label" ] || d_label=dim
+  printf '%s' "$cfg" | jq -r \
+    --arg fill "$d_fill" --arg empty "$d_empty" --argjson width "$d_width" \
+    --argjson warn "$d_warn" --argjson crit "$d_crit" '
     def known: ["badge","model","dir","git","context","usage"];
-    # `null` (explicit or via a missing key) is a plausible way to write
-    # "nothing configured here", so it defaults to $d quietly, exactly like
-    # cp_sl_config does with its own `// $d`. `false` is never a plausible
-    # value for an object-valued section or a colour name, so this does not
-    # fold it in the way `//` would -- a `false` here is a genuine
-    # wrong-type mistake and must still reach the type check below to be
-    # reported.
+    # The resolver rules, as cp_sl_config states them, so that a value is
+    # judged by what the resolver did with it and not by a second reading.
+    def glyph($v; $d): if ($v|type) == "string" and ($v|length) == 1 then $v else $d end;
+    def whole($v; $lo; $hi; $d): if ($v|type) == "number" and $v == ($v|floor)
+                                    and $v >= $lo and $v <= $hi
+                                 then $v else $d end;
+    # null, explicit or from an absent key, means nothing configured here at
+    # every level, and defaults quietly, the way the resolver does with its
+    # own `// $d`. This is deliberately not that `//`, whose falsy set
+    # covers false as well: a false is a configured value that was rejected.
     def ifnull($x; $d): if $x == null then $d else $x end;
+    # The whole rule, in one line: a configured value that the resolver did
+    # not keep.
+    def rejected($v; $resolved): $v != null and $v != $resolved;
     (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then
         "statusline: not a JSON object; using the default configuration"
       else
-        ( if ($s|has("lines")) and ($s.lines|type) != "array"
+        ( if $s.lines == null then empty
+          elif ($s.lines|type) != "array"
           then "statusline.lines: not a list of segment lists; using the default layout"
-          elif ($s.lines|type) == "array"
-          then
-            ( [ $s.lines[] | select(type == "array")
-                | [ .[] | select(type == "string")
-                    | select(. as $seg | known | index($seg)) ]
-                | select(length > 0) ]
-            ) as $clean
-            | if ($clean|length) == 0
-              then "statusline.lines: not a list of segment lists; using the default layout"
-              else empty end
-          else empty end ),
+          else ( [ $s.lines[] | select(type == "array")
+                   | [ .[] | select(type == "string")
+                       | select(. as $seg | known | index($seg)) ]
+                   | select(length > 0) ] ) as $clean
+               | if ($clean|length) == 0
+                 then "statusline.lines: not a list of segment lists; using the default layout"
+                 else empty end
+          end ),
         ( if ($s.lines|type) == "array"
           then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
                  | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
@@ -185,37 +243,39 @@ cp_sl_config_problems() {
           else empty end ),
         ( (ifnull($s.bar; {})) as $b
           | if ($b|type) != "object"
-            then "statusline.bar: not a JSON object; using ▓, ░ and 10"
-            else empty end ),
-        ( (ifnull($s.bar; {})) as $b
-          | if ($b|type) == "object" then
-              ( if ($b|has("filled")) and (($b.filled|type) != "string" or ($b.filled|length) != 1)
-                then "statusline.bar.filled: must be exactly one character; using ▓" else empty end ),
-              ( if ($b|has("empty")) and (($b.empty|type) != "string" or ($b.empty|length) != 1)
-                then "statusline.bar.empty: must be exactly one character; using ░" else empty end ),
-              ( if ($b|has("width")) and (whole($b.width; 1; 40) | not)
-                then "statusline.bar.width: must be a whole number from 1 to 40; using 10" else empty end )
-            else empty end ),
-        ( if ($s|has("thresholds")) and ($s.thresholds != null) then
-            ( if ($s.thresholds|type) != "object"
-              then "statusline.thresholds: not a JSON object; using 70 and 90"
-              else ( if ((whole($s.thresholds.warn; 1; 100) and whole($s.thresholds.critical; 1; 100)
-                          and $s.thresholds.warn < $s.thresholds.critical) | not)
-                     then "statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90"
-                     else empty end )
-              end )
-          else empty end )
+            then "statusline.bar: not a JSON object; using \($fill), \($empty) and \($width)"
+            else
+              ( if rejected($b.filled; glyph($b.filled; $fill))
+                then "statusline.bar.filled: must be exactly one character; using \($fill)"
+                else empty end ),
+              ( if rejected($b.empty; glyph($b.empty; $empty))
+                then "statusline.bar.empty: must be exactly one character; using \($empty)"
+                else empty end ),
+              ( if rejected($b.width; whole($b.width; 1; 40; $width))
+                then "statusline.bar.width: must be a whole number from 1 to 40; using \($width)"
+                else empty end )
+            end ),
+        ( $s.thresholds as $t
+          | if $t == null then empty
+            elif ($t|type) != "object"
+            then "statusline.thresholds: not a JSON object; using \($warn) and \($crit)"
+            else ( whole($t.warn; 1; 100; 0) ) as $w
+                 | ( whole($t.critical; 1; 100; 0) ) as $cr
+                 | ( if $w > 0 and $cr > 0 and $w < $cr then [$w, $cr] else [$warn, $crit] end ) as $th
+                 | if rejected($t.warn; $th[0]) or rejected($t.critical; $th[1])
+                   then "statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using \($warn) and \($crit)"
+                   else empty end
+            end )
       end
   ' 2>/dev/null
-  # Colours last, and in bash: cp_sl_code decides what a usable name is. A
-  # colour value pick() would never even consider (wrong type, or 20
-  # characters or more) never reaches that judgement -- it is reported
-  # against the specific default pick() substitutes for that key, not as an
-  # "unknown colour", which is reserved for a name pick() accepted as-is
-  # that simply is not in the palette. `null` coalesces to "nothing
-  # configured" the same as an absent key, at both the section (`colors`)
-  # and the individual-value level; `false` is never a plausible colours
-  # value at either level and is judged like any other wrong type.
+  # Colours last, and in bash: cp_sl_code decides what a usable name is, and
+  # the resolver resolves a colour in two stages, so a colour falls back in
+  # two ways. pick() replaces a value it would never consider -- not a
+  # string, empty, or 20 characters or more -- with that key's own default
+  # colour, which is what the first message names. A name pick() keeps but
+  # the palette does not know is rendered plain instead, which is the
+  # second. `null` is nothing configured at either level, as everywhere
+  # else; `false` is a rejected value, as everywhere else.
   colors_ok="$(printf '%s' "$cfg" | jq -r '
     def ifnull($x; $d): if $x == null then $d else $x end;
     (ifnull(.statusline; {})) as $s
@@ -226,33 +286,36 @@ cp_sl_config_problems() {
   ' 2>/dev/null)"
   case "$colors_ok" in
     bad)
-      printf 'statusline.colors: not a JSON object; using the defaults: model cyan, dir yellow, git magenta, branch cyan, label dim\n'
+      printf 'statusline.colors: not a JSON object; using the defaults: model %s, dir %s, git %s, branch %s, label %s\n' \
+        "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
       ;;
     ok)
       for key in model dir git branch label; do
         case "$key" in
-          model)  default=cyan ;;
-          dir)    default=yellow ;;
-          git)    default=magenta ;;
-          branch) default=cyan ;;
-          label)  default=dim ;;
+          model)  default="$d_model" ;;
+          dir)    default="$d_dir" ;;
+          git)    default="$d_git" ;;
+          branch) default="$d_branch" ;;
+          label)  default="$d_label" ;;
         esac
-        kind="$(printf '%s' "$cfg" | jq -r --arg k "$key" '
-          ((.statusline.colors // {})[$k]) as $v
+        state="$(printf '%s' "$cfg" | jq -r --arg k "$key" '
+          def pick($v; $d): if ($v|type) == "string" and ($v|length) > 0 and ($v|length) < 20
+                            then $v else $d end;
+          def ifnull($x; $d): if $x == null then $d else $x end;
+          ((ifnull(.statusline; {})) | ifnull(.colors; {}) | .[$k]) as $v
           | if $v == null then "skip"
-            elif ($v|type) != "string" then "badtype"
-            elif ($v|length) == 0 then "skip"
-            elif ($v|length) >= 20 then "toolong"
+            elif pick($v; null) == null then "bad"
             else "ok" end
         ' 2>/dev/null)"
-        case "$kind" in
-          skip) continue ;;
-          badtype|toolong)
+        case "$state" in
+          ok) ;;
+          bad)
             printf 'statusline.colors.%s: not a usable colour name; using %s\n' "$key" "$default"
             continue
             ;;
+          *) continue ;;
         esac
-        name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '(.statusline.colors // {})[$k] // empty' 2>/dev/null)"
+        name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '.statusline.colors[$k]' 2>/dev/null)"
         [ -n "$(cp_sl_code "$name")" ] && continue
         printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" "$name"
       done

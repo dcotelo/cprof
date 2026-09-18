@@ -246,4 +246,23 @@ case "$out" in *'statusline'*) assert_eq ok ok 'doctor mentions statusline when 
 rc=0; NO_COLOR=1 "$CLI" doctor >/dev/null 2>&1 || rc=$?
 assert_eq '1' "$rc" 'a statusline value that is not a JSON object makes doctor exit non-zero'
 
+# ... and, the other way round, a block that writes null where it means
+# "leave this alone" is not a misconfiguration: doctor used to name those
+# keys and exit 1, telling a reader off for a setting that behaved exactly
+# as they intended.
+cp_t_write_config <<JSON
+{"default":"personal",
+ "profiles":[{"name":"personal","dir":"$CP_T_TMP/p","note":"Max"},
+             {"name":"work","native":true,"note":"team"},
+             {"name":"kc","dir":"$CP_T_TMP/k","note":"keychain-backed"}],
+ "rules":[],"repos":{},
+ "statusline":{"lines":null,"bar":{"filled":null,"empty":null,"width":null},
+               "thresholds":{"warn":null,"critical":90},"colors":{"model":null}}}
+JSON
+out="$(NO_COLOR=1 "$CLI" doctor 2>&1)"
+case "$out" in *'statusline'*) assert_eq 'no statusline line' "$out" 'doctor says nothing about a block written with nulls' ;;
+                *) assert_eq ok ok 'doctor says nothing about a block written with nulls' ;; esac
+rc=0; NO_COLOR=1 "$CLI" doctor >/dev/null 2>&1 || rc=$?
+assert_eq '0' "$rc" 'a block written with nulls leaves doctor exiting zero'
+
 cp_t_summary
