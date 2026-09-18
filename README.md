@@ -538,10 +538,10 @@ rely on them:
 
 | Setting | Accepts | Falls back to |
 | --- | --- | --- |
-| `statusline.bar.filled` / `.empty` | exactly one character | `▓` / `░` |
+| `statusline.bar.filled` / `.empty` | exactly one character, and not an invisible one — a tab is one character and is rejected, with a message of its own | `▓` / `░` |
 | `statusline.bar.width` | a whole number from 1 to 40 | `10` |
 | `statusline.thresholds.warn` **and** `.critical` | both, together: whole numbers from 1 to 100 with `warn` below `critical` | `70` **and** `90` — setting only one, or an out-of-order pair, reverts both |
-| `statusline.colors.*` — wrong shape | a string, 1-19 characters | its own default (`cyan` for `model`/`branch`, `yellow` for `dir`, `magenta` for `git`, `dim` for `label`) |
+| `statusline.colors.*` — wrong shape | a string, 1-19 characters, with no invisible character in it — a trailing tab is rejected, with a message of its own | its own default (`cyan` for `model`/`branch`, `yellow` for `dir`, `magenta` for `git`, `dim` for `label`) |
 | `statusline.colors.*` — right shape, unknown name | any name from [the palette](#colours), plus `dim` | *(not a fallback — see below)* |
 
 Absent, or an explicit `null`, at any level, means "not configured" and is
@@ -565,7 +565,7 @@ the resolver ignores it in silence and a misspelling is the likeliest reason
 it is there:
 
 ```console
-statusline.bar: unknown key wdith (known: filled empty width)
+statusline.bar: unknown key "wdith" (known: filled empty width)
 ```
 
 `colors.badge` is the one key accepted and ignored without a word: the badge
@@ -585,17 +585,23 @@ something you configured doesn't look right:
   defaulted at all.** `chartreuse` (1-19 characters, a string) is *kept* as
   the resolved colour; there is no such colour to paint with, so that
   segment's text renders without colour instead of falling back to the
-  default. `cprof doctor` tells the two colour failures apart with two
+  default. `cprof doctor` tells the three colour failures apart with three
   different messages:
 
   ```console
   statusline.colors.model: not a usable colour name; using cyan
-  statusline.colors.model: unknown colour chartreuse; rendering it plain
+  statusline.colors.model: must not contain an invisible character such as a tab; using cyan
+  statusline.colors.model: unknown colour "chartreuse"; rendering it plain
   ```
 
   The first is `123` or `""` for `colors.model` — the wrong-shape row above.
-  The second is `"chartreuse"` — well-formed, just not a colour `cprof
-  color` knows.
+  The second is a value the length rule alone would have kept, such as
+  `"red\t"`: "not a usable colour name" would leave someone who typed a
+  trailing tab none the wiser, so it says what is actually wrong. The third
+  is `"chartreuse"` — well-formed, just not a colour `cprof color` knows.
+
+  A name a report quotes is quoted for a reason: it is escaped, so that a
+  configuration file cannot write lines of `cprof doctor` output of its own.
 
 Narrowing the layout to the account, the directory, and a six-cell usage bar
 drawn with different glyphs:
