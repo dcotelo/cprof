@@ -4,6 +4,12 @@ Notable changes per release. Versions follow [semver](https://semver.org); the
 release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
+### Changed
+- The README is the showcase and the quickstart; the reference material moved
+  into `docs/` — routing, install details, commands, the statusline, usage and
+  fallback, and safety — with development, the dependency policy and releasing
+  in `CONTRIBUTING.md`. Every section kept its heading, so an anchor such as
+  `#statusline` still resolves inside the file it moved to.
 
 ## [0.13.0]
 ### Added
@@ -196,7 +202,7 @@ release workflow reads its notes from the section matching the tag.
 
 - `cprof update` refreshes the marketplace listing and updates the plugin
   itself, wrapping the two `env -u CLAUDE_CONFIG_DIR claude plugin …` commands
-  documented under [Updating](README.md#updating) so they no longer need to be
+  documented under [Updating](docs/install.md#updating) so they no longer need to be
   run by hand or remembered. It covers the plugin only — Updating now also
   documents `brew upgrade dcotelo/tap/cprof` for the CLI, since the two are
   installed, and updated, separately.

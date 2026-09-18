@@ -38,7 +38,7 @@ cat > "$HOME/.cprof.json" <<JSON
  "rules":[],"repos":{}}
 JSON
 
-# The narrowed layout from the README's Statusline section, pre-written so
+# The narrowed layout from docs/statusline.md, pre-written so
 # the recording swaps configs with one short command instead of retyping a
 # JSON block keystroke by keystroke.
 cat > "$HOME/narrow-layout.cprof.json" <<JSON
