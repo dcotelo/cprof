@@ -431,6 +431,16 @@ now=1700000000
 assert_eq '2h 19m' "$(cp_usage_reset_in $((now + 2*3600 + 19*60 + 30)) "$now")" 'reset_in renders hours and minutes'
 assert_eq '37m' "$(cp_usage_reset_in $((now + 37*60 + 5)) "$now")" 'reset_in renders minutes alone under an hour'
 assert_eq '<1m' "$(cp_usage_reset_in $((now + 20)) "$now")" 'reset_in renders <1m under a minute'
+# A 7-day window resets days out, where hours alone stop being readable: 85h
+# 13m is the same instant as 3d 13h and nobody reads the first one.
+assert_eq '3d 13h' "$(cp_usage_reset_in $((now + 3*86400 + 13*3600 + 40*60)) "$now")" \
+  'reset_in renders days and hours once a day out'
+assert_eq '1d 0h' "$(cp_usage_reset_in $((now + 86400)) "$now")" \
+  'reset_in switches to days at exactly 24h'
+assert_eq '23h 59m' "$(cp_usage_reset_in $((now + 23*3600 + 59*60 + 30)) "$now")" \
+  'reset_in keeps hours and minutes just under a day'
+assert_eq '6d 23h' "$(cp_usage_reset_in $((now + 6*86400 + 23*3600 + 59*60)) "$now")" \
+  'reset_in renders a nearly-full 7-day window'
 assert_fail cp_usage_reset_in "$now" "$now"            # a reset that is due
 assert_fail cp_usage_reset_in $((now - 5)) "$now"      # a reset already past
 assert_fail cp_usage_reset_in 'soon' "$now"            # a non-epoch reset

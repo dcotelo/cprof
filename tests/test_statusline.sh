@@ -148,6 +148,78 @@ out="$(printf '{"cwd":"%s","context_window":{"used_percentage":5}}' "$R" | NO_CO
 assert_eq "⚑ work │ repo git:($(gitq rev-parse --short HEAD))
 Context $(cp_usage_bar 5) 5% │ Usage $(cp_usage_bar 73) 73%" "$out" \
   'no model in the payload: that field is skipped, the rest still renders'
+# --- the weekly bar: shown only once the 7-day window is worth watching ----
+# The 7-day figure is cache-only by nature: a Claude Code payload carries the
+# 5-hour window and the context, never the week, so this segment reads the
+# same cache `cprof list` fills and never fetches.
+wk_at="$(date -u -r $(( $(date +%s) + 3*86400 + 13*3600 + 30*60 )) '+%Y-%m-%dT%H:%M:%SZ')"
+wk_cache() {   # $1 = seven_day utilization
+  printf '{"fetched_at":1,"five_hour":{"utilization":20},"seven_day":{"utilization":%s,"resets_at":"%s"},"limits":[]}\n' \
+    "$1" "$wk_at" > "$CP_T_TMP/state/usage/work.json"
+}
+wk_cfg() {     # $1 = the statusline block, or empty for the default
+  cp_t_write_config <<JSON
+{"default":"work",
+ "profiles":[{"name":"work","native":true,"color":"magenta"},
+             {"name":"personal","dir":"$CP_T_TMP/p"}],
+ "rules":[],"repos":{},
+ "statusline":{"lines":[["badge"],["weekly"]]${1:+,$1}}}
+JSON
+}
+
+wk_cfg ''; wk_cache 64
+assert_eq "⚑ work
+Usage Weekly $(cp_usage_bar 64) 64% (resets in 3d 13h)" \
+  "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'past the threshold: the weekly bar, with days and hours to reset'
+
+wk_cache 50
+assert_eq "⚑ work
+Usage Weekly $(cp_usage_bar 50) 50%" \
+  "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null | sed 's/ (resets in .*)$//')" \
+  'exactly at the threshold it is shown'
+
+wk_cache 49
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'below the threshold the segment renders nothing and its line vanishes'
+
+wk_cfg '"weekly_threshold":70'; wk_cache 64
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a higher configured threshold hides a percentage the default would show'
+wk_cache 70
+assert_eq '1' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null | grep -c 'Usage Weekly')" \
+  'and shows it once the window reaches that threshold'
+
+wk_cfg '"weekly_threshold":1'; wk_cache 0
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a zero percentage is below every valid threshold'
+
+# A cache with no seven_day at all, and no cache at all: nothing to show,
+# nothing to fail.
+wk_cfg ''
+printf '{"fetched_at":1,"five_hour":{"utilization":20},"limits":[]}\n' > "$CP_T_TMP/state/usage/work.json"
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a cache without a 7-day window renders no weekly bar'
+rm -f "$CP_T_TMP/state/usage/work.json"
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'no cache at all renders no weekly bar'
+assert_ok bash -c "NO_COLOR=1 '$CLI' statusline >/dev/null 2>&1"
+
+# The configured glyphs and width apply to this bar like any other.
+wk_cfg '"bar":{"filled":"#","empty":".","width":6}'; wk_cache 64
+assert_eq "Usage Weekly $(cp_usage_bar 64 '#' '.' 6) 64%" \
+  "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null | sed -n '2p' | sed 's/ (resets in .*)$//')" \
+  'the weekly bar honours the configured glyphs and width'
+
+# Restore the fixture the rest of the file expects.
+rm -f "$CP_T_TMP/state/usage/work.json"
+cp_t_write_config <<JSON
+{"default":"work",
+ "profiles":[{"name":"work","native":true,"color":"magenta"},
+             {"name":"personal","dir":"$CP_T_TMP/p"}],
+ "rules":[],"repos":{}}
+JSON
+
 rm -f "$CP_T_TMP/state/usage/work.json"
 
 # --- and coloured ----------------------------------------------------------
@@ -213,7 +285,7 @@ slfields() { cp_sl_config "$1" | sed -n "${2}p" | awk -F'\t' '{print NF}'; }
 DEFLAYOUT='badge model dir git;context usage'
 assert_eq "$DEFLAYOUT" "$(cfgline '{}' 1)" 'no statusline block: the default layout'
 assert_eq "▓	░	10" "$(cfgline '{}' 2)" 'no statusline block: cprof own bar, ten cells'
-assert_eq "70	90" "$(cfgline '{}' 3)" 'no statusline block: the documented thresholds'
+assert_eq "70	90	50" "$(cfgline '{}' 3)" 'no statusline block: the documented thresholds'
 assert_eq "cyan	yellow	magenta	cyan	dim" "$(cfgline '{}' 4)" 'no statusline block: the default palette'
 assert_eq 'badge;context usage' "$(cfgline '{"statusline":{"lines":[["badge"],["context","usage"]]}}' 1)" \
   'a configured layout is honoured, line by line'
@@ -229,21 +301,48 @@ assert_eq "▓	░	10" "$(cfgline '{"statusline":{"bar":{"filled":"ab","empty":5
   'a multi-character glyph, a non-string glyph and an out-of-range width each fall back'
 assert_eq "▓	░	1" "$(cfgline '{"statusline":{"bar":{"width":1}}}' 2)" 'a width of exactly one is accepted'
 assert_eq "▓	░	40" "$(cfgline '{"statusline":{"bar":{"width":40}}}' 2)" 'a width of exactly forty is accepted'
-assert_eq "50	80" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":80}}}' 3)" \
+assert_eq "50	80	50" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":80}}}' 3)" \
   'thresholds are configurable'
-assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":80,"critical":50}}}' 3)" \
+assert_eq "70	90	50" "$(cfgline '{"statusline":{"thresholds":{"warn":80,"critical":50}}}' 3)" \
   'a warn threshold at or above critical falls back to both defaults'
-assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":50}}}' 3)" \
+assert_eq "70	90	50" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":50}}}' 3)" \
   'a warn threshold equal to critical falls back too, proving the comparison is strict'
-assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":0,"critical":101}}}' 3)" \
+assert_eq "70	90	50" "$(cfgline '{"statusline":{"thresholds":{"warn":0,"critical":101}}}' 3)" \
   'thresholds outside one to a hundred fall back'
-assert_eq "1	100" "$(cfgline '{"statusline":{"thresholds":{"warn":1,"critical":100}}}' 3)" \
+assert_eq "1	100	50" "$(cfgline '{"statusline":{"thresholds":{"warn":1,"critical":100}}}' 3)" \
   'thresholds at exactly one and exactly a hundred are accepted'
-assert_eq "70	90" "$(cfgline '{"statusline":{"thresholds":{"warn":50.5,"critical":80}}}' 3)" \
+assert_eq "70	90	50" "$(cfgline '{"statusline":{"thresholds":{"warn":50.5,"critical":80}}}' 3)" \
   'a fractional threshold falls back'
 assert_eq "red	blue	green	bright-cyan	dim" \
   "$(cfgline '{"statusline":{"colors":{"model":"red","dir":"blue","git":"green","branch":"bright-cyan"}}}' 4)" \
   'colours are configurable and an unset one keeps its default'
+
+# --- weekly_threshold: when the 7-day bar appears -------------------------
+# It rides on the thresholds line as a third field rather than a fifth line,
+# so the four-line contract below is untouched and a consumer reading fields
+# one and two is unaffected. It is its own setting, not part of the
+# warn/critical pair: those are colour thresholds validated together, and a
+# bad pair must not drag the visibility threshold down with it.
+assert_eq "70	90	40" "$(cfgline '{"statusline":{"weekly_threshold":40}}' 3)" \
+  'weekly_threshold is configurable'
+assert_eq "70	90	1" "$(cfgline '{"statusline":{"weekly_threshold":1}}' 3)" \
+  'weekly_threshold at exactly one is accepted'
+assert_eq "70	90	100" "$(cfgline '{"statusline":{"weekly_threshold":100}}' 3)" \
+  'weekly_threshold at exactly a hundred is accepted'
+for bad in 0 101 50.5 '"40"' null true '[]' '{}'; do
+  assert_eq "70	90	50" "$(cfgline "{\"statusline\":{\"weekly_threshold\":$bad}}" 3)" \
+    "weekly_threshold $bad falls back to fifty"
+done
+assert_eq "70	90	40" "$(cfgline '{"statusline":{"thresholds":{"warn":80,"critical":50},"weekly_threshold":40}}' 3)" \
+  'a rejected warn/critical pair leaves weekly_threshold alone'
+assert_eq "50	80	50" "$(cfgline '{"statusline":{"thresholds":{"warn":50,"critical":80},"weekly_threshold":0}}' 3)" \
+  'and a rejected weekly_threshold leaves the pair alone'
+
+# weekly joins the segments a layout may name
+assert_eq 'badge weekly' "$(cfgline '{"statusline":{"lines":[["badge","weekly"]]}}' 1)" \
+  'weekly is a known segment'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["weekly"]],"weekly_threshold":50}}')" \
+  'a layout naming weekly, with a valid threshold, is silent'
 assert_eq "cyan	yellow	magenta	cyan	dim" "$(cfgline '{"statusline":{"colors":{"model":123}}}' 4)" \
   'a non-string colour value falls back to its default'
 assert_eq '4' "$(cp_sl_config '{}' | wc -l | tr -d ' ')" 'always exactly four lines'
@@ -294,6 +393,11 @@ SL_SHAPE=(
   '{"statusline":{"bar":[]}}'
   '{"statusline":{"bar":true}}'
   '{"statusline":{"bar":false}}'
+  '{"statusline":{"weekly_threshold":0}}'
+  '{"statusline":{"weekly_threshold":101}}'
+  '{"statusline":{"weekly_threshold":"40"}}'
+  '{"statusline":{"weekly_threshold":50.5}}'
+  '{"statusline":{"weekly_threshold":40}}'
   '{"statusline":{"thresholds":"x"}}'
   '{"statusline":{"thresholds":5}}'
   '{"statusline":{"thresholds":[]}}'
@@ -493,7 +597,7 @@ assert_eq '' "$(cp_sl_config_problems '{}')" 'no statusline block, nothing to re
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"█"}}}')" 'a valid block, nothing to report'
 assert_eq 'statusline.lines: not a list of segment lists; using the default layout' \
   "$(cp_sl_config_problems '{"statusline":{"lines":"nonsense"}}')" 'a malformed layout is reported'
-assert_eq 'statusline.lines: unknown segment "nonsense" (known: badge model dir git context usage)' \
+assert_eq 'statusline.lines: unknown segment "nonsense" (known: badge model dir git context usage weekly)' \
   "$(cp_sl_config_problems '{"statusline":{"lines":[["badge","nonsense"]]}}')" 'an unknown segment is named'
 assert_eq 'statusline.bar.filled: must be exactly one character; using ▓' \
   "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"ab"}}}')" 'a bad glyph is reported with the fallback'
@@ -548,7 +652,7 @@ sl_ctl() { LC_ALL=C tr -dc '\001-\011\013-\037' | od -An -c; }
 forgekey="$(jq -cn '{statusline:{("x"+([10]|implode)+"statusline.bar.width: must be a whole number from 1 to 40; using 40"):1}}')"
 assert_eq 1 "$(cp_sl_config_problems "$forgekey" | wc -l | tr -d ' ')" \
   'a newline in a key name cannot forge a second doctor line'
-assert_eq 'statusline: unknown key "x\nstatusline.bar.width: must be a whole number from 1 to 40; using 40" (known: lines bar thresholds colors)' \
+assert_eq 'statusline: unknown key "x\nstatusline.bar.width: must be a whole number from 1 to 40; using 40" (known: lines bar thresholds colors weekly_threshold)' \
   "$(cp_sl_config_problems "$forgekey")" \
   'the forged text comes back escaped inside the name it was written as'
 # All four levels that name a key, in one config: four reports, four lines.
@@ -603,10 +707,10 @@ assert_eq 'statusline.bar.width: must be a whole number from 1 to 40; using 10' 
 # agents` teaches a reader that doctor catches names it does not recognise,
 # and then it did not catch `wdith`. A misspelled key is the most common real
 # misconfiguration there is.
-assert_eq 'statusline: unknown key "line" (known: lines bar thresholds colors)' \
+assert_eq 'statusline: unknown key "line" (known: lines bar thresholds colors weekly_threshold)' \
   "$(cp_sl_config_problems '{"statusline":{"line":[["badge"]]}}')" \
   'an unknown key directly under statusline is named'
-assert_eq 'statusline: unknown key "threshold" (known: lines bar thresholds colors)' \
+assert_eq 'statusline: unknown key "threshold" (known: lines bar thresholds colors weekly_threshold)' \
   "$(cp_sl_config_problems '{"statusline":{"threshold":{"warn":50,"critical":80}}}')" \
   'a section name that is nearly right is named at the level it was written'
 assert_eq 'statusline.bar: unknown key "wdith" (known: filled empty width)' \
@@ -766,7 +870,7 @@ assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"model":null}}}'
 # cp_t_sl_fallbacks <cfg> -> one line per key the resolver did not keep
 cp_t_sl_fallbacks() {
   local cfg="$1" resolved tab key rv state
-  local rfill='' rempty='' rwidth='' rwarn='' rcrit=''
+  local rfill='' rempty='' rwidth='' rwarn='' rcrit='' rweekly=''
   local rmodel='' rdir='' rgit='' rbranch='' rlabel=''
   tab="$(printf '\t')"
   # The block and the sections: structural, so no resolved value is needed.
@@ -783,14 +887,14 @@ cp_t_sl_fallbacks() {
   {
     read -r _
     IFS="$tab" read -r rfill rempty rwidth
-    IFS="$tab" read -r rwarn rcrit
+    IFS="$tab" read -r rwarn rcrit rweekly
     IFS="$tab" read -r rmodel rdir rgit rbranch rlabel
   } <<EOF
 $resolved
 EOF
   printf '%s' "$cfg" | jq -r \
     --arg fill "$rfill" --arg empty "$rempty" --argjson width "$rwidth" \
-    --argjson warn "$rwarn" --argjson crit "$rcrit" '
+    --argjson warn "$rwarn" --argjson crit "$rcrit" --argjson weekly "$rweekly" '
     def fell($v; $r): $v != null and $v != $r;
     .statusline as $s
     | if ($s|type) != "object" then empty else
@@ -802,7 +906,8 @@ EOF
       ( if ($s.thresholds|type) == "object" then
           ( if fell($s.thresholds.warn; $warn) then "statusline.thresholds.warn" else empty end ),
           ( if fell($s.thresholds.critical; $crit) then "statusline.thresholds.critical" else empty end )
-        else empty end )
+        else empty end ),
+      ( if fell($s.weekly_threshold; $weekly) then "statusline.weekly_threshold" else empty end )
       end' 2>/dev/null
   # The colours have a second resolution stage that cp_sl_code owns: a name
   # pick() keeps but the palette does not know is rendered plain, which is a
@@ -869,6 +974,12 @@ long31="$(printf 'x%.0s' $(seq 1 31))"
 cfg31="$(printf '{"statusline":{"colors":{"label":"%s"}}}' "$long31")"
 SL_RULE_CFG=(
   '{}'
+  '{"statusline":{"weekly_threshold":0}}'
+  '{"statusline":{"weekly_threshold":101}}'
+  '{"statusline":{"weekly_threshold":"40"}}'
+  '{"statusline":{"weekly_threshold":50.5}}'
+  '{"statusline":{"weekly_threshold":40}}'
+  '{"statusline":{"thresholds":{"warn":80,"critical":50},"weekly_threshold":40}}'
   '{"statusline":null}'
   '{"statusline":false}'
   '{"statusline":""}'
@@ -945,7 +1056,7 @@ assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[]}}')" 
 assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[[]]}}')" \
   'a lines array of empty lines is reported'
 assert_eq "$LINES_BAD
-statusline.lines: unknown segment \"nonsense\" (known: badge model dir git context usage)" \
+statusline.lines: unknown segment \"nonsense\" (known: badge model dir git context usage weekly)" \
   "$(cp_sl_config_problems '{"statusline":{"lines":[["nonsense"]]}}')" \
   'a layout whose only segment is unknown is reported both ways'
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["badge"],"junk"]}}')" \
