@@ -456,7 +456,7 @@ cp_fallback_doctor_line() {
 # failure leaves the marker so the next call retries from here without
 # fetching or rewriting credentials, so cleanup itself cannot leave a backup
 # without a marker (swap-out would refuse forever) or a marker without its
-# backup (swap-back would give up). The README's stuck states remain
+# backup (swap-back would give up). The stuck states in docs/usage.md remain
 # reachable only when a marker commit and its rollback both fail.
 cp_fallback_finish_restore() {
   local name="$1" marker="$2" backup="$3" kind="$4" fallback="$5" pct="${6:-}"

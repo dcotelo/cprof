@@ -10,8 +10,8 @@
 # payload on stdin, and consuming it would starve whatever component runs
 # next — so `--stdin` is the caller saying "this payload is yours": pass it
 # when the segment is the only consumer, or after capturing the payload and
-# piping a copy (see the README). Without the flag stdin stays untouched and
-# the usage bar comes from this profile's cache, if any.
+# piping a copy (see docs/statusline.md). Without the flag stdin stays
+# untouched and the usage bar comes from this profile's cache, if any.
 #
 # The active profile comes from CLAUDE_CONFIG_DIR in the environment, which is
 # also more truthful than resolution — it is the account actually in use.
