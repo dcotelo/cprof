@@ -229,4 +229,21 @@ case "$out" in *'statusline.bar.width'*) assert_eq ok ok 'doctor reports a bad s
 rc=0; NO_COLOR=1 "$CLI" doctor >/dev/null 2>&1 || rc=$?
 assert_eq '1' "$rc" 'a bad statusline config makes doctor exit non-zero'
 
+# ... including the shape a reader would actually hit by mistyping: the
+# whole statusline value is a string, not an object, which used to crash
+# the reporter's jq program and leave doctor exiting 0 in total silence.
+cp_t_write_config <<JSON
+{"default":"personal",
+ "profiles":[{"name":"personal","dir":"$CP_T_TMP/p","note":"Max"},
+             {"name":"work","native":true,"note":"team"},
+             {"name":"kc","dir":"$CP_T_TMP/k","note":"keychain-backed"}],
+ "rules":[],"repos":{},
+ "statusline":"nonsense"}
+JSON
+out="$(NO_COLOR=1 "$CLI" doctor 2>&1)"
+case "$out" in *'statusline'*) assert_eq ok ok 'doctor mentions statusline when the whole block is not a JSON object' ;;
+                *) assert_eq 'statusline ...' "$out" 'doctor mentions statusline when the whole block is not a JSON object' ;; esac
+rc=0; NO_COLOR=1 "$CLI" doctor >/dev/null 2>&1 || rc=$?
+assert_eq '1' "$rc" 'a statusline value that is not a JSON object makes doctor exit non-zero'
+
 cp_t_summary

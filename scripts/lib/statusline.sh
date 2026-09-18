@@ -136,40 +136,116 @@ cp_sl_config() {
 # nothing when the block is absent or wholly valid. The statusline itself is
 # silent by design (see cp_sl_config), so this is where a reader finds out
 # that a setting did not take.
+#
+# Every section is type-checked before it is indexed. cp_sl_config can get
+# away with indexing straight through, because a crash partway through its
+# jq program is caught whole by its blanket `|| printf <defaults>` -- the
+# entire resolved config falls back together, so nothing there depends on
+# the jq program finishing normally. This function has no such net: a crash
+# partway through would silently drop every report queued after the crash
+# point, in a function whose entire purpose is to not be silent. So a wrongly
+# typed `statusline`, `bar`, `thresholds` or `colors` value gets its own
+# guard and its own line, naming the default the resolver actually falls
+# back to, and one bad section can never suppress another's report.
 cp_sl_config_problems() {
-  local cfg="${1:-}" key name
+  local cfg="${1:-}" key name default kind colors_ok
   printf '%s' "$cfg" | jq -r '
     def whole($v; $lo; $hi): ($v|type) == "number" and $v == ($v|floor)
                              and $v >= $lo and $v <= $hi;
     def known: ["badge","model","dir","git","context","usage"];
     (.statusline // {}) as $s
-    | ( if ($s|has("lines")) and ($s.lines|type) != "array"
-        then "statusline.lines: not a list of segment lists; using the default layout"
-        else empty end ),
-      ( if ($s.lines|type) == "array"
-        then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
-               | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
-               | "statusline.lines: unknown segment \(.) (known: badge model dir git context usage)" )
-        else empty end ),
-      ( if ($s.bar|has("filled")) and (($s.bar.filled|type) != "string" or ($s.bar.filled|length) != 1)
-        then "statusline.bar.filled: must be exactly one character; using ▓" else empty end ),
-      ( if ($s.bar|has("empty")) and (($s.bar.empty|type) != "string" or ($s.bar.empty|length) != 1)
-        then "statusline.bar.empty: must be exactly one character; using ░" else empty end ),
-      ( if ($s.bar|has("width")) and (whole($s.bar.width; 1; 40) | not)
-        then "statusline.bar.width: must be a whole number from 1 to 40; using 10" else empty end ),
-      ( if ($s|has("thresholds"))
-           and ((whole($s.thresholds.warn; 1; 100) and whole($s.thresholds.critical; 1; 100)
-                 and $s.thresholds.warn < $s.thresholds.critical) | not)
-        then "statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90"
-        else empty end )
+    | if ($s|type) != "object" then
+        "statusline: not a JSON object; using the default configuration"
+      else
+        ( if ($s|has("lines")) and ($s.lines|type) != "array"
+          then "statusline.lines: not a list of segment lists; using the default layout"
+          elif ($s.lines|type) == "array"
+          then
+            ( [ $s.lines[] | select(type == "array")
+                | [ .[] | select(type == "string")
+                    | select(. as $seg | known | index($seg)) ]
+                | select(length > 0) ]
+            ) as $clean
+            | if ($clean|length) == 0
+              then "statusline.lines: not a list of segment lists; using the default layout"
+              else empty end
+          else empty end ),
+        ( if ($s.lines|type) == "array"
+          then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
+                 | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
+                 | "statusline.lines: unknown segment \(.) (known: badge model dir git context usage)" )
+          else empty end ),
+        ( ($s.bar // {}) as $b
+          | if ($b|type) != "object"
+            then "statusline.bar: not a JSON object; using ▓, ░ and 10"
+            else empty end ),
+        ( ($s.bar // {}) as $b
+          | if ($b|type) == "object" then
+              ( if ($b|has("filled")) and (($b.filled|type) != "string" or ($b.filled|length) != 1)
+                then "statusline.bar.filled: must be exactly one character; using ▓" else empty end ),
+              ( if ($b|has("empty")) and (($b.empty|type) != "string" or ($b.empty|length) != 1)
+                then "statusline.bar.empty: must be exactly one character; using ░" else empty end ),
+              ( if ($b|has("width")) and (whole($b.width; 1; 40) | not)
+                then "statusline.bar.width: must be a whole number from 1 to 40; using 10" else empty end )
+            else empty end ),
+        ( if ($s|has("thresholds")) then
+            ( if ($s.thresholds|type) != "object"
+              then "statusline.thresholds: not a JSON object; using 70 and 90"
+              else ( if ((whole($s.thresholds.warn; 1; 100) and whole($s.thresholds.critical; 1; 100)
+                          and $s.thresholds.warn < $s.thresholds.critical) | not)
+                     then "statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90"
+                     else empty end )
+              end )
+          else empty end )
+      end
   ' 2>/dev/null
-  # Colours last, and in bash: cp_sl_code decides what a usable name is.
-  for key in model dir git branch label; do
-    name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '.statusline.colors[$k] // empty' 2>/dev/null)"
-    [ -n "$name" ] || continue
-    [ -n "$(cp_sl_code "$name")" ] && continue
-    printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" "$name"
-  done
+  # Colours last, and in bash: cp_sl_code decides what a usable name is. A
+  # colour value pick() would never even consider (wrong type, or 20
+  # characters or more) never reaches that judgement -- it is reported
+  # against the specific default pick() substitutes for that key, not as an
+  # "unknown colour", which is reserved for a name pick() accepted as-is
+  # that simply is not in the palette.
+  colors_ok="$(printf '%s' "$cfg" | jq -r '
+    (.statusline // {}) as $s
+    | if ($s|type) != "object" then "skip"
+      else ( ($s.colors // {}) as $c
+             | if ($c|type) != "object" then "bad" else "ok" end )
+      end
+  ' 2>/dev/null)"
+  case "$colors_ok" in
+    bad)
+      printf 'statusline.colors: not a JSON object; using the defaults: model cyan, dir yellow, git magenta, branch cyan, label dim\n'
+      ;;
+    ok)
+      for key in model dir git branch label; do
+        case "$key" in
+          model)  default=cyan ;;
+          dir)    default=yellow ;;
+          git)    default=magenta ;;
+          branch) default=cyan ;;
+          label)  default=dim ;;
+        esac
+        kind="$(printf '%s' "$cfg" | jq -r --arg k "$key" '
+          ((.statusline.colors // {})[$k]) as $v
+          | if $v == null or $v == false then "skip"
+            elif ($v|type) != "string" then "badtype"
+            elif ($v|length) == 0 then "skip"
+            elif ($v|length) >= 20 then "toolong"
+            else "ok" end
+        ' 2>/dev/null)"
+        case "$kind" in
+          skip) continue ;;
+          badtype|toolong)
+            printf 'statusline.colors.%s: not a usable colour name; using %s\n' "$key" "$default"
+            continue
+            ;;
+        esac
+        name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '(.statusline.colors // {})[$k] // empty' 2>/dev/null)"
+        [ -n "$(cp_sl_code "$name")" ] && continue
+        printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" "$name"
+      done
+      ;;
+  esac
 }
 
 # cp_sl_code <name> -> an SGR parameter for a configured colour name, or

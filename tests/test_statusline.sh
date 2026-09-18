@@ -329,4 +329,52 @@ assert_eq 'statusline.thresholds: warn must be a whole number below critical, bo
 assert_eq 'statusline.colors.model: unknown colour nonsense; rendering it plain' \
   "$(cp_sl_config_problems '{"statusline":{"colors":{"model":"nonsense"}}}')" 'an unknown colour is reported'
 
+# --- a shape nobody thought of fails loudly, not silently -------------------
+# Each of these used to crash the reporter's jq program partway through and
+# print nothing at all -- exactly the silence this function exists to end.
+# Built with printf into a plain variable (not a nested-quote command
+# substitution inline in the array literal), per this project's bash 3.2
+# word-splitting trap.
+long="$(printf 'x%.0s' $(seq 1 31))"
+longcfg="$(printf '{"statusline":{"colors":{"model":"%s"}}}' "$long")"
+SLP_CFG=(
+  '{"statusline":{"lines":["badge","model"]}}'
+  '{"statusline":"nonsense"}'
+  '{"statusline":{"colors":"nonsense"}}'
+  "$longcfg"
+)
+SLP_WANT=(
+  'statusline.lines'
+  'statusline: not a JSON object'
+  'statusline.colors: not a JSON object'
+  'statusline.colors.model'
+)
+SLP_DESC=(
+  'a flat lines array, not a list of segment lists, is reported'
+  'a statusline value that is not a JSON object is reported'
+  'a colors value that is not a JSON object is reported'
+  'a colour name of 20 characters or more is reported'
+)
+i=0
+while [ "$i" -lt "${#SLP_CFG[@]}" ]; do
+  out="$(cp_sl_config_problems "${SLP_CFG[$i]}")"
+  case "$out" in
+    *"${SLP_WANT[$i]}"*) assert_eq ok ok "${SLP_DESC[$i]}" ;;
+    *) assert_eq "${SLP_WANT[$i]}" "$out" "${SLP_DESC[$i]}" ;;
+  esac
+  i=$((i + 1))
+done
+
+# ... and one bad section can never suppress another section's report
+out="$(cp_sl_config_problems '{"statusline":{"bar":"nonsense","thresholds":{"warn":80,"critical":50}}}')"
+case "$out" in *'statusline.bar'*) assert_eq ok ok 'a bad bar type is reported' ;;
+                *) assert_eq 'statusline.bar' "$out" 'a bad bar type is reported' ;; esac
+case "$out" in *'statusline.thresholds'*) assert_eq ok ok 'a bad bar type does not suppress the thresholds report' ;;
+                *) assert_eq 'statusline.thresholds' "$out" 'a bad bar type does not suppress the thresholds report' ;; esac
+out="$(cp_sl_config_problems '{"statusline":{"thresholds":"high","bar":{"width":99}}}')"
+case "$out" in *'statusline.thresholds'*) assert_eq ok ok 'a bad thresholds type is reported' ;;
+                *) assert_eq 'statusline.thresholds' "$out" 'a bad thresholds type is reported' ;; esac
+case "$out" in *'statusline.bar.width'*) assert_eq ok ok 'a bad thresholds type does not suppress the bar.width report' ;;
+                *) assert_eq 'statusline.bar.width' "$out" 'a bad thresholds type does not suppress the bar.width report' ;; esac
+
 cp_t_summary
