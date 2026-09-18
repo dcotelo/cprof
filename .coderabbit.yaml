@@ -10,6 +10,15 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
+  # Submits an approval once its comments are resolved and the latest commit
+  # has been reviewed, so a clean pull request can merge without --admin.
+  # Unverified until the next release exercises it: whether a GitHub App's
+  # approval counts toward the one-approval rule is not documented either way
+  # (Copilot's explicitly does not), and dismiss_stale_reviews is on, so the
+  # release-bump commit pushed after review will dismiss an approval already
+  # given. If that leaves a pull request stuck, the choice is between turning
+  # off stale dismissal and accepting a second review cycle per release.
+  request_changes_workflow: true
   path_instructions:
     - path: "scripts/**"
       instructions: >-
