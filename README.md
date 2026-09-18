@@ -526,28 +526,55 @@ typo doesn't blank the statusline. Six segment names exist today: `badge`,
 a later release and is not a valid segment name yet — write it into `lines`
 now and it is dropped like any other name cprof doesn't recognise.
 
-Every other setting validates on its own and falls back to its own default
-rather than failing the whole block:
+Most other settings validate on their own and fall back to their own default
+rather than failing the whole block — the thresholds and the colours are the
+two exceptions, each for a different reason, both worth knowing before you
+rely on them:
 
 | Setting | Accepts | Falls back to |
 | --- | --- | --- |
 | `statusline.bar.filled` / `.empty` | exactly one character | `▓` / `░` |
 | `statusline.bar.width` | a whole number from 1 to 40 | `10` |
-| `statusline.thresholds.warn` / `.critical` | whole numbers from 1 to 100, `warn` below `critical` | `70` / `90` |
-| `statusline.colors.model` / `.dir` / `.git` / `.branch` / `.label` | a colour name, 1-19 characters, from [the palette](#colours) plus `dim` | `cyan` / `yellow` / `magenta` / `cyan` / `dim` |
+| `statusline.thresholds.warn` **and** `.critical` | both, together: whole numbers from 1 to 100 with `warn` below `critical` | `70` **and** `90` — setting only one, or an out-of-order pair, reverts both |
+| `statusline.colors.*` — wrong shape | a string, 1-19 characters | its own default (`cyan` for `model`/`branch`, `yellow` for `dir`, `magenta` for `git`, `dim` for `label`) |
+| `statusline.colors.*` — right shape, unknown name | any name from [the palette](#colours), plus `dim` | *(not a fallback — see below)* |
 
 Absent, or an explicit `null`, at any level, means "not configured" and is
 silent — that's exactly what the defaults above are for. A value that *is*
-configured but the resolver does not keep — the wrong type, out of range, an
-unknown colour name — falls back the same way, but is not silent about it:
-`cprof doctor` names the key and the value used instead, and exits non-zero,
-because the statusline itself cannot say so:
+configured but the resolver does not keep falls back to the named default,
+and it isn't silent about it: `cprof doctor` names the key and the value
+used instead, and exits non-zero, because the statusline itself cannot say
+so:
 
 ```console
 $ cprof doctor
 statusline.bar.width: must be a whole number from 1 to 40; using 10
 ...
 ```
+
+Two settings don't follow that simple rule, and are worth reading closely if
+something you configured doesn't look right:
+
+- **The thresholds resolve as a pair, not two independent fields.** Setting
+  `warn` without `critical` (or the reverse), or a pair out of order, reverts
+  *both* to `70` and `90` — the in-range one included — and `cprof doctor`
+  reports it as `statusline.thresholds: warn must be a whole number below
+  critical, both from 1 to 100; using 70 and 90`.
+- **A colour name that's the right shape but not in the palette is not
+  defaulted at all.** `chartreuse` (1-19 characters, a string) is *kept* as
+  the resolved colour; there is no such colour to paint with, so that
+  segment's text renders without colour instead of falling back to the
+  default. `cprof doctor` tells the two colour failures apart with two
+  different messages:
+
+  ```console
+  statusline.colors.model: not a usable colour name; using cyan
+  statusline.colors.model: unknown colour chartreuse; rendering it plain
+  ```
+
+  The first is `123` or `""` for `colors.model` — the wrong-shape row above.
+  The second is `"chartreuse"` — well-formed, just not a colour `cprof
+  color` knows.
 
 Narrowing the layout to the account, the directory, and a six-cell usage bar
 drawn with different glyphs:
