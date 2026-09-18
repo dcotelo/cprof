@@ -5,6 +5,14 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.15.0]
+
+### Added
+
+- a weekly usage bar, shown once the week is worth watching
+- weekly_threshold, and weekly as a known segment
+- render a reset days out as days and hours
+
 ## [0.14.0]
 ### Added
 - `cprof doctor` reports two install problems that used to be invisible. It
