@@ -203,6 +203,11 @@ cp_sl_config() {
 # unknown key at the top level of the config, outside the block, is a
 # question about the whole config schema and is deliberately not asked here.
 #
+# Every name a message carries -- a key, a segment, a colour -- is quoted and
+# escaped on the way out, which is why they read `unknown key "wdith"`. See
+# safe() below: this function reports on an untrusted file, so nothing out of
+# that file may write a line of its own here.
+#
 # `lines` is the one setting that cannot be judged that way, because the
 # resolver honours a layout partially: it keeps every inner array that has
 # at least one known segment and drops the rest. So it gets the same $clean
@@ -220,7 +225,7 @@ cp_sl_config() {
 # guard and its own line, naming the default the resolver actually falls
 # back to, and one bad section can never suppress another's report.
 cp_sl_config_problems() {
-  local cfg="${1:-}" key name default state colors_ok tab defaults
+  local cfg="${1:-}" key name default state colors_ok tab defaults esc_def
   local d_fill='' d_empty='' d_width='' d_warn='' d_crit=''
   local d_model='' d_dir='' d_git='' d_branch='' d_label=''
   tab="$(printf '\t')"
@@ -246,9 +251,43 @@ EOF
      || [ -z "$d_label" ]; then
     return 0
   fi
+  # Every name below that came out of the configuration file reaches the
+  # output through safe(), which hands it back quoted and escaped. Without
+  # that, a key name carrying a newline printed a second line that read
+  # exactly like a genuine finding: a configuration file forging the output of
+  # the one function whose job is honest reporting. Escaped, not filtered by a
+  # wider character predicate -- a predicate has to be widened again for the
+  # next character class, and safe() is total over every code point. The
+  # resolver's own `< 32` rule stays as it is: it guards the four resolved
+  # lines' delimiters, which is a different job from this one.
+  #
+  # tojson does the quoting, and the escaping of everything below 32 plus the
+  # quote, the backslash and DEL. What it leaves raw is every code point from
+  # 128 up, and a right-to-left override among those visually reorders the
+  # rest of the line it lands in, so those are escaped here too. Nothing
+  # legible is lost: the names these messages carry are keys, segment names
+  # and colour names, and every one cprof recognises is ASCII. A code point
+  # above the basic plane is written as the surrogate pair JSON spells it
+  # with.
+  #
+  # One copy, in a shell variable, because two jq programs below need it and
+  # the colour reports have to be built in bash.
+  # shellcheck disable=SC2016 # a jq program: $n, $v, $c and $u are jq variables
+  esc_def='
+    def hex4($n): [$n / 4096, $n / 256, $n / 16, $n]
+      | map(floor % 16 | if . < 10 then . + 48 else . + 87 end) | implode;
+    def uesc($c): if $c > 65535
+                  then (($c - 65536) as $u
+                        | "\\u" + hex4(55296 + (($u / 1024) | floor))
+                          + "\\u" + hex4(56320 + ($u % 1024)))
+                  else "\\u" + hex4($c) end;
+    def safe($v): [ ($v | tojson) | explode[]
+                    | if . < 128 then ([.] | implode) else uesc(.) end ]
+                  | join("");
+  '
   printf '%s' "$cfg" | jq -r \
     --arg fill "$d_fill" --arg empty "$d_empty" --argjson width "$d_width" \
-    --argjson warn "$d_warn" --argjson crit "$d_crit" '
+    --argjson warn "$d_warn" --argjson crit "$d_crit" "$esc_def"'
     def known: ["badge","model","dir","git","context","usage"];
     # The resolver rules, as cp_sl_config states them, so that a value is
     # judged by what the resolver did with it and not by a second reading.
@@ -299,11 +338,11 @@ EOF
         # pipe `.` is the list, and index() given a list looks for it as a
         # subsequence instead.
         ( $s | keys[] | select(. as $k | ["lines","bar","thresholds","colors"] | index($k) | not)
-          | "statusline: unknown key \(.) (known: lines bar thresholds colors)" ),
+          | "statusline: unknown key \(safe(.)) (known: lines bar thresholds colors)" ),
         ( obj($s.bar) | keys[] | select(. as $k | ["filled","empty","width"] | index($k) | not)
-          | "statusline.bar: unknown key \(.) (known: filled empty width)" ),
+          | "statusline.bar: unknown key \(safe(.)) (known: filled empty width)" ),
         ( obj($s.thresholds) | keys[] | select(. as $k | ["warn","critical"] | index($k) | not)
-          | "statusline.thresholds: unknown key \(.) (known: warn critical)" ),
+          | "statusline.thresholds: unknown key \(safe(.)) (known: warn critical)" ),
         # `badge` is accepted here and ignored, deliberately: the badge takes
         # its colour from `cprof color`, so that a profile colour lives in one
         # place. It is tolerated rather than offered, so it is in the list this
@@ -311,7 +350,7 @@ EOF
         ( obj($s.colors)
           | keys[] | select(. as $k
                      | ["model","dir","git","branch","label","badge"] | index($k) | not)
-          | "statusline.colors: unknown key \(.) (known: model dir git branch label)" ),
+          | "statusline.colors: unknown key \(safe(.)) (known: model dir git branch label)" ),
         ( if $s.lines == null then empty
           elif ($s.lines|type) != "array"
           then "statusline.lines: not a list of segment lists; using the default layout"
@@ -326,7 +365,7 @@ EOF
         ( if ($s.lines|type) == "array"
           then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
                  | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
-                 | "statusline.lines: unknown segment \(.) (known: badge model dir git context usage)" )
+                 | "statusline.lines: unknown segment \(safe(.)) (known: badge model dir git context usage)" )
           else empty end ),
         ( (ifnull($s.bar; {})) as $b
           | if ($b|type) != "object"
@@ -428,7 +467,15 @@ EOF
         [ "$colors_ok" = noplain ] && continue
         name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '.statusline.colors[$k]' 2>/dev/null)"
         [ -n "$(cp_sl_code "$name")" ] && continue
-        printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" "$name"
+        # The raw name is what cp_sl_code has to judge; the name the message
+        # carries goes through safe() like every other name a configuration
+        # file supplied. This is the one report whose value the resolver kept,
+        # so it is also the one where a DEL or a bidi override -- both of them
+        # past clean(), which only looks below 32 -- would otherwise reach the
+        # output as itself.
+        printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" \
+          "$(printf '%s' "$cfg" | jq -r --arg k "$key" "$esc_def"'
+               safe(.statusline.colors[$k])' 2>/dev/null)"
       done
       ;;
   esac

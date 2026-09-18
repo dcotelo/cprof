@@ -24,6 +24,8 @@ release workflow reads its notes from the section matching the tag.
   instead, and exits non-zero. It also names a key cprof does not recognise,
   at whichever level inside the block it was written, since the resolver
   ignores one in silence and a misspelling is the likeliest reason for it.
+  Every name it reports — a key, a segment, a colour — comes back quoted and
+  escaped, so a configuration file cannot forge a line of that output.
 
 ### Changed
 - `git` is consulted for the statusline's branch field as well as for

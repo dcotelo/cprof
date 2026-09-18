@@ -447,7 +447,7 @@ assert_eq '' "$(cp_sl_config_problems '{}')" 'no statusline block, nothing to re
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"█"}}}')" 'a valid block, nothing to report'
 assert_eq 'statusline.lines: not a list of segment lists; using the default layout' \
   "$(cp_sl_config_problems '{"statusline":{"lines":"nonsense"}}')" 'a malformed layout is reported'
-assert_eq 'statusline.lines: unknown segment nonsense (known: badge model dir git context usage)' \
+assert_eq 'statusline.lines: unknown segment "nonsense" (known: badge model dir git context usage)' \
   "$(cp_sl_config_problems '{"statusline":{"lines":[["badge","nonsense"]]}}')" 'an unknown segment is named'
 assert_eq 'statusline.bar.filled: must be exactly one character; using ▓' \
   "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"ab"}}}')" 'a bad glyph is reported with the fallback'
@@ -455,7 +455,7 @@ assert_eq 'statusline.bar.width: must be a whole number from 1 to 40; using 10' 
   "$(cp_sl_config_problems '{"statusline":{"bar":{"width":99}}}')" 'a bad width is reported with the fallback'
 assert_eq 'statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90' \
   "$(cp_sl_config_problems '{"statusline":{"thresholds":{"warn":80,"critical":50}}}')" 'inverted thresholds are reported'
-assert_eq 'statusline.colors.model: unknown colour nonsense; rendering it plain' \
+assert_eq 'statusline.colors.model: unknown colour "nonsense"; rendering it plain' \
   "$(cp_sl_config_problems '{"statusline":{"colors":{"model":"nonsense"}}}')" 'an unknown colour is reported'
 
 # --- a value nobody can see is named for what it is ------------------------
@@ -486,6 +486,56 @@ assert_eq '' "$(cp_sl_config_problems "$escname" \
                 | LC_ALL=C tr -dc '\001-\010\013-\037' | od -An -c)" \
   'no control byte out of a config reaches doctor output'
 
+# --- a name in a report cannot write the report ----------------------------
+# The assertion just above feeds a configured *value* and filters with a
+# character class that leaves out tab and newline by construction, so it could
+# not see the other half of this: the unknown-key and unknown-segment messages
+# interpolate a configured *name*, and a newline inside one wrote a second
+# output line indistinguishable from a genuine finding. Every name a
+# configuration file supplies is quoted and escaped now -- which is why the
+# assertions above read `unknown key "wdith"`.
+#
+# This filter keeps tab (011) and drops only newline (012), unlike the one
+# above: a tab arriving through a name was exactly the gap.
+sl_ctl() { LC_ALL=C tr -dc '\001-\011\013-\037' | od -An -c; }
+# One key, and it used to print two lines: its own report, and a forgery.
+forgekey="$(jq -cn '{statusline:{("x"+([10]|implode)+"statusline.bar.width: must be a whole number from 1 to 40; using 40"):1}}')"
+assert_eq 1 "$(cp_sl_config_problems "$forgekey" | wc -l | tr -d ' ')" \
+  'a newline in a key name cannot forge a second doctor line'
+assert_eq 'statusline: unknown key "x\nstatusline.bar.width: must be a whole number from 1 to 40; using 40" (known: lines bar thresholds colors)' \
+  "$(cp_sl_config_problems "$forgekey")" \
+  'the forged text comes back escaped inside the name it was written as'
+# All four levels that name a key, in one config: four reports, four lines.
+nlkeys="$(jq -cn '("a"+([10]|implode)+"b") as $k
+  | {statusline:{($k):1,bar:{($k):1},thresholds:{($k):1},colors:{($k):1}}}')"
+assert_eq 4 "$(cp_sl_config_problems "$nlkeys" | wc -l | tr -d ' ')" \
+  'a newline in a key name stays inside its own line at every level'
+ctlkeys="$(jq -cn '("a"+([1,7,9,27]|implode)+"b") as $k
+  | {statusline:{($k):1,bar:{($k):1},thresholds:{($k):1},colors:{($k):1}}}')"
+assert_eq '' "$(cp_sl_config_problems "$ctlkeys" | sl_ctl)" \
+  'no control byte out of a key name reaches doctor output'
+# A segment name is the same sink and the same fix.
+nlseg="$(jq -cn '{statusline:{lines:[["badge",("s"+([10]|implode)+"z")]]}}')"
+assert_eq 1 "$(cp_sl_config_problems "$nlseg" | wc -l | tr -d ' ')" \
+  'a newline in a segment name cannot forge a second doctor line'
+ctlseg="$(jq -cn '{statusline:{lines:[["badge",("s"+([1,7,9,27]|implode)+"z")]]}}')"
+assert_eq '' "$(cp_sl_config_problems "$ctlseg" | sl_ctl)" \
+  'no control byte out of a segment name reaches doctor output'
+# A colour name reaches the unknown-colour message only after clean() has
+# passed it, so a byte below 32 never gets that far -- the assertion above
+# pins that. What does get that far is everything clean() is not looking for,
+# because its `< 32` predicate guards the resolver's four lines and their
+# delimiters, which is a different job from this one: a DEL, and a
+# right-to-left override that reorders the rest of the line on screen.
+delcolour="$(jq -cn '{statusline:{colors:{model:("re"+([127]|implode)+"d")}}}')"
+assert_eq 'statusline.colors.model: unknown colour "re\u007fd"; rendering it plain' \
+  "$(cp_sl_config_problems "$delcolour")" \
+  'a DEL in a colour name is escaped, and the name still reads'
+rlocolour="$(jq -cn '{statusline:{colors:{model:("re"+([8238]|implode)+"d")}}}')"
+assert_eq 'statusline.colors.model: unknown colour "re\u202ed"; rendering it plain' \
+  "$(cp_sl_config_problems "$rlocolour")" \
+  'a right-to-left override in a colour name cannot reorder the line it is named in'
+
 # --- doctor cannot honestly name a fallback it could not read --------------
 # Every message above names the value the resolver substituted, read off the
 # resolver itself. Handed nothing, there is nothing honest to say: a message
@@ -507,23 +557,23 @@ assert_eq 'statusline.bar.width: must be a whole number from 1 to 40; using 10' 
 # agents` teaches a reader that doctor catches names it does not recognise,
 # and then it did not catch `wdith`. A misspelled key is the most common real
 # misconfiguration there is.
-assert_eq 'statusline: unknown key line (known: lines bar thresholds colors)' \
+assert_eq 'statusline: unknown key "line" (known: lines bar thresholds colors)' \
   "$(cp_sl_config_problems '{"statusline":{"line":[["badge"]]}}')" \
   'an unknown key directly under statusline is named'
-assert_eq 'statusline: unknown key threshold (known: lines bar thresholds colors)' \
+assert_eq 'statusline: unknown key "threshold" (known: lines bar thresholds colors)' \
   "$(cp_sl_config_problems '{"statusline":{"threshold":{"warn":50,"critical":80}}}')" \
   'a section name that is nearly right is named at the level it was written'
-assert_eq 'statusline.bar: unknown key wdith (known: filled empty width)' \
+assert_eq 'statusline.bar: unknown key "wdith" (known: filled empty width)' \
   "$(cp_sl_config_problems '{"statusline":{"bar":{"wdith":5}}}')" \
   'an unknown key under bar is named'
-assert_eq 'statusline.thresholds: unknown key warning (known: warn critical)' \
+assert_eq 'statusline.thresholds: unknown key "warning" (known: warn critical)' \
   "$(cp_sl_config_problems '{"statusline":{"thresholds":{"warn":50,"critical":80,"warning":9}}}')" \
   'an unknown key under thresholds is named'
-assert_eq 'statusline.colors: unknown key dirr (known: model dir git branch label)' \
+assert_eq 'statusline.colors: unknown key "dirr" (known: model dir git branch label)' \
   "$(cp_sl_config_problems '{"statusline":{"colors":{"dirr":"red"}}}')" \
   'an unknown key under colors is named'
-assert_eq 'statusline.bar: unknown key fill (known: filled empty width)
-statusline.bar: unknown key wdith (known: filled empty width)' \
+assert_eq 'statusline.bar: unknown key "fill" (known: filled empty width)
+statusline.bar: unknown key "wdith" (known: filled empty width)' \
   "$(cp_sl_config_problems '{"statusline":{"bar":{"fill":"x","wdith":5}}}')" \
   'two unknown keys at one level are both named, in a fixed order'
 # The badge takes its colour from `cprof color`, so that a profile colour
@@ -745,7 +795,11 @@ cp_t_sl_rule() {
   # statusline.lines is: the rule below is "reported exactly when the resolver
   # replaced a value", and an unknown key has no value to replace -- it is
   # reported precisely because nothing was configured under a key cprof reads.
-  keys="$(printf '%s\n' "$reported" | grep -v 'unknown key' \
+  # Anchored on where the phrase sits in a line, not on the bare phrase: a
+  # colour *named* `unknown key` reports as `statusline.colors.model: unknown
+  # colour ...`, and a whole-line text filter would drop that genuine
+  # per-key report out of the comparison and never check it again.
+  keys="$(printf '%s\n' "$reported" | grep -v '^statusline[^:]*: unknown key ' \
           | sed -n 's/^\([^:]*\):.*/\1/p' \
           | grep -v '^statusline\.lines$' | sort -u)"
   for k in $keys; do
@@ -845,7 +899,7 @@ assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[]}}')" 
 assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[[]]}}')" \
   'a lines array of empty lines is reported'
 assert_eq "$LINES_BAD
-statusline.lines: unknown segment nonsense (known: badge model dir git context usage)" \
+statusline.lines: unknown segment \"nonsense\" (known: badge model dir git context usage)" \
   "$(cp_sl_config_problems '{"statusline":{"lines":[["nonsense"]]}}')" \
   'a layout whose only segment is unknown is reported both ways'
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["badge"],"junk"]}}')" \
