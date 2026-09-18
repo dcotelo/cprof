@@ -486,6 +486,49 @@ assert_eq '' "$(cp_sl_config_problems "$escname" \
                 | LC_ALL=C tr -dc '\001-\010\013-\037' | od -An -c)" \
   'no control byte out of a config reaches doctor output'
 
+# --- a misspelled key inside the block is named --------------------------
+# Every one of these used to be silent, while a misspelled *segment* name was
+# reported -- and that asymmetry is the trap: being told `unknown segment
+# agents` teaches a reader that doctor catches names it does not recognise,
+# and then it did not catch `wdith`. A misspelled key is the most common real
+# misconfiguration there is.
+assert_eq 'statusline: unknown key line (known: lines bar thresholds colors)' \
+  "$(cp_sl_config_problems '{"statusline":{"line":[["badge"]]}}')" \
+  'an unknown key directly under statusline is named'
+assert_eq 'statusline: unknown key threshold (known: lines bar thresholds colors)' \
+  "$(cp_sl_config_problems '{"statusline":{"threshold":{"warn":50,"critical":80}}}')" \
+  'a section name that is nearly right is named at the level it was written'
+assert_eq 'statusline.bar: unknown key wdith (known: filled empty width)' \
+  "$(cp_sl_config_problems '{"statusline":{"bar":{"wdith":5}}}')" \
+  'an unknown key under bar is named'
+assert_eq 'statusline.thresholds: unknown key warning (known: warn critical)' \
+  "$(cp_sl_config_problems '{"statusline":{"thresholds":{"warn":50,"critical":80,"warning":9}}}')" \
+  'an unknown key under thresholds is named'
+assert_eq 'statusline.colors: unknown key dirr (known: model dir git branch label)' \
+  "$(cp_sl_config_problems '{"statusline":{"colors":{"dirr":"red"}}}')" \
+  'an unknown key under colors is named'
+assert_eq 'statusline.bar: unknown key fill (known: filled empty width)
+statusline.bar: unknown key wdith (known: filled empty width)' \
+  "$(cp_sl_config_problems '{"statusline":{"bar":{"fill":"x","wdith":5}}}')" \
+  'two unknown keys at one level are both named, in a fixed order'
+# The badge takes its colour from `cprof color`, so that a profile colour
+# lives in one place, and colors.badge is accepted and ignored on purpose
+# (pinned at the render further up). A general unknown-key check must not
+# start reporting it.
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"badge":"green"}}}')" \
+  'colors.badge stays silent: accepted and ignored, not an unknown key'
+# An unknown key at the top level of the config, outside the block, is a
+# question about the whole config schema and stays out of scope here.
+assert_eq '' "$(cp_sl_config_problems '{"statusLine":{"bar":{"width":5}}}')" \
+  'an unknown key outside the statusline block is not this reporter business'
+# A section that is not an object is reported as such, and read past rather
+# than mined for keys it cannot have.
+out="$(cp_sl_config_problems '{"statusline":{"bar":"x"}}')"
+case "$out" in *'unknown key'*) assert_eq 'no unknown-key line' "$out" \
+    'a section that is not an object yields no unknown-key line' ;;
+  *) assert_eq ok ok 'a section that is not an object yields no unknown-key line' ;;
+esac
+
 # --- a shape nobody thought of fails loudly, not silently -------------------
 # Each of these used to crash the reporter's jq program partway through and
 # print nothing at all -- exactly the silence this function exists to end.
@@ -683,7 +726,12 @@ cp_t_sl_rule() {
   local cfg="$1" fbs reported keys k f found verdict=''
   fbs="$(cp_t_sl_fallbacks "$cfg")"
   reported="$(cp_sl_config_problems "$cfg")"
-  keys="$(printf '%s\n' "$reported" | sed -n 's/^\([^:]*\):.*/\1/p' \
+  # `unknown key` lines are outside this comparison for the same reason
+  # statusline.lines is: the rule below is "reported exactly when the resolver
+  # replaced a value", and an unknown key has no value to replace -- it is
+  # reported precisely because nothing was configured under a key cprof reads.
+  keys="$(printf '%s\n' "$reported" | grep -v 'unknown key' \
+          | sed -n 's/^\([^:]*\):.*/\1/p' \
           | grep -v '^statusline\.lines$' | sort -u)"
   for k in $keys; do
     found=no

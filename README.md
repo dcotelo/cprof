@@ -558,6 +558,20 @@ statusline.thresholds: warn must be a whole number below critical, both from 1 t
 
 (one line per rejected setting — a config with only one problem prints only one line)
 
+A key cprof doesn't recognise is reported too, at whichever level inside the
+block it was written — `statusline`, `bar`, `thresholds` or `colors` — because
+the resolver ignores it in silence and a misspelling is the likeliest reason
+it is there:
+
+```console
+statusline.bar: unknown key wdith (known: filled empty width)
+```
+
+`colors.badge` is the one key accepted and ignored without a word: the badge
+takes its colour from `cprof color`, so a profile's colour lives in one place.
+A key outside the `statusline` block is not checked — that is a question about
+the whole config schema, not about this block.
+
 Two settings don't follow that simple rule, and are worth reading closely if
 something you configured doesn't look right:
 

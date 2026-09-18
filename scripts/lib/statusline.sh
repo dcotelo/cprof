@@ -192,6 +192,16 @@ cp_sl_config() {
 # message names comes from `cp_sl_config {}` for the same reason, so a
 # message cannot drift from the value the resolver actually substitutes.
 #
+# A key cprof does not read at all is the one report that is not about a
+# value: the resolver ignores it in silence, so there is no fallback to name,
+# and what a reader needs is the key and the level it was written at. Every
+# level inside the block gets that check -- the block, `bar`, `thresholds`
+# and `colors` -- because a misspelled key is the most common real
+# misconfiguration there is, and staying silent about it while naming an
+# unknown segment teaches a reader to trust a check that was not there. An
+# unknown key at the top level of the config, outside the block, is a
+# question about the whole config schema and is deliberately not asked here.
+#
 # `lines` is the one setting that cannot be judged that way, because the
 # resolver honours a layout partially: it keeps every inner array that has
 # at least one known segment and drops the rest. So it gets the same $clean
@@ -276,6 +286,32 @@ EOF
                | map(. != null and . != false and (type != "object")) | any )
           then "statusline: a section that is not a JSON object takes the whole block with it; using the default configuration"
           else empty end ),
+        # A key nobody recognises is a typo often enough that silence is a
+        # trap. Doctor already names an unknown segment, which teaches a
+        # reader that it catches names it does not know -- and then said
+        # nothing about `wdith`. So an unknown key is named too, at whichever
+        # level it was written: one expression per level, each carrying the
+        # keys known at that level. `keys` sorts, so two typos at one level
+        # come out in a fixed order. A section that is not an object is read
+        # past with obj(), because it is reported as a whole one line above
+        # and has no keys to mine. The key is bound to $k before the list is
+        # piped in, the way the unknown-segment check binds $seg: inside the
+        # pipe `.` is the list, and index() given a list looks for it as a
+        # subsequence instead.
+        ( $s | keys[] | select(. as $k | ["lines","bar","thresholds","colors"] | index($k) | not)
+          | "statusline: unknown key \(.) (known: lines bar thresholds colors)" ),
+        ( obj($s.bar) | keys[] | select(. as $k | ["filled","empty","width"] | index($k) | not)
+          | "statusline.bar: unknown key \(.) (known: filled empty width)" ),
+        ( obj($s.thresholds) | keys[] | select(. as $k | ["warn","critical"] | index($k) | not)
+          | "statusline.thresholds: unknown key \(.) (known: warn critical)" ),
+        # `badge` is accepted here and ignored, deliberately: the badge takes
+        # its colour from `cprof color`, so that a profile colour lives in one
+        # place. It is tolerated rather than offered, so it is in the list this
+        # check accepts but not in the list the message prints.
+        ( obj($s.colors)
+          | keys[] | select(. as $k
+                     | ["model","dir","git","branch","label","badge"] | index($k) | not)
+          | "statusline.colors: unknown key \(.) (known: model dir git branch label)" ),
         ( if $s.lines == null then empty
           elif ($s.lines|type) != "array"
           then "statusline.lines: not a list of segment lists; using the default layout"

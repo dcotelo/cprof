@@ -20,7 +20,9 @@ release workflow reads its notes from the section matching the tag.
   glyph, so nothing changes for anyone who does not ask. A setting that is
   rejected falls back silently, because a statusline re-runs every few seconds
   with its stderr discarded; `cprof doctor` names the key and the value used
-  instead, and exits non-zero.
+  instead, and exits non-zero. It also names a key cprof does not recognise,
+  at whichever level inside the block it was written, since the resolver
+  ignores one in silence and a misspelling is the likeliest reason for it.
 
 ### Changed
 - `git` is a new soft runtime dependency, consulted only for the statusline's
