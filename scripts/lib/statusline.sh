@@ -555,7 +555,8 @@ cp_sl_assemble() {
 # resolved configuration says.
 #
 # Each segment renders into its own shell variable -- CP_SL_badge,
-# CP_SL_model, CP_SL_dir, CP_SL_git, CP_SL_context, CP_SL_usage -- holding
+# CP_SL_model, CP_SL_dir, CP_SL_git, CP_SL_context, CP_SL_usage,
+# CP_SL_weekly -- holding
 # only that segment's own text, with no separator. cp_sl_assemble then walks
 # the configured layout and joins what is there. A segment the layout does
 # not name is never rendered at all, so an unconfigured git segment runs no
@@ -577,7 +578,8 @@ cp_cmd_statusline() {
   # layout's own segment names, which is why nothing in this function appears
   # to use them.
   local CP_SL_badge='' CP_SL_model='' CP_SL_dir='' CP_SL_git=''
-  local CP_SL_context='' CP_SL_usage=''
+  local CP_SL_context='' CP_SL_usage='' CP_SL_weekly=''
+  local th_weekly='' w_data='' w_pct='' w_at='' w_reset='' w_bar='' w_code=''
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -601,6 +603,7 @@ cp_cmd_statusline() {
   thresh_cfg="$(printf '%s' "$config" | sed -n '3p')"
   th_warn="$(printf '%s' "$thresh_cfg" | cut -f1)"
   th_crit="$(printf '%s' "$thresh_cfg" | cut -f2)"
+  th_weekly="$(printf '%s' "$thresh_cfg" | cut -f3)"
   colors_cfg="$(printf '%s' "$config" | sed -n '4p')"
   col_model="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f1)" 2>/dev/null)"
   col_dir="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f2)" 2>/dev/null)"
@@ -725,6 +728,40 @@ cp_cmd_statusline() {
       else
         CP_SL_usage="Usage $u_bar $u_pct%"
         [ -n "$u_reset" ] && CP_SL_usage="$CP_SL_usage (resets in $u_reset)"
+      fi
+    fi
+  fi
+
+  # The 7-day window, shown only once it is worth watching. Cache-only by
+  # nature: a Claude Code payload carries the 5-hour window and the context,
+  # never the week, so this reads the cache `cprof list` fills and never
+  # fetches -- the statusline must not add latency. Below the threshold the
+  # variable stays empty and cp_sl_assemble drops the line, which is how a
+  # quiet week costs no screen space.
+  if cp_sl_wants "$layout" weekly; then
+    w_data="$(cp_usage_read_cached_only "$name" 2>/dev/null)"
+    w_pct="$(cp_usage_pct "$w_data" seven_day 2>/dev/null)"
+    case "$w_pct" in ''|*[!0-9]*) w_pct='' ;; esac
+    case "$th_weekly" in ''|*[!0-9]*) th_weekly=50 ;; esac
+    if [ -n "$w_pct" ] && [ "$w_pct" -ge "$th_weekly" ]; then
+      w_at="$(cp_usage_resets_at "$w_data" seven_day 2>/dev/null)"
+      case "$w_at" in
+        '') ;;
+        *[!0-9]*) w_at="$(cp_time_epoch "$w_at")" || w_at='' ;;
+      esac
+      if [ -n "$w_at" ]; then
+        w_reset="$(cp_usage_reset_in "$w_at")" || w_reset=''
+      fi
+      w_bar="$(cp_usage_bar "$w_pct" "$b_fill" "$b_empty" "$b_width")"
+      w_code="$(cp_color_code "$(cp_usage_severity_colour "$w_pct" "$th_warn" "$th_crit" 2>/dev/null)" 2>/dev/null)"
+      if [ "$colour_on" -eq 1 ]; then
+        CP_SL_weekly="$(printf '%sUsage Weekly%s %s \033[%sm%s%%\033[0m' \
+          "$label_open" "$label_close" "$(cp_sl_bar "$w_bar" "$w_code" "$b_empty")" "$w_code" "$w_pct")"
+        [ -n "$w_reset" ] && CP_SL_weekly="$CP_SL_weekly$(printf ' %s(resets in %s)%s' "$label_open" "$w_reset" "$label_close")"
+      else
+        # shellcheck disable=SC2034 # read by cp_sl_assemble via eval
+        CP_SL_weekly="Usage Weekly $w_bar $w_pct%"
+        [ -n "$w_reset" ] && CP_SL_weekly="$CP_SL_weekly (resets in $w_reset)"
       fi
     fi
   fi

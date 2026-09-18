@@ -56,6 +56,7 @@ defaults behind the render above:
     "lines": [["badge", "model", "dir", "git"], ["context", "usage"]],
     "bar": {"filled": "▓", "empty": "░", "width": 10},
     "thresholds": {"warn": 70, "critical": 90},
+    "weekly_threshold": 50,
     "colors": {"model": "cyan", "dir": "yellow", "git": "magenta", "branch": "cyan", "label": "dim"}
   }
 }
@@ -81,6 +82,7 @@ rely on them:
 | `statusline.bar.filled` / `.empty` | exactly one character, and not an invisible one — a tab is one character and is rejected, with a message of its own | `▓` / `░` |
 | `statusline.bar.width` | a whole number from 1 to 40 | `10` |
 | `statusline.thresholds.warn` **and** `.critical` | both, together: whole numbers from 1 to 100 with `warn` below `critical` | `70` **and** `90` — setting only one, or an out-of-order pair, reverts both |
+| `statusline.weekly_threshold` | a whole number from 1 to 100 | `50` — its own setting, so a rejected `thresholds` pair does not change it, and a rejected value here does not change the pair |
 | `statusline.colors.*` — wrong shape | a string, 1-19 characters, with no invisible character in it — a trailing tab is rejected, with a message of its own | its own default (`cyan` for `model`/`branch`, `yellow` for `dir`, `magenta` for `git`, `dim` for `label`) |
 | `statusline.colors.*` — right shape, unknown name | any name from [the palette](#colours), plus `dim` | *(not a fallback — see below)* |
 
@@ -168,6 +170,35 @@ Usage ██···· 30% (resets in 2h 19m)
 | `git` | `git:(main*)`, the star meaning uncommitted changes | two git calls |
 | `context` | `Context ▓▓▓▓░░░░░░ 37%` | the payload |
 | `usage` | `Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)` | the payload, else the profile's cached usage |
+| `weekly` | `Usage Weekly ▓▓▓▓▓▓░░░░ 64% (resets in 3d 13h)`, and nothing at all below the threshold | the profile's cached usage — a payload never carries the week |
+
+### The weekly bar appears only when it matters
+
+`weekly` is the one segment whose presence depends on data. It renders when the
+7-day window is at or above `statusline.weekly_threshold` (default 50) and
+stays invisible below it, so the line costs nothing on a Monday and warns you
+before the weekly cap ends a working day:
+
+```console
+⚑ work │ [Opus 5 (1M context)] │ cprof git:(main*)
+Context ▓▓▓▓░░░░░░ 39% │ Usage ▓▓░░░░░░░░ 18% (resets in 4h 2m)
+Usage Weekly ▓▓▓▓▓▓░░░░ 64% (resets in 3d 13h)
+```
+
+Give it a line of its own and that line disappears with it — a configured line
+whose segments all render nothing is dropped rather than printed empty. Put it
+beside other segments and only the bar goes; the rest of the line stays.
+
+Two consequences of where the figure comes from. It is read from the same cache
+`cprof list` fills and never fetched, because a Claude Code payload carries the
+5-hour window and the context but never the week, and because the statusline
+must not add latency — so a profile whose usage has never been fetched shows no
+weekly bar. And a reset days away is rendered as `3d 13h` rather than `85h
+40m`, which is the same instant told legibly.
+
+It is its own threshold, not `thresholds.warn`. Those two are colour
+thresholds, validated as a pair; retuning them should not silently change when
+a line appears.
 
 ## Colours
 

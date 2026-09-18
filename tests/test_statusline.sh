@@ -148,6 +148,78 @@ out="$(printf '{"cwd":"%s","context_window":{"used_percentage":5}}' "$R" | NO_CO
 assert_eq "⚑ work │ repo git:($(gitq rev-parse --short HEAD))
 Context $(cp_usage_bar 5) 5% │ Usage $(cp_usage_bar 73) 73%" "$out" \
   'no model in the payload: that field is skipped, the rest still renders'
+# --- the weekly bar: shown only once the 7-day window is worth watching ----
+# The 7-day figure is cache-only by nature: a Claude Code payload carries the
+# 5-hour window and the context, never the week, so this segment reads the
+# same cache `cprof list` fills and never fetches.
+wk_at="$(date -u -r $(( $(date +%s) + 3*86400 + 13*3600 + 30*60 )) '+%Y-%m-%dT%H:%M:%SZ')"
+wk_cache() {   # $1 = seven_day utilization
+  printf '{"fetched_at":1,"five_hour":{"utilization":20},"seven_day":{"utilization":%s,"resets_at":"%s"},"limits":[]}\n' \
+    "$1" "$wk_at" > "$CP_T_TMP/state/usage/work.json"
+}
+wk_cfg() {     # $1 = the statusline block, or empty for the default
+  cp_t_write_config <<JSON
+{"default":"work",
+ "profiles":[{"name":"work","native":true,"color":"magenta"},
+             {"name":"personal","dir":"$CP_T_TMP/p"}],
+ "rules":[],"repos":{},
+ "statusline":{"lines":[["badge"],["weekly"]]${1:+,$1}}}
+JSON
+}
+
+wk_cfg ''; wk_cache 64
+assert_eq "⚑ work
+Usage Weekly $(cp_usage_bar 64) 64% (resets in 3d 13h)" \
+  "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'past the threshold: the weekly bar, with days and hours to reset'
+
+wk_cache 50
+assert_eq "⚑ work
+Usage Weekly $(cp_usage_bar 50) 50%" \
+  "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null | sed 's/ (resets in .*)$//')" \
+  'exactly at the threshold it is shown'
+
+wk_cache 49
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'below the threshold the segment renders nothing and its line vanishes'
+
+wk_cfg '"weekly_threshold":70'; wk_cache 64
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a higher configured threshold hides a percentage the default would show'
+wk_cache 70
+assert_eq '1' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null | grep -c 'Usage Weekly')" \
+  'and shows it once the window reaches that threshold'
+
+wk_cfg '"weekly_threshold":1'; wk_cache 0
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a zero percentage is below every valid threshold'
+
+# A cache with no seven_day at all, and no cache at all: nothing to show,
+# nothing to fail.
+wk_cfg ''
+printf '{"fetched_at":1,"five_hour":{"utilization":20},"limits":[]}\n' > "$CP_T_TMP/state/usage/work.json"
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'a cache without a 7-day window renders no weekly bar'
+rm -f "$CP_T_TMP/state/usage/work.json"
+assert_eq '⚑ work' "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null)" \
+  'no cache at all renders no weekly bar'
+assert_ok bash -c "NO_COLOR=1 '$CLI' statusline >/dev/null 2>&1"
+
+# The configured glyphs and width apply to this bar like any other.
+wk_cfg '"bar":{"filled":"#","empty":".","width":6}'; wk_cache 64
+assert_eq "Usage Weekly $(cp_usage_bar 64 '#' '.' 6) 64%" \
+  "$(NO_COLOR=1 "$CLI" statusline 2>/dev/null | sed -n '2p' | sed 's/ (resets in .*)$//')" \
+  'the weekly bar honours the configured glyphs and width'
+
+# Restore the fixture the rest of the file expects.
+rm -f "$CP_T_TMP/state/usage/work.json"
+cp_t_write_config <<JSON
+{"default":"work",
+ "profiles":[{"name":"work","native":true,"color":"magenta"},
+             {"name":"personal","dir":"$CP_T_TMP/p"}],
+ "rules":[],"repos":{}}
+JSON
+
 rm -f "$CP_T_TMP/state/usage/work.json"
 
 # --- and coloured ----------------------------------------------------------
