@@ -85,17 +85,31 @@ cp_sl_bar() {
 # every other rejected value does -- silently, to its default.
 #
 # Every default below is a shell variable, defined exactly once, passed into
-# the jq program with --argjson/--arg and reused to build the `||` fallback
-# for a config jq cannot even parse. That fallback derives its layout line
+# the jq program with --argjson/--arg and reused to build the fallback for a
+# config the jq program cannot resolve. That fallback derives its layout line
 # from the same JSON the jq program uses, rather than a second hand-typed
 # copy, so the two paths cannot silently drift apart.
+#
+# The four lines are all or nothing, which is why the jq output is captured
+# instead of being piped straight out. jq prints the results of a
+# comma-separated expression one at a time, so a program that errors partway
+# -- which is what indexing a wrongly typed section does -- has already
+# printed the lines before the error. Appending the fallback to those would
+# hand every positional consumer a line from the wrong row: with a `bar`
+# that is a string, the layout line lands where the bar configuration
+# should be and the statusline draws its usage bar out of the layout string.
+# So the resolved lines are used only when jq succeeded and produced exactly
+# four of them, which also rules out a configured value carrying a newline
+# of its own into the contract.
 cp_sl_config() {
-  local cfg="${1:-}"
+  local cfg="${1:-}" out rc=0 four=0 nl
   local d_layout='[["badge","model","dir","git"],["context","usage"]]'
   local d_fill='▓' d_empty='░' d_width=10 d_warn=70 d_crit=90
   local d_model=cyan d_dir=yellow d_git=magenta d_branch=cyan d_label=dim
+  nl='
+'
   [ -n "$cfg" ] || cfg='{}'
-  printf '%s' "$cfg" | jq -r \
+  out="$(printf '%s' "$cfg" | jq -r \
     --argjson deflayout "$d_layout" \
     --arg fill "$d_fill" --arg empty "$d_empty" \
     --argjson width "$d_width" --argjson warn "$d_warn" --argjson crit "$d_crit" \
@@ -126,10 +140,19 @@ cp_sl_config() {
       ($th | map(tostring) | join("\t")),
       ([pick($c.model; $model), pick($c.dir; $dir), pick($c.git; $git),
         pick($c.branch; $branch), pick($c.label; $label)] | join("\t"))
-  ' 2>/dev/null || printf '%s\n%s\t%s\t%s\n%s\t%s\n%s\t%s\t%s\t%s\t%s\n' \
-      "$(printf '%s' "$d_layout" | jq -r '[.[] | join(" ")] | join(";")')" \
-      "$d_fill" "$d_empty" "$d_width" "$d_warn" "$d_crit" \
-      "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
+  ' 2>/dev/null)" || rc=$?
+  case "$out" in
+    *"$nl"*"$nl"*"$nl"*"$nl"*) ;;
+    *"$nl"*"$nl"*"$nl"*) four=1 ;;
+  esac
+  if [ "$rc" -eq 0 ] && [ "$four" -eq 1 ]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  printf '%s\n%s\t%s\t%s\n%s\t%s\n%s\t%s\t%s\t%s\t%s\n' \
+    "$(printf '%s' "$d_layout" | jq -r '[.[] | join(" ")] | join(";")')" \
+    "$d_fill" "$d_empty" "$d_width" "$d_warn" "$d_crit" \
+    "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
 }
 
 # cp_sl_config_problems <cfg> -> one line per rejected statusline setting,
@@ -221,10 +244,33 @@ EOF
     # The whole rule, in one line: a configured value that the resolver did
     # not keep.
     def rejected($v; $resolved): $v != null and $v != $resolved;
+    # A section of any other type can be read past safely here, which is how
+    # this function reports one without crashing the way the resolver does.
+    def obj($x): if ($x|type) == "object" then $x else {} end;
+    # A value that the resolver keeps -- a glyph is one character, a colour
+    # name is one to nineteen -- and that carries a newline of its own into
+    # the four-line output breaks the contract those lines are read by, so
+    # the resolver discards the resolution whole.
+    def carriesnl($v; $lo; $hi): ($v|type) == "string" and ($v|length) >= $lo
+                                 and ($v|length) <= $hi and ($v|contains("\n"));
     (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then
         "statusline: not a JSON object; using the default configuration"
       else
+        # Two ways for the block to be discarded whole rather than setting
+        # by setting, both worth a line of their own: naming only the
+        # section at fault would leave a reader wondering why the layout
+        # they wrote correctly did not take either.
+        ( if ( [$s.bar, $s.thresholds, $s.colors]
+               | map(. != null and . != false and (type != "object")) | any )
+          then "statusline: a section that is not a JSON object takes the whole block with it; using the default configuration"
+          else empty end ),
+        ( if ( [ carriesnl(obj($s.bar).filled; 1; 1), carriesnl(obj($s.bar).empty; 1; 1),
+                 carriesnl(obj($s.colors).model; 1; 19), carriesnl(obj($s.colors).dir; 1; 19),
+                 carriesnl(obj($s.colors).git; 1; 19), carriesnl(obj($s.colors).branch; 1; 19),
+                 carriesnl(obj($s.colors).label; 1; 19) ] | any )
+          then "statusline: a configured value with a newline in it takes the whole block with it; using the default configuration"
+          else empty end ),
         ( if $s.lines == null then empty
           elif ($s.lines|type) != "array"
           then "statusline.lines: not a list of segment lists; using the default layout"
@@ -276,12 +322,29 @@ EOF
   # the palette does not know is rendered plain instead, which is the
   # second. `null` is nothing configured at either level, as everywhere
   # else; `false` is a rejected value, as everywhere else.
+  # `noplain` is `ok` with one report withheld: when the block was discarded
+  # whole (see above), every colour comes out of the defaults, so a name that
+  # is not in the palette is not being rendered plain and saying so would be
+  # the one per-key message that a discarded block makes false. The others
+  # all name a default, which is exactly what a discarded block uses.
   colors_ok="$(printf '%s' "$cfg" | jq -r '
     def ifnull($x; $d): if $x == null then $d else $x end;
+    def obj($x): if ($x|type) == "object" then $x else {} end;
+    def carriesnl($v; $lo; $hi): ($v|type) == "string" and ($v|length) >= $lo
+                                 and ($v|length) <= $hi and ($v|contains("\n"));
     (ifnull(.statusline; {})) as $s
     | if ($s|type) != "object" then "skip"
       else ( (ifnull($s.colors; {})) as $c
-             | if ($c|type) != "object" then "bad" else "ok" end )
+             | if ($c|type) != "object" then "bad"
+               elif ( [$s.bar, $s.thresholds, $s.colors]
+                      | map(. != null and . != false and (type != "object")) | any )
+               then "noplain"
+               elif ( [ carriesnl(obj($s.bar).filled; 1; 1), carriesnl(obj($s.bar).empty; 1; 1),
+                        carriesnl($c.model; 1; 19), carriesnl($c.dir; 1; 19),
+                        carriesnl($c.git; 1; 19), carriesnl($c.branch; 1; 19),
+                        carriesnl($c.label; 1; 19) ] | any )
+               then "noplain"
+               else "ok" end )
       end
   ' 2>/dev/null)"
   case "$colors_ok" in
@@ -289,7 +352,7 @@ EOF
       printf 'statusline.colors: not a JSON object; using the defaults: model %s, dir %s, git %s, branch %s, label %s\n' \
         "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
       ;;
-    ok)
+    ok|noplain)
       for key in model dir git branch label; do
         case "$key" in
           model)  default="$d_model" ;;
@@ -315,6 +378,7 @@ EOF
             ;;
           *) continue ;;
         esac
+        [ "$colors_ok" = noplain ] && continue
         name="$(printf '%s' "$cfg" | jq -r --arg k "$key" '.statusline.colors[$k]' 2>/dev/null)"
         [ -n "$(cp_sl_code "$name")" ] && continue
         printf 'statusline.colors.%s: unknown colour %s; rendering it plain\n' "$key" "$name"

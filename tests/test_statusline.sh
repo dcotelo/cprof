@@ -202,6 +202,88 @@ assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'an empty config argument yields the de
 assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config 'not json')" \
   'the fallback and the jq defaults cannot drift apart'
 
+# --- four lines, for every input whatsoever --------------------------------
+# Every consumer reads this output by line number, so the contract is not
+# "four lines when the config makes sense" but "four lines, always". It used
+# to be neither. jq prints the results of a comma-separated expression one at
+# a time, so a wrongly typed section printed the layout line, then errored on
+# the next expression, and the old `|| printf <defaults>` appended four more:
+# five lines for a bad `bar`, seven for bad `colors`, every consumer shifted
+# by one row, and the statusline drawing its usage bar out of the layout
+# string. Nothing caught it because every malformed input that had ever been
+# tested here failed before any output (`not json`, the empty string) or
+# succeeded whole. The resolver now uses its resolution only when jq exited
+# zero and produced exactly four lines, so the contract is one assertion per
+# shape and the shapes are enumerated rather than chosen.
+sllines() { cp_sl_config "$1" | awk 'END {print NR}'; }
+# A value the resolver keeps that carries a newline of its own would break
+# the contract from the inside, so it is covered here too.
+nlglyph="$(printf '{"statusline":{"bar":{"filled":"\\n"}}}')"
+nlcolour="$(printf '{"statusline":{"colors":{"model":"a\\nb"}}}')"
+SL_SHAPE=(
+  '{}'
+  'not json'
+  '{"statusline":"x"}'
+  '{"statusline":5}'
+  '{"statusline":[]}'
+  '{"statusline":true}'
+  '{"statusline":false}'
+  '{"statusline":null}'
+  '{"statusline":{}}'
+  '{"statusline":{"bar":"x"}}'
+  '{"statusline":{"bar":5}}'
+  '{"statusline":{"bar":[]}}'
+  '{"statusline":{"bar":true}}'
+  '{"statusline":{"bar":false}}'
+  '{"statusline":{"thresholds":"x"}}'
+  '{"statusline":{"thresholds":5}}'
+  '{"statusline":{"thresholds":[]}}'
+  '{"statusline":{"thresholds":true}}'
+  '{"statusline":{"thresholds":false}}'
+  '{"statusline":{"colors":"x"}}'
+  '{"statusline":{"colors":5}}'
+  '{"statusline":{"colors":[]}}'
+  '{"statusline":{"colors":true}}'
+  '{"statusline":{"colors":false}}'
+  '{"statusline":{"lines":"x"}}'
+  '{"statusline":{"lines":5}}'
+  '{"statusline":{"lines":{}}}'
+  '{"statusline":{"lines":true}}'
+  '{"statusline":{"lines":false}}'
+  '{"statusline":{"lines":[]}}'
+  '{"statusline":{"lines":["badge"]}}'
+  '{"statusline":{"lines":[["badge"],"junk"]}}'
+  '{"statusline":{"bar":{"filled":[]}}}'
+  '{"statusline":{"bar":{"empty":5}}}'
+  '{"statusline":{"bar":{"width":"10"}}}'
+  '{"statusline":{"thresholds":{"warn":"x"}}}'
+  '{"statusline":{"thresholds":{"critical":{}}}}'
+  '{"statusline":{"colors":{"model":5}}}'
+  '{"statusline":{"colors":{"label":true}}}'
+  '{"statusline":{"bar":"x","lines":[["context"]]}}'
+  '{"statusline":{"colors":"x","bar":{"width":20}}}'
+  "$nlglyph"
+  "$nlcolour"
+  '{"statusline":{"lines":[["context"]],"bar":{"filled":"█","empty":"·","width":20},"thresholds":{"warn":50,"critical":60},"colors":{"model":"red"}}}'
+)
+i=0
+while [ "$i" -lt "${#SL_SHAPE[@]}" ]; do
+  assert_eq '4' "$(sllines "${SL_SHAPE[$i]}")" "four lines for ${SL_SHAPE[$i]}"
+  i=$((i + 1))
+done
+
+# ... and all or nothing with it: the layout a config wrote is not allowed to
+# survive into a fallback that replaced everything around it, which is the
+# shape that used to hand the bar renderer the layout string.
+assert_eq "$DEFLAYOUT" "$(cfgline '{"statusline":{"bar":"x","lines":[["context"]]}}' 1)" \
+  'a section that is not a JSON object discards the whole block, layout included'
+assert_eq "▓	░	10" "$(cfgline '{"statusline":{"bar":"x","lines":[["context"]]}}' 2)" \
+  'and the bar line is the bar defaults, not the layout string'
+assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config '{"statusline":{"colors":"x","bar":{"width":20}}}')" \
+  'a discarded block resolves to exactly the defaults, every line of it'
+assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config "$nlglyph")" \
+  'a kept value with a newline in it discards the block rather than breaking the contract'
+
 # --- the configured layout drives the output -------------------------------
 mkcfg() { cp_t_write_config <<JSON
 {"default":"work","profiles":[{"name":"work","native":true,"color":"magenta"}],
@@ -312,6 +394,24 @@ mkcfg '{"lines":[["model","dir"]],"colors":{"label":"nonsense"}}'
 out="$(printf '%s' "$PAY2" | "$CLI" statusline --stdin 2>/dev/null)"
 assert_eq "$(printf '\033[36m[M]\033[0m │ \033[33mrepo\033[0m')" "$out" \
   'an unknown label colour leaves the separator with no escape sequence'
+
+# --- and the whole defect, end to end --------------------------------------
+# What the shifted lines actually did to a reader: with `bar` a string, the
+# bar renderer was handed the layout string and drew the usage bar out of
+# it, four cells wide in text. Pinned at the render, not just at the
+# resolver, and pinned by comparison with an unconfigured statusline rather
+# than by a hand-typed expectation, so it cannot drift.
+mkcfg 'null'
+slref="$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+mkcfg '{"bar":"x","lines":[["context"]]}'
+slout="$(printf '%s' "$PAY2" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+assert_eq "$slref" "$slout" \
+  'a block with a wrongly typed section renders exactly as an unconfigured one'
+case "$slout" in
+  *"$DEFLAYOUT"*) assert_eq 'no layout string in the render' "$slout" \
+    'the layout string never reaches the rendered bar' ;;
+  *) assert_eq ok ok 'the layout string never reaches the rendered bar' ;;
+esac
 
 # --- doctor says what the statusline will not say --------------------------
 assert_eq '' "$(cp_sl_config_problems '{}')" 'no statusline block, nothing to report'
@@ -441,22 +541,20 @@ assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"model":null}}}'
 # about its fields -- so a fallback counts as named when its own key, or any
 # key containing it, is named.
 #
-# Two things are deliberately outside this comparison, and are covered by
-# explicit assertions instead:
+# One thing is deliberately outside this comparison, and is covered by
+# explicit assertions instead: `statusline.lines`, because the resolver
+# honours a layout partially, keeping the usable inner arrays and dropping
+# the rest, so "the resolver fell back" is not a yes or no there.
 #
-#   * `statusline.lines`, because the resolver honours a layout partially,
-#     keeping the usable inner arrays and dropping the rest, so "the
-#     resolver fell back" is not a yes or no there.
-#   * a section that is present and neither null nor false nor an object,
-#     because that makes the resolver abandon its jq program partway
-#     through, so its output is no longer the four positional lines every
-#     caller reads and a field-by-field comparison against it would be
-#     meaningless. The section itself is still compared, which is what the
-#     reporter answers such a config with.
+# Reading the resolver's output by line number is safe here because it
+# guarantees exactly four lines for every input, which the contract table
+# further down pins for every malformed shape. Before that guarantee a
+# wrongly typed section left the resolver printing five or seven lines, and
+# a comparison against those would have been a comparison against rubble.
 
 # cp_t_sl_fallbacks <cfg> -> one line per key the resolver did not keep
 cp_t_sl_fallbacks() {
-  local cfg="$1" broken resolved tab key rv state
+  local cfg="$1" resolved tab key rv state
   local rfill='' rempty='' rwidth='' rwarn='' rcrit=''
   local rmodel='' rdir='' rgit='' rbranch='' rlabel=''
   tab="$(printf '\t')"
@@ -470,14 +568,6 @@ cp_t_sl_fallbacks() {
              | if $v == null or ($v|type) == "object" then empty
                else "statusline." + $sec end )
       end' 2>/dev/null
-  broken="$(printf '%s' "$cfg" | jq -r '
-    .statusline as $s
-    | if $s == null then false
-      elif ($s|type) != "object" then true
-      else ([$s.bar, $s.thresholds, $s.colors]
-            | map(. != null and . != false and (type != "object")) | any)
-      end' 2>/dev/null)"
-  [ "$broken" = false ] || return 0
   resolved="$(cp_sl_config "$cfg")"
   {
     read -r _
@@ -492,7 +582,8 @@ EOF
     --argjson warn "$rwarn" --argjson crit "$rcrit" '
     def fell($v; $r): $v != null and $v != $r;
     .statusline as $s
-    | ( if ($s.bar|type) == "object" then
+    | if ($s|type) != "object" then empty else
+      ( if ($s.bar|type) == "object" then
           ( if fell($s.bar.filled; $fill) then "statusline.bar.filled" else empty end ),
           ( if fell($s.bar.empty; $empty) then "statusline.bar.empty" else empty end ),
           ( if fell($s.bar.width; $width) then "statusline.bar.width" else empty end )
@@ -500,7 +591,8 @@ EOF
       ( if ($s.thresholds|type) == "object" then
           ( if fell($s.thresholds.warn; $warn) then "statusline.thresholds.warn" else empty end ),
           ( if fell($s.thresholds.critical; $crit) then "statusline.thresholds.critical" else empty end )
-        else empty end )' 2>/dev/null
+        else empty end )
+      end' 2>/dev/null
   # The colours have a second resolution stage that cp_sl_code owns: a name
   # pick() keeps but the palette does not know is rendered plain, which is a
   # fallback too, so the palette has the last word here as well.
@@ -597,6 +689,11 @@ SL_RULE_CFG=(
   "$cfg31"
   '{"statusline":{"lines":[["model"]],"bar":{"width":20},"thresholds":{"warn":50,"critical":60},"colors":{"git":"green"}}}'
   '{"statusline":{"bar":{"filled":""},"thresholds":{"warn":80,"critical":50},"colors":{"model":""}}}'
+  '{"statusline":{"bar":"x","thresholds":{"warn":50,"critical":60}}}'
+  '{"statusline":{"colors":"x","bar":{"width":20}}}'
+  '{"statusline":{"thresholds":[],"colors":{"model":"red"}}}'
+  "$nlglyph"
+  "$nlcolour"
 )
 i=0
 while [ "$i" -lt "${#SL_RULE_CFG[@]}" ]; do
