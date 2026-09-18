@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
 [![Bash](https://img.shields.io/badge/Bash-3.2%2B-1a1b27?style=for-the-badge&color=414868)](#development)
 [![Requires](https://img.shields.io/badge/Requires-jq-1a1b27?style=for-the-badge&color=7aa2f7)](#install)
-[![Tests](https://img.shields.io/badge/Tests-717%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
+[![Tests](https://img.shields.io/badge/Tests-1004%20assertions-1a1b27?style=for-the-badge&color=414868)](#development)
 
 </div>
 
@@ -67,7 +67,8 @@ claude() { eval "$(cprof env)"; command claude "$@"; }
 
 The Claude Code plugin is optional and adds the ambient parts — a warning when
 you walk into a directory expecting a different account, `/profile`, and the
-statusline badge:
+statusline — the account, the model, the directory and its branch, and bars
+for the context window and the usage window:
 
 ```bash
 claude plugin marketplace add dcotelo/cprof
@@ -423,9 +424,10 @@ Prefix matching respects path boundaries: a rule for `~/dev/work` never matches
 | `cprof rules` / `rule list` | Rules in the order resolution consults them |
 | `cprof rule rm <path>` | Drop a rule |
 | `cprof login <name>` | Sign a profile in, with keychain protection |
-| `cprof doctor` | Report unauthenticated profiles, expiring tokens, and any profile at 90% or more of its 5-hour usage window |
+| `cprof doctor` | Report unauthenticated profiles, expiring tokens, any profile at 90% or more of its 5-hour usage window, and a statusline setting that did not take |
 | `cprof usage [<name>]` | Usage bars (5h/7d) for every profile, or the full breakdown for one |
 | `cprof usage --render <name>` | Cache-only: a profile's 5h percentage, bar, and colour code, tab-separated, for the statusline; never calls the usage endpoint |
+| `cprof statusline [--stdin]` | The whole statusline: account, model, directory and branch, context and usage |
 | `cprof fallback <primary> [<name>\|--clear]` | Show, set, or clear a live-swap fallback for when `<primary>` runs out of usage headroom |
 | `cprof update` | Refresh the marketplace, then update this plugin |
 | `cprof remove <name> [--purge]` | Unregister; `--purge` deletes the directory |
@@ -458,28 +460,176 @@ to turn fetching off everywhere and show whatever is cached (or `-`) instead.
 
 ## Statusline
 
+<p align="center">
+  <img alt="cprof statusline --full rendering the account, model, directory and branch with context and usage bars; the same session after narrowing the layout to a six-cell usage bar; and cprof doctor reporting a rejected statusline.bar.width setting" src="docs/statusline-demo.gif" width="860">
+</p>
+
+```console
+⚑ work │ [Opus 5 (1M context)] │ cprof git:(main*)
+Context ▓▓▓▓░░░░░░ 37% │ Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)
+```
+
+That is `cprof statusline`'s default render, given Claude Code's statusline
+payload: the account, the model, the directory with its git branch, then a
+context bar and a 5-hour usage bar with the time until it resets. Everything
+here but the branch comes straight from the payload Claude Code already hands
+a statusline, so it costs no request and refreshes every tick. Only the branch
+costs anything extra — two `git` calls — and `git` is a soft dependency: no
+`git` on `PATH`, or a directory outside a work tree, skips that field and
+changes nothing else in the statusline (it does change which profile a
+repository pin resolves — see [Dependencies](#dependencies)).
+
+Without a payload there is only the account and, if something has fetched it
+before, the *active* profile's cached usage — fetching it for a different
+profile doesn't count — and there is no context bar:
+
+```console
+⚑ work
+Usage ▓▓▓▓░░░░░░ 42%
+```
+
+A segment with nothing to say — here, `model`, `dir`, `git` and `context` —
+prints nothing and leaves no stray separator; a line whose segments are all
+empty is dropped rather than printed empty. With nothing cached either,
+that drops the second line too, leaving only the account:
+
 ```console
 ⚑ work
 ```
 
-Given Claude Code's statusline payload (`--stdin`, see the wiring below),
-the badge also carries the session's context window and the 5-hour usage of
-the account it is running as, each bar coloured green/yellow/red by how close
-it is to the cap, with the time until the usage window resets:
+The statusline never warns and never fails. Claude Code re-runs it every few
+seconds with its error output discarded, so a warning printed there would be
+invisible and endless — which is why a rejected setting falls back quietly
+instead, and `cprof doctor` is where you find out about it.
 
-```console
-⚑ work │ Context ▓▓▓▓░░░░░░ 37% │ Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)
+### Configuration
+
+A `statusline` block in `~/.cprof.json` chooses which segments appear, in
+what order, and how they group into lines, along with the bar's glyphs and
+width, the severity thresholds, and the colours of the model, directory, git,
+branch and label text. This is what an absent block resolves to — the
+defaults behind the render above:
+
+```json
+{
+  "statusline": {
+    "lines": [["badge", "model", "dir", "git"], ["context", "usage"]],
+    "bar": {"filled": "▓", "empty": "░", "width": 10},
+    "thresholds": {"warn": 70, "critical": 90},
+    "colors": {"model": "cyan", "dir": "yellow", "git": "magenta", "branch": "cyan", "label": "dim"}
+  }
+}
 ```
 
-Both figures come straight from the payload, so they refresh every tick and
-cost no request. Without the payload, the usage bar falls back to what
-`cprof list`, `doctor`, or `usage` last fetched for the *active* profile —
-fetching it for a different profile doesn't count — and there is no context
-bar:
+`lines` is a list of lines, each a list of segment names; each inner list
+becomes one printed line, its segments joined by ` │ ` (`git` hugs the `dir`
+before it with a single space instead, so a directory and its branch read as
+one thing). An inner list with no segment cprof recognises is dropped, and if
+that empties the whole thing the default layout above is used instead — one
+typo doesn't blank the statusline. Six segment names exist today: `badge`,
+`model`, `dir`, `git`, `context`, `usage`. A seventh, `agents`, is planned for
+a later release and is not a valid segment name yet — write it into `lines`
+now and it is dropped like any other name cprof doesn't recognise.
+
+Most other settings validate on their own and fall back to their own default
+rather than failing the whole block — the thresholds and the colours are the
+two exceptions, each for a different reason, both worth knowing before you
+rely on them:
+
+| Setting | Accepts | Falls back to |
+| --- | --- | --- |
+| `statusline.bar.filled` / `.empty` | exactly one character, and not an invisible one — a tab is one character and is rejected, with a message of its own | `▓` / `░` |
+| `statusline.bar.width` | a whole number from 1 to 40 | `10` |
+| `statusline.thresholds.warn` **and** `.critical` | both, together: whole numbers from 1 to 100 with `warn` below `critical` | `70` **and** `90` — setting only one, or an out-of-order pair, reverts both |
+| `statusline.colors.*` — wrong shape | a string, 1-19 characters, with no invisible character in it — a trailing tab is rejected, with a message of its own | its own default (`cyan` for `model`/`branch`, `yellow` for `dir`, `magenta` for `git`, `dim` for `label`) |
+| `statusline.colors.*` — right shape, unknown name | any name from [the palette](#colours), plus `dim` | *(not a fallback — see below)* |
+
+Absent, or an explicit `null`, at any level, means "not configured" and is
+silent — that's exactly what the defaults above are for. A value that *is*
+configured but the resolver does not keep falls back to the named default,
+and it isn't silent about it: `cprof doctor` names the key and the value
+used instead, and exits non-zero, because the statusline itself cannot say
+so:
 
 ```console
-⚑ work │ Usage ▓▓▓▓░░░░░░ 42%
+$ cprof doctor
+statusline.bar.width: must be a whole number from 1 to 40; using 10
+statusline.thresholds: warn must be a whole number below critical, both from 1 to 100; using 70 and 90
 ```
+
+(one line per rejected setting — a config with only one problem prints only one line)
+
+A key cprof doesn't recognise is reported too, at whichever level inside the
+block it was written — `statusline`, `bar`, `thresholds` or `colors` — because
+the resolver ignores it in silence and a misspelling is the likeliest reason
+it is there:
+
+```console
+statusline.bar: unknown key "wdith" (known: filled empty width)
+```
+
+`colors.badge` is the one key accepted and ignored without a word: the badge
+takes its colour from `cprof color`, so a profile's colour lives in one place.
+A key outside the `statusline` block is not checked — that is a question about
+the whole config schema, not about this block.
+
+Two settings don't follow that simple rule, and are worth reading closely if
+something you configured doesn't look right:
+
+- **The thresholds resolve as a pair, not two independent fields.** Setting
+  `warn` without `critical` (or the reverse), or a pair out of order, reverts
+  *both* to `70` and `90` — the in-range one included — and `cprof doctor`
+  reports it as `statusline.thresholds: warn must be a whole number below
+  critical, both from 1 to 100; using 70 and 90`.
+- **A colour name that's the right shape but not in the palette is not
+  defaulted at all.** `chartreuse` (1-19 characters, a string) is *kept* as
+  the resolved colour; there is no such colour to paint with, so that
+  segment's text renders without colour instead of falling back to the
+  default. `cprof doctor` tells the three colour failures apart with three
+  different messages:
+
+  ```console
+  statusline.colors.model: not a usable colour name; using cyan
+  statusline.colors.model: must not contain an invisible character such as a tab; using cyan
+  statusline.colors.model: unknown colour "chartreuse"; rendering it plain
+  ```
+
+  The first is `123` or `""` for `colors.model` — the wrong-shape row above.
+  The second is a value the length rule alone would have kept, such as
+  `"red\t"`: "not a usable colour name" would leave someone who typed a
+  trailing tab none the wiser, so it says what is actually wrong. The third
+  is `"chartreuse"` — well-formed, just not a colour `cprof color` knows.
+
+  A name a report quotes is quoted for a reason: it is escaped, so that a
+  configuration file cannot write lines of `cprof doctor` output of its own.
+
+Narrowing the layout to the account, the directory, and a six-cell usage bar
+drawn with different glyphs:
+
+```json
+{
+  "statusline": {
+    "lines": [["badge", "dir"], ["usage"]],
+    "bar": {"filled": "█", "empty": "·", "width": 6}
+  }
+}
+```
+
+```console
+⚑ work │ cprof
+Usage ██···· 30% (resets in 2h 19m)
+```
+
+| Segment | Shows | Source |
+| --- | --- | --- |
+| `badge` | `⚑ work` in the profile's colour | the account this session runs as |
+| `model` | `[Opus 5 (1M context)]` | the payload |
+| `dir` | the last path segment, `~` for home | the payload |
+| `git` | `git:(main*)`, the star meaning uncommitted changes | two git calls |
+| `context` | `Context ▓▓▓▓░░░░░░ 37%` | the payload |
+| `usage` | `Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)` | the payload, else the profile's cached usage |
+
+### Colours
 
 The badge carries the profile's colour, and `--text` decides how far it
 reaches:
@@ -494,7 +644,10 @@ reaches:
   &nbsp;&nbsp;<code>cprof color --text off</code>
 </p>
 
-### Colours
+This is a different colour system from `statusline.colors` above: the badge's
+colour identifies the *profile*, everywhere cprof shows one, while
+`statusline.colors` only paints the model, directory, git, branch and label
+text beside it.
 
 Colours are hashed from the profile name,
 so two profiles differ without any configuration and keep the same colour on
@@ -541,7 +694,9 @@ real values are named ANSI colours, so they follow your terminal's theme
 instead of fighting it, and what you see is whatever your theme maps them to,
 not what this page shows. `NO_COLOR` is honoured, and
 `CPROF_COLOR=never|always|auto` overrides the terminal detection the same way
-it does for every other command.
+it does for every other command — except in the statusline, which decides on
+`NO_COLOR` alone: its stdout is always a pipe, so terminal detection would
+turn colour off in the one place it is always wanted.
 
 `cprof color --text off` narrows the colour to the flag alone.
 That toggle is statusline-only: `cprof list` and `cprof which` colour the
@@ -552,11 +707,11 @@ will normally reach them through the commands above rather than edit the file:
 a `color` field on a profile (`auto`, a base colour, or a `bright-` variant) and
 a top-level `colorText` boolean, defaulting to `true` when absent.
 
-`statusline/segment.sh` prints that one line, naming the account the session
-is running as. Every profile is named, native included — a
-switching tool whose indicator is invisible in the common case teaches you to
-ignore it. The line is omitted only when there is no profile to name: no config,
-or a config with no native profile and no `CLAUDE_CONFIG_DIR` set.
+Every entry point names the account before anything else. Every profile is
+named, native included — a switching tool whose indicator is invisible in the
+common case teaches you to ignore it. The statusline is omitted entirely only
+when there is no profile to name: no config, or a config with no native
+profile and no `CLAUDE_CONFIG_DIR` set.
 
 A session on a config directory that belongs to no profile reads `⚑ unknown` —
 worth seeing, since it means something else set `CLAUDE_CONFIG_DIR`. The stock
@@ -578,9 +733,8 @@ If that says `none`, write the script and point `settings.json` at it:
 ```bash
 cat > ~/.claude/statusline.sh <<'SL'
 #!/usr/bin/env bash
-# Profile badge, then whatever else you already run.
 seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
-[ -r "$seg" ] && bash "$seg" --stdin   # the only consumer, so the payload is its to read
+[ -r "$seg" ] && bash "$seg" --full
 exit 0   # a test as the last command would exit non-zero and fail the statusline
 SL
 chmod +x ~/.claude/statusline.sh
@@ -594,26 +748,32 @@ Your other settings survive — `jq` sets one key and the previous file is kept 
 not break the statusline; the segment finds its own CLI relative to itself, so no
 environment variable is required.
 
+Without `--full`, `statusline/segment.sh` behaves exactly as it always has —
+one line, the badge plus, with `--stdin`, the context and usage bars — and
+touches stdin only when told to. `--full` hands the whole render above to
+`cprof statusline`, reading stdin itself whenever it isn't a terminal.
+
 <details>
 <summary><strong>Already running a statusline?</strong> Compose them.</summary>
 
-Point `settings.json` at a wrapper that prints the badge first and hands the
-payload on. The segment deliberately does not read stdin, so Claude Code's JSON
-stays unconsumed for the next component — `</dev/null` keeps it that way even if
-that ever changes:
+Point `settings.json` at a wrapper that prints cprof's lines first and hands
+the payload on. `--full` reads stdin whenever one is there, the same way
+`--stdin` always has, so composing means capturing the payload once and
+piping a copy to each consumer:
 
 ```bash
 #!/usr/bin/env bash
 payload="$(cat)"
 seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
-[ -r "$seg" ] && printf '%s' "$payload" | bash "$seg" --stdin
+[ -r "$seg" ] && printf '%s' "$payload" | bash "$seg" --full
 printf '%s' "$payload" | your-existing-statusline
 ```
 
 </details>
 
-The segment never fails a statusline: a missing `jq`, an unreadable config, or a
-missing CLI prints nothing and exits 0.
+Neither entry point fails a statusline: a missing `jq`, an unreadable config,
+an absent `git`, or a missing CLI prints nothing, or as much of the line as
+it can, and exits 0.
 
 ## Fallback accounts
 
@@ -718,25 +878,38 @@ control character.
 ```bash
 bash tests/run.sh                    # run the suite
 shellcheck -x -P scripts -P tests scripts/cprof scripts/lib/*.sh hooks/*.sh \
-  statusline/*.sh tests/*.sh .github/scripts/*.sh docs/demo/*.sh docs/demo/bin/* install.sh
+  statusline/*.sh tests/*.sh .github/scripts/*.sh docs/demo/*.sh docs/demo/bin/* \
+  docs/demo/statusline-bin/* docs/demo/usage-bin/* install.sh
 claude plugin validate .             # check the manifests
 ```
 
 CI runs all three on every pull request: shellcheck and the manifest checks on
 Ubuntu, the suite on macOS, where `/bin/bash` is the 3.2 the code targets.
 
-Targets bash 3.2 (macOS system bash), with `jq` and (for usage data) `curl`
-as the only external dependencies.
+Targets bash 3.2 (macOS system bash). Its external dependencies are `jq`,
+`curl` (for usage data) and `git` (for repository-root resolution and the
+statusline's branch field); only `jq` is hard.
 
 ### Dependencies
 
 Runtime, dev, and CI dependencies are chosen and tracked like this:
 
-- **Runtime: `jq`, nothing else.** It reads and validates the JSON config;
-  bash 3.2 has no safe way to do that alone. Any `jq` 1.5 or newer works, so it
-  is not version-pinned. Homebrew installs it through the formula; the curl
-  installer refuses to run without it. Adding a runtime dependency is a design
-  decision, not a convenience — open an issue first.
+- **Runtime: `jq`, the only hard dependency.** It reads and validates the
+  JSON config; bash 3.2 has no safe way to do that alone. Any `jq` 1.5 or
+  newer works, so it is not version-pinned. Homebrew installs it through the
+  formula; the curl installer refuses to run without it. Adding a runtime
+  dependency is a design decision, not a convenience — open an issue first.
+- **Runtime: `git`, softly.** Consulted in two places. Repository-root
+  resolution has always asked it for the top level (`git rev-parse
+  --show-toplevel`), and a repository pin is keyed on that answer; the
+  statusline's branch field asks it for the branch and whether the tree is
+  clean. Neither is a hard requirement, and the installer does not check for
+  it, but the consequences differ. Without `git` the branch field is simply
+  skipped while every other field renders — and repository-root resolution
+  falls back to the working directory, so a pin made at a repository root
+  stops matching from a subdirectory of it and whatever rule or default
+  applies there resolves instead. Worth knowing before pinning a repository
+  on a machine with no `git`.
 - **Dev: `shellcheck`.** Pinned by version in `.github/workflows/ci.yml`
   (`SHELLCHECK_VERSION`), downloaded from its GitHub release rather than taken
   from the runner image, so local and CI findings agree. Bumped by hand,

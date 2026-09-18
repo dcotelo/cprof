@@ -5,6 +5,37 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.13.0]
+### Added
+- `cprof statusline` draws the whole statusline in one `cprof` invocation,
+  where the one-line segment spent three: the account,
+  the model, the directory with its git branch, and bars for the context
+  window and the 5-hour usage window with the time until it resets. Everything
+  but the branch comes from the payload Claude Code already hands a statusline,
+  so it costs no request and refreshes every tick. `statusline/segment.sh
+  --full` is the wiring for it; without that flag the segment prints the single
+  line it always has and leaves stdin alone.
+- A `statusline` block in the config chooses which segments appear, in what
+  order, and how they group into lines, along with the bar's glyphs and width,
+  the severity thresholds, and the colours of the labels and the fixed text.
+  Absent configuration renders every segment, and the bar keeps its existing
+  glyph, so nothing changes for anyone who does not ask. A setting that is
+  rejected falls back silently, because a statusline re-runs every few seconds
+  with its stderr discarded; `cprof doctor` names the key and the value used
+  instead, and exits non-zero. It also names a key cprof does not recognise,
+  at whichever level inside the block it was written, since the resolver
+  ignores one in silence and a misspelling is the likeliest reason for it.
+  Every name it reports — a key, a segment, a colour — comes back quoted and
+  escaped, so a configuration file cannot forge a line of that output.
+
+### Changed
+- `git` is consulted for the statusline's branch field as well as for
+  repository-root resolution, which has used it all along. It stays soft: no
+  `git` on `PATH`, or a directory in no working tree, skips that field and
+  changes nothing else about the statusline — but root resolution then falls
+  back to the working directory, so a pin made at a repository root stops
+  matching from a subdirectory of it and a different profile resolves there.
+  `jq` remains the only hard dependency.
 ## [0.12.0]
 ### Added
 - The statusline segment draws a context bar and a 5-hour usage bar with the

@@ -2,6 +2,10 @@
 # One statusline line naming the Claude account this session is running as,
 # with a context bar and a 5-hour usage bar when it is given the figures.
 #
+# `--full` prints the complete statusline instead: the account, the model, the
+# directory and its branch, then the context and usage bars. It reads stdin
+# for the same reason --stdin does.
+#
 # Reads stdin only when told to. Claude Code hands the statusline a JSON
 # payload on stdin, and consuming it would starve whatever component runs
 # next — so `--stdin` is the caller saying "this payload is yours": pass it
@@ -16,9 +20,11 @@
 set -u
 
 read_stdin=0
+full=0
 for arg in "$@"; do
   case "$arg" in
     --stdin) read_stdin=1 ;;
+    --full)  full=1; read_stdin=1 ;;
     *) exit 0 ;;
   esac
 done
@@ -26,6 +32,20 @@ done
 root="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)}"
 cli="$root/scripts/cprof"
 [ -x "$cli" ] || exit 0
+
+# --full hands the whole line off to the CLI, which renders every field cprof
+# has in one `cprof` invocation instead of the three this file would otherwise
+# spawn. Not one process: a tick still spends about fifty external commands.
+# Failures stay invisible: a statusline that exits non-zero is a statusline
+# Claude Code reports as broken.
+if [ "$full" -eq 1 ]; then
+  if [ ! -t 0 ]; then
+    "$cli" statusline --stdin 2>/dev/null
+  else
+    "$cli" statusline 2>/dev/null
+  fi
+  exit 0
+fi
 
 # CPROF_COLOR=never: `status` runs with the caller's environment, and a caller
 # who exports CPROF_COLOR=always (a value the CHANGELOG documents as

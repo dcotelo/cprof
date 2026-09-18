@@ -173,27 +173,36 @@ cp_time_epoch() {
   printf '%s\n' "$epoch"
 }
 
-# cp_usage_bar <pct> -> a 10-block bar, or nothing with return 1 when pct
-# isn't a plain integer.
+# cp_usage_bar <pct> [<filled> <empty> <width>] -> a bar, or nothing with
+# return 1 when pct is not a plain integer. The glyphs and the width are
+# parameters so that the tables and the statusline share one renderer and
+# cannot disagree about what a percentage looks like; the defaults are the
+# ones every existing caller relies on.
 cp_usage_bar() {
-  local pct="${1:-}" filled empty bar
+  local pct="${1:-}" fill="${2:-▓}" empty_g="${3:-░}" width="${4:-10}" filled empty bar
   case "$pct" in ''|*[!0-9]*) return 1 ;; esac
+  case "$width" in ''|*[!0-9]*) width=10 ;; esac
+  [ "$width" -ge 1 ] || width=10
   [ "$pct" -gt 100 ] && pct=100
-  filled=$(( (pct + 5) / 10 ))
-  [ "$filled" -gt 10 ] && filled=10
-  empty=$(( 10 - filled ))
+  filled=$(( (pct * width + 50) / 100 ))
+  [ "$filled" -gt "$width" ] && filled="$width"
+  empty=$(( width - filled ))
   bar=''
-  while [ "$filled" -gt 0 ]; do bar="${bar}▓"; filled=$(( filled - 1 )); done
-  while [ "$empty" -gt 0 ]; do bar="${bar}░"; empty=$(( empty - 1 )); done
+  while [ "$filled" -gt 0 ]; do bar="${bar}${fill}"; filled=$(( filled - 1 )); done
+  while [ "$empty" -gt 0 ]; do bar="${bar}${empty_g}"; empty=$(( empty - 1 )); done
   printf '%s\n' "$bar"
 }
 
-# cp_usage_severity_colour <pct> -> red|yellow|green, or nothing/return 1.
+# cp_usage_severity_colour <pct> [<warn> <critical>] -> red|yellow|green, or
+# nothing with return 1. The thresholds are parameters so the statusline can
+# offer them as configuration; the defaults are the documented 70 and 90.
 cp_usage_severity_colour() {
-  local pct="${1:-}"
+  local pct="${1:-}" warn="${2:-70}" crit="${3:-90}"
   case "$pct" in ''|*[!0-9]*) return 1 ;; esac
-  if   [ "$pct" -ge 90 ]; then printf 'red\n'
-  elif [ "$pct" -ge 70 ]; then printf 'yellow\n'
+  case "$warn" in ''|*[!0-9]*) warn=70 ;; esac
+  case "$crit" in ''|*[!0-9]*) crit=90 ;; esac
+  if   [ "$pct" -ge "$crit" ]; then printf 'red\n'
+  elif [ "$pct" -ge "$warn" ]; then printf 'yellow\n'
   else printf 'green\n'
   fi
 }
