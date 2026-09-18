@@ -227,7 +227,9 @@ assert_eq '██·······' "$(cp_usage_bar 25 '█' '·' 9)" 'the empty gl
 assert_eq '█████' "$(cp_usage_bar 100 '█' '·' 5)" 'a full bar at any width is all filled'
 assert_eq '·····' "$(cp_usage_bar 0 '█' '·' 5)" 'an empty bar at any width is all empty'
 assert_eq '██' "$(cp_usage_bar 100 '█' '·' 2)" 'a two-cell bar still rounds to full'
-assert_fail cp_usage_bar 'x' '█' '·' 5 'a non-numeric percentage still fails'
+# assert_fail forwards every argument to the command, so a description here
+# would be a sixth argument to cp_usage_bar, not a label. Same line, comment.
+assert_fail cp_usage_bar 'x' '█' '·' 5   # a non-numeric percentage still fails at a configured width
 
 # --- cp_usage_pct: floors a fractional utilization instead of passing it
 # through raw, which would fail cp_usage_bar/render's plain-integer check
@@ -252,7 +254,7 @@ assert_eq 'red'    "$(cp_usage_severity_colour 90)" 'critical is inclusive by de
 assert_eq 'yellow' "$(cp_usage_severity_colour 50 50 80)" 'a configured warn is inclusive'
 assert_eq 'green'  "$(cp_usage_severity_colour 49 50 80)" 'below a configured warn is green'
 assert_eq 'red'    "$(cp_usage_severity_colour 80 50 80)" 'a configured critical is inclusive'
-assert_fail cp_usage_severity_colour '' 50 80 'an empty percentage still fails'
+assert_fail cp_usage_severity_colour '' 50 80   # an empty percentage still fails against configured thresholds
 
 # --- cp_usage_render: plain (CP_COLOR_ON unset/0) --------------------------
 assert_eq '▓▓▓▓░░░░░░ 42%' "$(cp_usage_render 42)" 'render is plain text without CP_COLOR_ON'
@@ -429,9 +431,9 @@ now=1700000000
 assert_eq '2h 19m' "$(cp_usage_reset_in $((now + 2*3600 + 19*60 + 30)) "$now")" 'reset_in renders hours and minutes'
 assert_eq '37m' "$(cp_usage_reset_in $((now + 37*60 + 5)) "$now")" 'reset_in renders minutes alone under an hour'
 assert_eq '<1m' "$(cp_usage_reset_in $((now + 20)) "$now")" 'reset_in renders <1m under a minute'
-assert_fail cp_usage_reset_in "$now" "$now" 'reset_in fails on a reset that is due'
-assert_fail cp_usage_reset_in $((now - 5)) "$now" 'reset_in fails on a past reset'
-assert_fail cp_usage_reset_in 'soon' "$now" 'reset_in fails on a non-epoch'
+assert_fail cp_usage_reset_in "$now" "$now"            # a reset that is due
+assert_fail cp_usage_reset_in $((now - 5)) "$now"      # a reset already past
+assert_fail cp_usage_reset_in 'soon' "$now"            # a non-epoch reset
 
 # --- usage --render: a statusline payload on stdin supplies live figures ----
 # No cache for fresh at this point: everything below comes from the payload.
