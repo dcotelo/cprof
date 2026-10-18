@@ -12,7 +12,27 @@ SCRIPT="$(cd "$(dirname "$0")/.." && pwd -P)/.github/scripts/release-version.sh"
 
 # next <current-version>, commit subjects on stdin -> the version to release,
 # or nothing when no commit warrants one.
-next() { printf '%s\n' "$2" | bash "$SCRIPT" next "$1" 2>/dev/null; }
+#
+# A failing script is reported rather than swallowed. "No commit warrants a
+# release" is empty stdout with exit 0, and a crash is empty stdout too -- so
+# without this every `assert_eq ''` below would pass against a script that had
+# stopped working entirely. A nonzero exit becomes a value no assertion expects,
+# and the test that wanted '' fails loudly and says why.
+next() {
+  local out status
+  out="$(printf '%s\n' "$2" | bash "$SCRIPT" next "$1" 2>/dev/null)"
+  status=$?
+  [ "$status" -eq 0 ] || { printf 'exit=%s\n' "$status"; return 0; }
+  printf '%s\n' "$out"
+}
+
+# The guard above, exercised. `cp_next` rejects a current version it cannot
+# parse, and that must look different from "nothing to release" -- otherwise a
+# broken script passes every empty-output assertion in this file.
+assert_eq 'exit=1' "$(next 'not-a-version' 'feat: x')" \
+  'a current version that will not parse is a failure, not a quiet no-release'
+assert_eq '' "$(next 0.8.0 'docs: typo')" \
+  'and a genuine no-release is still empty with a zero exit'
 
 # --- what the commit types mean ----------------------------------------------
 assert_eq '0.9.0' "$(next 0.8.0 'feat: curl installer')"        'feat bumps the minor'
