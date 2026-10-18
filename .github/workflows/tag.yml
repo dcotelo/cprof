@@ -71,3 +71,9 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}
+    # Named one by one rather than `secrets: inherit`, so what crosses into the
+    # called workflow is visible here. Without this the tap notification read an
+    # empty token on every release and logged itself as unset -- silently, since
+    # that step is continue-on-error by design.
+    secrets:
+      TAP_DISPATCH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
