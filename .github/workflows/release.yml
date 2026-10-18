@@ -15,6 +15,15 @@ on:
         description: The cprof--v<version> tag to release.
         required: true
         type: string
+    secrets:
+      # A called workflow inherits no secrets: `secrets.X` is empty inside it
+      # unless the caller passes X explicitly. Declared here, passed in
+      # tag.yml. Optional, because the push-a-tag-by-hand entry point above
+      # resolves repository secrets directly and passes nothing -- and because
+      # the step that uses it already degrades to a log line when it is empty.
+      TAP_DISPATCH_TOKEN:
+        description: Fine-grained PAT with contents:write on dcotelo/homebrew-tap, and nothing else.
+        required: false
 
 permissions:
   contents: read
@@ -141,11 +150,19 @@ jobs:
           GH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
           TAG: ${{ needs.verify.outputs.tag }}
         run: |
+          # Both outcomes go to the run summary, not only to stderr. This step
+          # cannot fail the release, so a log line was the only evidence either
+          # way -- which is how a token that never crossed into this workflow
+          # went unnoticed for a month of releases.
           if [ -z "${GH_TOKEN:-}" ]; then
             echo 'TAP_DISPATCH_TOKEN is unset; the tap will pick this up on its daily run' >&2
+            printf -- '- tap: **not notified** (TAP_DISPATCH_TOKEN unset); the formula bumps on the tap next scheduled run\n' \
+              >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           gh api repos/dcotelo/homebrew-tap/dispatches \
             -f event_type=cprof-released \
             -F "client_payload[tag]=$TAG"
           printf 'dispatched cprof-released for %s\n' "$TAG"
+          printf -- '- tap: notified, cprof-released dispatched for %s\n' "$TAG" \
+            >> "$GITHUB_STEP_SUMMARY"
