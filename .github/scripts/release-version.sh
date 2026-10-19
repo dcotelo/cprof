@@ -23,8 +23,22 @@ usage() {
 # `: ` and a description are both required, because the near-misses are the
 # dangerous ones: `fix:broken` would otherwise publish a patch off a typo, and
 # `fix:` a release whose only note is an empty bullet.
+#
+# A `!` outranks the type, deliberately, and that is why the type list below is
+# checked first. `chore!: drop bash 3.2 support` and `refactor!: remove a public
+# function` are breaking changes that carry a type which is otherwise silent;
+# ranking the bang first is what lets them publish the major they deserve. The
+# same rule means `docs!:` publishes a major too, which is intended rather than
+# tolerated -- a subject is marked breaking by hand, and nothing else in the
+# subject line is a stronger signal of intent.
+#
+# But the bang may only escalate a type that would otherwise have been
+# understood. Checking it against the documented set keeps a typo from
+# publishing a major: `wip!:` and `FEAT!:` now release nothing, exactly as
+# `wip:` and `FEAT:` already did. Before this, every subject carrying a bang
+# ranked 3 without the type being read at all.
 cp_rank() {
-  local subject="$1" head type
+  local subject="$1" head type bang=''
   case "$subject" in
     *': '*) ;;
     *) printf '0\n'; return 0 ;;
@@ -33,9 +47,16 @@ cp_rank() {
   head="${subject%%:*}"
   case "$head" in
     *' '*) printf '0\n'; return 0 ;;   # prose, not a conventional subject
-    *'!')  printf '3\n'; return 0 ;;
+    *'!')  bang=1; head="${head%!}" ;;
   esac
   type="${head%%(*}"
+  # The set CONTRIBUTING documents. A type absent here releases nothing, with or
+  # without a bang.
+  case "$type" in
+    feat|fix|perf|docs|chore|test|ci|refactor) ;;
+    *) printf '0\n'; return 0 ;;
+  esac
+  [ -n "$bang" ] && { printf '3\n'; return 0; }
   case "$type" in
     feat)      printf '2\n' ;;
     fix|perf)  printf '1\n' ;;

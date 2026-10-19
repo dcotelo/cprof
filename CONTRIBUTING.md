@@ -64,8 +64,11 @@ and `date`, so what they show is the actual rendering, not canned text.
 - **[Conventional Commits](https://www.conventionalcommits.org) subjects.** These
   are load-bearing, not just tidy: CI reads them to decide whether merging your
   branch publishes a release, and at what version. `feat:` is a minor, `fix:`
-  and `perf:` are patches, a `!` before the colon is a major, and `docs:`,
-  `chore:`, `test:`, `ci:` and `refactor:` publish nothing. See
+  and `perf:` are patches, and `docs:`, `chore:`, `test:`, `ci:` and
+  `refactor:` publish nothing. A `!` before the colon majors **any of those
+  types**, including the silent ones -- that is how a breaking change with no
+  new feature gets the version it deserves. A type outside that list publishes
+  nothing whether or not it carries a `!`, so a typo cannot release. See
   [Releasing](#releasing).
 
 ## Error-handling convention
@@ -133,10 +136,11 @@ version bump and a `CHANGELOG.md` section to the branch:
 
 | Commit type on the branch | Effect |
 |---|---|
-| `feat!:`, or any type with `!` | major |
+| any type in this table with `!` (`feat!:`, `chore!:`, `docs!:`) | major |
 | `feat:` | minor |
 | `fix:`, `perf:` | patch |
 | `docs:`, `chore:`, `test:`, `ci:`, `refactor:` | no release |
+| anything else (`wip:`, `Feat:`, a typo) | no release, `!` or not |
 
 The bump lands in the pull request, so it is reviewable and editable before it
 ships — **rewrite the generated CHANGELOG entries into prose before merging**,

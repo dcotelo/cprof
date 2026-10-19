@@ -12,7 +12,27 @@ SCRIPT="$(cd "$(dirname "$0")/.." && pwd -P)/.github/scripts/release-version.sh"
 
 # next <current-version>, commit subjects on stdin -> the version to release,
 # or nothing when no commit warrants one.
-next() { printf '%s\n' "$2" | bash "$SCRIPT" next "$1" 2>/dev/null; }
+#
+# A failing script is reported rather than swallowed. "No commit warrants a
+# release" is empty stdout with exit 0, and a crash is empty stdout too -- so
+# without this every `assert_eq ''` below would pass against a script that had
+# stopped working entirely. A nonzero exit becomes a value no assertion expects,
+# and the test that wanted '' fails loudly and says why.
+next() {
+  local out status
+  out="$(printf '%s\n' "$2" | bash "$SCRIPT" next "$1" 2>/dev/null)"
+  status=$?
+  [ "$status" -eq 0 ] || { printf 'exit=%s\n' "$status"; return 0; }
+  printf '%s\n' "$out"
+}
+
+# The guard above, exercised. `cp_next` rejects a current version it cannot
+# parse, and that must look different from "nothing to release" -- otherwise a
+# broken script passes every empty-output assertion in this file.
+assert_eq 'exit=1' "$(next 'not-a-version' 'feat: x')" \
+  'a current version that will not parse is a failure, not a quiet no-release'
+assert_eq '' "$(next 0.8.0 'docs: typo')" \
+  'and a genuine no-release is still empty with a zero exit'
 
 # --- what the commit types mean ----------------------------------------------
 assert_eq '0.9.0' "$(next 0.8.0 'feat: curl installer')"        'feat bumps the minor'
@@ -37,6 +57,45 @@ assert_eq '' "$(next 0.8.0 'fix:broken')"  'a missing space after the colon is n
 assert_eq '' "$(next 0.8.0 'fix:')"        'a bare type and colon is not a release'
 assert_eq '' "$(next 0.8.0 'fix: ')"       'an empty description is not a release'
 assert_eq '' "$(next 0.8.0 'feat!:no space')" 'a bang does not excuse the missing space'
+
+# --- what a bang may and may not escalate ------------------------------------
+# A `!` outranks the type on purpose: the types below are silent on their own,
+# and marking one breaking is the only way to say that a change with no new
+# feature still breaks a user. Each of these would release nothing unmarked.
+assert_eq '1.0.0' "$(next 0.8.0 'chore!: drop bash 3.2 support')" \
+  'a breaking chore is a major'
+assert_eq '1.0.0' "$(next 0.8.0 'refactor!: remove a public function')" \
+  'a breaking refactor is a major'
+assert_eq '1.0.0' "$(next 0.8.0 'ci!: require a newer runner')" \
+  'a breaking ci change is a major'
+assert_eq '1.0.0' "$(next 0.8.0 'test!: drop the bash 3.2 matrix')" \
+  'a breaking test change is a major'
+assert_eq '1.0.0' "$(next 0.8.0 'perf!: change the cache layout')" \
+  'a breaking perf change majors rather than patches'
+
+# The bang escalates a type; it does not substitute for one. Without this, any
+# subject carrying a bang ranked major before its type was ever read, so a typo
+# in the type published a major release.
+assert_eq '' "$(next 0.8.0 'wip!: scratch work')" \
+  'a bang on an unknown type releases nothing'
+assert_eq '' "$(next 0.8.0 'nonsense!: not a type at all')" \
+  'a bang does not make an invented type releasable'
+assert_eq '' "$(next 0.8.0 'FEAT!: shouty')" \
+  'a bang does not make an uppercase type releasable'
+assert_eq '0.9.0' "$(next 0.8.0 'feat: x')" \
+  'control: the same type lowercase does release'
+assert_eq '' "$(next 0.8.0 'FEAT: shouty')" \
+  'control: an uppercase type releases nothing unmarked either'
+
+# Conventional Commits puts the bang after the scope. Before it, the type reads
+# as `fix!` and matches nothing, so the subject is silent. That is a malformed
+# subject rather than a supported spelling, and silence is the safe reading --
+# but it is silence on a subject its author marked breaking, so it is pinned
+# here to stay a decision rather than become an accident.
+assert_eq '' "$(next 0.8.0 'fix!(env): bang before the scope')" \
+  'a bang before the scope is not a recognised breaking marker'
+assert_eq '1.0.0' "$(next 0.8.0 'fix(env)!: bang after the scope')" \
+  'a bang after the scope is'
 
 # The workflow re-runs on every push to the branch, and its own bump commit is
 # on the branch by then. Counting it would ratchet the version on each push.
