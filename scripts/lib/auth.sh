@@ -230,6 +230,11 @@ cp_cmd_doctor() {
     status=1
   fi
   [ -n "$skew" ] && printf '%s\n' "$skew"
+  # Deliberately not wired into `status`: a newer release being out says nothing
+  # about whether this install works. It is also the only check here that can
+  # touch the network, so it is the only one that can be slow or silent for
+  # reasons outside the machine.
+  cp_update_problems
   # Claude Code reads settings from the config directory of the profile a
   # session here would use, so that is the file worth reporting on.
   sl_dir="$(cp_profile_dir "$cfg" "${active:-}")"
