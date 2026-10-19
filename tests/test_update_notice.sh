@@ -31,7 +31,10 @@ stub_fail() {
   printf '#!/usr/bin/env bash\nexit 7\n' > "$CP_CURL_BIN"
   chmod +x "$CP_CURL_BIN"
 }
-forget_cache() { rm -f "$CPROF_STATE_DIR/update.json"; }
+forget_cache() { rm -f "$CPROF_STATE_DIR"/update.json*; }
+# The suite runs on macOS in CI and on Linux locally for some contributors, and
+# the two stats disagree about how to ask for a mode.
+file_mode() { stat -f '%OLp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null; }
 cached() { [ -f "$CPROF_STATE_DIR/update.json" ] && echo 1 || echo 0; }
 drop_plugin() { rm -rf "${HOME:?}/.claude/plugins/cache/m"; }
 add_plugin() {
@@ -68,6 +71,12 @@ stub_release 'cprof--v0.15.0'
 assert_eq '0.15.0' "$(cp_update_latest)" 'a fetch yields the published version'
 assert_eq '1' "$(cached)" 'and caches it'
 assert_eq '0.15.0' "$(jq -r .latest "$CPROF_STATE_DIR/update.json")" 'the cache holds the version'
+# The write goes through a mktemp name, so nothing may be left behind beside
+# the cache -- a leaked temp file would also mean the atomic rename did not
+# happen.
+assert_eq '1' "$(find "$CPROF_STATE_DIR" -maxdepth 1 -name 'update.json*' | wc -l | tr -d ' ')" \
+  'the write leaves no temp file behind'
+assert_eq '600' "$(file_mode "$CPROF_STATE_DIR/update.json")" 'and the cache is not world-readable'
 
 # The cache is what makes this safe to call from doctor: once written, the
 # second call must not touch the network at all. A failing stub cannot show

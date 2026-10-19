@@ -175,16 +175,23 @@ cp_update_tag_version() {
 
 # cp_update_cache_write <version> — installs the version atomically, stamped
 # with the time it was learned. A failure leaves any existing cache alone.
+# The temp name comes from mktemp rather than the `$file.tmp.$$` the rest of
+# this project uses. A PID is guessable, so that spelling can be pre-empted by
+# a symlink planted before the write: jq would then write through it and chmod
+# would change the mode of whatever it pointed at. The `chmod 700` above does
+# not close that window, because the symlink can predate it. mktemp refuses to
+# reuse an existing name and creates the file 600 to begin with.
 cp_update_cache_write() {
-  local v="${1:-}" file
+  local v="${1:-}" file tmp
   cp_ver_parseable "$v" || return 1
   file="$(cp_update_cache_file)"
   mkdir -p "$CP_STATE_DIR" 2>/dev/null || return 1
   chmod 700 "$CP_STATE_DIR" 2>/dev/null
+  tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)" || return 1
   jq -n --arg v "$v" --argjson now "$(date +%s)" '{latest: $v, fetched_at: $now}' \
-    > "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
-  chmod 600 "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
-  mv "$file.tmp.$$" "$file" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
+    > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  chmod 600 "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$file" 2>/dev/null || { rm -f "$tmp"; return 1; }
 }
 
 # cp_update_fetch -> the published version on stdout, also cached. The short
