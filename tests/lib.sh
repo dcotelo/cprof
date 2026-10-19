@@ -28,6 +28,11 @@ cp_t_setup() {
   # The version-skew seam: a developer's shell must not decide which cprof the
   # fixtures compare against.
   unset CP_CPROF_BIN
+  # Same for the update check. Left on, it is harmless here -- CP_CURL_BIN
+  # points at a stub that does not exist until a test writes one, so the fetch
+  # fails and the check stays silent -- but a developer's CPROF_NO_UPDATE_CHECK
+  # would then hide a regression in the tests that do write one.
+  unset CPROF_NO_UPDATE_CHECK CP_UPDATE_URL
 }
 
 cp_t_teardown() {
