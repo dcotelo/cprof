@@ -186,7 +186,10 @@ cp_update_cache_write() {
   cp_ver_parseable "$v" || return 1
   file="$(cp_update_cache_file)"
   mkdir -p "$CP_STATE_DIR" 2>/dev/null || return 1
-  chmod 700 "$CP_STATE_DIR" 2>/dev/null
+  # A state dir we cannot lock down is one we decline to write into: the same
+  # directory holds the config that decides which account a directory
+  # resolves to, and cp_cmd_login (auth.sh) already refuses on this condition.
+  chmod 700 "$CP_STATE_DIR" 2>/dev/null || return 1
   tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)" || return 1
   jq -n --arg v "$v" --argjson now "$(date +%s)" '{latest: $v, fetched_at: $now}' \
     > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }

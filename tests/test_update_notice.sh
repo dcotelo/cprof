@@ -202,4 +202,67 @@ forget_cache
 cp_update_problems >/dev/null
 assert_eq '0' "$?" 'a failed check returns success too'
 
+# ------------------------------------ a state dir that cannot be secured
+# chmod failing means the directory is not ours to lock down. The same
+# directory holds the config that decides which account a directory resolves
+# to, so the write is refused rather than left in an unsecured dir. Only a
+# stub can arrange this: a real chmod only fails for a dir another user owns.
+mkdir -p "$CP_T_TMP/badchmod"
+cat > "$CP_T_TMP/badchmod/chmod" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in 700) exit 1 ;; esac
+exec /bin/chmod "$@"
+STUB
+chmod +x "$CP_T_TMP/badchmod/chmod"
+forget_cache
+PATH="$CP_T_TMP/badchmod:$PATH" cp_update_cache_write 0.15.0
+assert_eq '1' "$?" 'a state dir that cannot be secured refuses the write'
+assert_eq '0' "$(cached)" 'and leaves nothing behind in it'
+# The same call with a working chmod succeeds, so the assertion above is about
+# the failure and not about some other refusal.
+cp_update_cache_write 0.15.0
+assert_eq '0' "$?" 'the same write succeeds with a chmod that works'
+forget_cache
+
+# --------------------------------------------- through the doctor command
+# Everything above calls the functions directly, which cannot see whether
+# doctor still calls them: deleting the call from cp_cmd_doctor would leave
+# all of it passing. This runs the real command.
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)/scripts/cprof"
+cp_t_write_config <<JSON
+{"default":"work","profiles":[{"name":"work","native":true}],"rules":[],"repos":{}}
+JSON
+cat > "$CP_CLAUDE_BIN" <<'STUB'
+#!/usr/bin/env bash
+printf '{"loggedIn":true,"account":{"email":"you@example.com"}}\n'
+STUB
+chmod +x "$CP_CLAUDE_BIN"
+# Both halves at the same version, so the skew check stays quiet and the only
+# version line doctor can print is this one.
+drop_plugin
+add_plugin 0.9.0
+printf '#!/usr/bin/env bash\necho "cprof 0.9.0"\n' > "$CP_T_TMP/bin/samecprof"
+chmod +x "$CP_T_TMP/bin/samecprof"
+SAME_CLI="$CP_T_TMP/bin/samecprof"
+forget_cache
+stub_release 'cprof--v9.9.9'
+out="$(CP_CPROF_BIN="$SAME_CLI" "$CLI" doctor 2>&1)"; rc=$?
+case "$out" in
+  *'cprof 0.9.0 is installed; 9.9.9 is available'*) r=yes ;;
+  *) r="no: $out" ;;
+esac
+assert_eq 'yes' "$r" 'doctor prints the update notice'
+assert_eq '0' "$rc" 'and still exits zero, because an update is not a defect'
+
+# The opt-out reaches the command too, and the same run says nothing else
+# about a version -- so the line above came from the update check.
+forget_cache
+out="$(CP_CPROF_BIN="$SAME_CLI" CPROF_NO_UPDATE_CHECK=1 "$CLI" doctor 2>&1)"; rc=$?
+case "$out" in
+  *'is available'*) r="still reported: $out" ;;
+  *) r=quiet ;;
+esac
+assert_eq 'quiet' "$r" 'CPROF_NO_UPDATE_CHECK silences doctor'
+assert_eq '0' "$rc" 'and leaves the rest of doctor passing'
+
 cp_t_summary
