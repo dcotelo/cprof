@@ -236,7 +236,7 @@ cp_fallback_swap_out() {
 
 cp_fallback_swap_out_locked() {
   local cfg="$1" name="$2" dir="$3"
-  local fallback cached pct marker file service before blob kind backup resets_at
+  local fallback cached pct marker file service before blob kind backup resets_at tmp
 
   fallback="$(cp_profile_field "$cfg" "$name" fallback)"
   [ -n "$fallback" ] || return 0
@@ -332,15 +332,21 @@ cp_fallback_swap_out_locked() {
   # no record of it. If the marker cannot even be staged, nothing is swapped.
   mkdir -p "$(dirname "$marker")" 2>/dev/null
   chmod 700 "$(dirname "$marker")" 2>/dev/null
-  if ! { jq -n --arg fb "$fallback" --arg backup "$backup" --arg kind "$kind" \
+  # The staging name comes from mktemp: a $$-derived one is guessable, so a
+  # symlink planted before the write would catch the redirect and take the
+  # chmod with it. The committed name (<marker>.pending) stays fixed on
+  # purpose, per the note above -- only the staging step is randomised.
+  tmp="$(mktemp "$marker.XXXXXX" 2>/dev/null)"
+  if ! { [ -n "$tmp" ] \
+      && jq -n --arg fb "$fallback" --arg backup "$backup" --arg kind "$kind" \
       --argjson swapped_at "$(date +%s)" \
       --arg resets_at "$resets_at" \
       '{fallback: $fb, backup: $backup, backup_kind: $kind,
         swapped_at: $swapped_at, resets_at: $resets_at}' \
-      > "$marker.tmp.$$" 2>/dev/null \
-      && chmod 600 "$marker.tmp.$$" 2>/dev/null \
-      && mv "$marker.tmp.$$" "$marker.pending" 2>/dev/null; }; then
-    rm -f "$marker.tmp.$$"
+      > "$tmp" 2>/dev/null \
+      && chmod 600 "$tmp" 2>/dev/null \
+      && mv "$tmp" "$marker.pending" 2>/dev/null; }; then
+    [ -n "$tmp" ] && rm -f "$tmp"
     cp_warn "fallback: cannot write a swap marker under $(cp_path_display "$(dirname "$marker")") for $name; not swapping"
     unset blob before
     return 0
@@ -353,10 +359,15 @@ cp_fallback_swap_out_locked() {
       unset blob
       return 0
     fi
-    if ! { ( umask 077; printf '%s' "$blob" > "$file.tmp.$$" ) 2>/dev/null \
-        && chmod 600 "$file.tmp.$$" 2>/dev/null \
-        && mv "$file.tmp.$$" "$file" 2>/dev/null; }; then
-      rm -f "$file.tmp.$$" "$backup" "$marker.pending"
+    # A credential file is the highest-value target a predictable temp name
+    # hands over, so this one is randomised too; see cp_config_write.
+    tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)"
+    if ! { [ -n "$tmp" ] \
+        && ( umask 077; printf '%s' "$blob" > "$tmp" ) 2>/dev/null \
+        && chmod 600 "$tmp" 2>/dev/null \
+        && mv "$tmp" "$file" 2>/dev/null; }; then
+      [ -n "$tmp" ] && rm -f "$tmp"
+      rm -f "$backup" "$marker.pending"
       cp_warn "fallback: could not write $fallback's credentials for $name"
       unset blob
       return 0
@@ -496,7 +507,7 @@ cp_fallback_swap_back_locked() {
   local cfg="$1" name="$2"
   local marker resets_at resets_epoch now_epoch
   local fallback backup kind file service
-  local backup_blob primary_token fresh pct
+  local backup_blob primary_token fresh pct tmp
 
   marker="$(cp_fallback_marker_file "$name")"
   cp_fallback_recover_pending "$name"
@@ -575,10 +586,12 @@ cp_fallback_swap_back_locked() {
       cp_warn "fallback: marker for $name records a backup path without a .bak suffix ($(cp_path_display "$backup")); not touching anything — inspect and remove $(cp_path_display "$marker") by hand"
       return 0
     fi
-    if ! { ( umask 077; printf '%s' "$backup_blob" > "$file.tmp.$$" ) 2>/dev/null \
-        && chmod 600 "$file.tmp.$$" 2>/dev/null \
-        && mv "$file.tmp.$$" "$file" 2>/dev/null; }; then
-      rm -f "$file.tmp.$$"
+    tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)"
+    if ! { [ -n "$tmp" ] \
+        && ( umask 077; printf '%s' "$backup_blob" > "$tmp" ) 2>/dev/null \
+        && chmod 600 "$tmp" 2>/dev/null \
+        && mv "$tmp" "$file" 2>/dev/null; }; then
+      [ -n "$tmp" ] && rm -f "$tmp"
       unset backup_blob
       cp_warn "fallback: restore failed for $name; leaving $fallback active"
       return 0
@@ -612,9 +625,11 @@ cp_fallback_swap_back_locked() {
 
   # Record that the restore itself is done before touching backup or marker,
   # so a cleanup failure below can be retried without another restore.
-  if ! { ( umask 077; jq '. + {restored: true}' "$marker" > "$marker.tmp.$$" ) 2>/dev/null \
-      && mv "$marker.tmp.$$" "$marker" 2>/dev/null; }; then
-    rm -f "$marker.tmp.$$"
+  tmp="$(mktemp "$marker.XXXXXX" 2>/dev/null)"
+  if ! { [ -n "$tmp" ] \
+      && ( umask 077; jq '. + {restored: true}' "$marker" > "$tmp" ) 2>/dev/null \
+      && mv "$tmp" "$marker" 2>/dev/null; }; then
+    [ -n "$tmp" ] && rm -f "$tmp"
     cp_warn "fallback: $name's credentials are restored but its marker could not be updated; keeping it so the next call can finish"
     return 0
   fi

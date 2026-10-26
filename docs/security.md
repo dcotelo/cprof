@@ -40,5 +40,14 @@ however it got into the config — can address a path outside that directory.
 `add` also refuses a name that is `.`, `..`, contains `/`, or contains a
 control character.
 
+Every write to that state — the config, the usage cache, a fallback marker, and
+the credential files a fallback swap overwrites — goes through a temporary file
+beside its target and an atomic `mv`, so an interrupted write leaves the
+previous content rather than a truncated one. The temporary name comes from
+`mktemp`, not from the process id: a name derived from a pid is guessable, and a
+guessable name can be pre-empted by a symlink planted before the write, which
+would redirect both the write and the `chmod` that follows it to whatever the
+symlink points at.
+
 For the threat model, the trust boundaries and the findings of the last audit,
 see [the security assessment](security-assessment.md).
