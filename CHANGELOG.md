@@ -5,11 +5,11 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
-## [0.15.1]
+## [0.16.0]
 
-### Fixed
+### Added
 
-- name every staged temp file with mktemp, not the pid
+- report when a newer cprof release is available
 
 ## [0.15.0]
 

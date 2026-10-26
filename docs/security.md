@@ -25,6 +25,15 @@ plain `-`) is shown instead. A response is cached only when it has the shape
 the renderers read — anything else is treated as a failed fetch, and the
 previous cache stands.
 
+`cprof doctor` also asks GitHub for the latest published release tag, at most
+once every 24 hours, cached in `~/.cprof/update.json`. No credential is sent --
+a release tag is public -- and the URL is required to be `https://`, so a
+misconfigured or redirected endpoint cannot become a plaintext request. The
+answer is advisory: no network, no cache, a malformed response or a timeout all
+mean the check says nothing and `doctor` is unaffected. Set
+`CPROF_NO_UPDATE_CHECK=1` to turn it off. No other command makes this request,
+and the statusline never does.
+
 Per-profile state under `~/.cprof/` (the usage cache, a fallback marker) is
 filed under a filename-safe key derived from the profile name, so no name —
 however it got into the config — can address a path outside that directory.
