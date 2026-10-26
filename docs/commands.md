@@ -17,7 +17,7 @@
 | `cprof rules` / `rule list` | Rules in the order resolution consults them |
 | `cprof rule rm <path>` | Drop a rule |
 | `cprof login <name>` | Sign a profile in, with keychain protection |
-| `cprof doctor` | Report unauthenticated profiles, expiring tokens, any profile at 90% or more of its 5-hour usage window, and a statusline setting that did not take |
+| `cprof doctor` | Report unauthenticated profiles, expiring tokens, any profile at 90% or more of its 5-hour usage window, a statusline setting that did not take, and a newer cprof release if one is out |
 | `cprof usage [<name>]` | Usage bars (5h/7d) for every profile, or the full breakdown for one |
 | `cprof usage --render <name>` | Cache-only: a profile's 5h percentage, bar, and colour code, tab-separated, for the statusline; never calls the usage endpoint |
 | `cprof statusline [--stdin]` | The whole statusline: account, model, directory and branch, context and usage |

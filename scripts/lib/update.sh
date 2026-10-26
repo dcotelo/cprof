@@ -136,3 +136,147 @@ cp_skew_problems() {
   pv="$("$bin" version 2>/dev/null | head -1 | awk '{print $2}')" || pv=''
   cp_skew_report "$pv" "$(cp_plugin_version)" "$bin"
 }
+
+# --- is a newer cprof published? ---------------------------------------------
+#
+# The skew check above compares the two halves of an install against each
+# other, so it is silent when both are equally old: a 0.9.0 CLI beside a 0.9.0
+# plugin is internally consistent while the docs describe features neither has.
+# Nothing else in cprof knows what the latest published version is, so this
+# asks — at most once a day, and never from the statusline.
+#
+# Advisory by construction. Being a release behind is not a defect in the
+# install, so nothing here returns non-zero and nothing here can fail doctor.
+# No network, no cache, a malformed response or a timeout all mean silence,
+# exactly as a failed usage fetch does.
+
+# Overridable for the suite, which points it at a local file:// fixture. A
+# release tag is public, so unlike the usage endpoint no credential is ever
+# sent — but the scheme is still checked, so a redirected or misconfigured URL
+# cannot turn this into a plaintext request.
+CP_UPDATE_URL="${CP_UPDATE_URL:-https://api.github.com/repos/dcotelo/cprof/releases/latest}"
+CP_UPDATE_TTL=86400
+
+cp_update_url_ok() {
+  case "$CP_UPDATE_URL" in https://*) return 0 ;; *) return 1 ;; esac
+}
+
+cp_update_cache_file() { printf '%s/update.json\n' "$CP_STATE_DIR"; }
+
+# cp_update_tag_version <tag> -> the dotted version inside a release tag, or
+# nothing. Tags are `cprof--v0.15.0`; the prefix is required, so a tag from
+# another project sharing the repo cannot be read as a cprof version.
+cp_update_tag_version() {
+  local tag="${1:-}" v
+  case "$tag" in cprof--v*) v="${tag#cprof--v}" ;; *) return 1 ;; esac
+  cp_ver_parseable "$v" || return 1
+  printf '%s' "$v"
+}
+
+# cp_update_cache_write <version> — installs the version atomically, stamped
+# with the time it was learned. A failure leaves any existing cache alone.
+# The temp name comes from mktemp rather than the `$file.tmp.$$` the rest of
+# this project uses. A PID is guessable, so that spelling can be pre-empted by
+# a symlink planted before the write: jq would then write through it and chmod
+# would change the mode of whatever it pointed at. The `chmod 700` above does
+# not close that window, because the symlink can predate it. mktemp refuses to
+# reuse an existing name and creates the file 600 to begin with.
+cp_update_cache_write() {
+  local v="${1:-}" file tmp
+  cp_ver_parseable "$v" || return 1
+  file="$(cp_update_cache_file)"
+  mkdir -p "$CP_STATE_DIR" 2>/dev/null || return 1
+  # A state dir we cannot lock down is one we decline to write into: the same
+  # directory holds the config that decides which account a directory
+  # resolves to, and cp_cmd_login (auth.sh) already refuses on this condition.
+  chmod 700 "$CP_STATE_DIR" 2>/dev/null || return 1
+  tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)" || return 1
+  jq -n --arg v "$v" --argjson now "$(date +%s)" '{latest: $v, fetched_at: $now}' \
+    > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  chmod 600 "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$file" 2>/dev/null || { rm -f "$tmp"; return 1; }
+}
+
+# cp_update_fetch -> the published version on stdout, also cached. The short
+# timeout matters: doctor is interactive, and an unreachable host must not
+# hold it open.
+cp_update_fetch() {
+  local body tag v
+  [ "${CPROF_NO_UPDATE_CHECK:-0}" = '1' ] && return 1
+  cp_update_url_ok || return 1
+  body="$("$CP_CURL_BIN" -sS --max-time 3 "$CP_UPDATE_URL" 2>/dev/null)" || return 1
+  [ -n "$body" ] || return 1
+  tag="$(printf '%s' "$body" | jq -r '.tag_name // empty' 2>/dev/null)" || return 1
+  v="$(cp_update_tag_version "$tag")" || return 1
+  cp_update_cache_write "$v" || return 1
+  printf '%s' "$v"
+}
+
+# cp_update_latest -> the published version: the cache while it is fresh, then
+# a fetch, then a stale cache rather than nothing. A day-old answer still beats
+# silence, and the comparison it feeds is advisory either way.
+cp_update_latest() {
+  local file latest fetched_at age
+  file="$(cp_update_cache_file)"
+  if [ -f "$file" ]; then
+    latest="$(jq -r '.latest // empty' "$file" 2>/dev/null)"
+    fetched_at="$(jq -r '.fetched_at // 0' "$file" 2>/dev/null)"
+    case "$fetched_at" in ''|*[!0-9]*) fetched_at=0 ;; esac
+    age=$(( $(date +%s) - fetched_at ))
+    if cp_ver_parseable "$latest" && [ "$age" -lt "$CP_UPDATE_TTL" ]; then
+      printf '%s' "$latest"
+      return 0
+    fi
+  fi
+  if cp_update_fetch; then
+    return 0
+  fi
+  cp_ver_parseable "${latest:-}" || return 1
+  printf '%s' "$latest"
+}
+
+# cp_update_installed -> the newest cprof on this machine, CLI or plugin.
+# The newest is the right side of the comparison: if either half is current,
+# nothing here is behind, and the half that is older is the skew check's
+# business rather than this one's.
+cp_update_installed() {
+  local bin pv gv newest=''
+  bin="${CP_CPROF_BIN-$(type -P cprof 2>/dev/null)}" || bin=''
+  if [ -n "$bin" ]; then
+    pv="$("$bin" version 2>/dev/null | head -1 | awk '{print $2}')" || pv=''
+    cp_ver_parseable "$pv" && newest="$pv"
+  fi
+  gv="$(cp_plugin_version)"
+  if cp_ver_parseable "$gv"; then
+    if [ -z "$newest" ] || cp_ver_lt "$newest" "$gv"; then newest="$gv"; fi
+  fi
+  printf '%s' "$newest"
+}
+
+# cp_update_report <installed> <latest> — at most one advisory, and only when
+# the installed version is strictly older. Both sides are echoed only after
+# parsing as dotted numbers, so a control byte from a release tag or a manifest
+# cannot reach the report.
+#
+# The tap's formula can lag a published release by up to a day, so the advice
+# leads with `cprof update`, which is always available, and qualifies the brew
+# half rather than naming a command that may not work yet.
+cp_update_report() {
+  local installed="${1:-}" latest="${2:-}"
+  cp_ver_parseable "$installed" || return 0
+  cp_ver_parseable "$latest" || return 0
+  cp_ver_lt "$installed" "$latest" || return 0
+  printf 'cprof %s is installed; %s is available\n' "$installed" "$latest"
+  printf '    run: cprof update (and brew upgrade dcotelo/tap/cprof once the tap has it)\n'
+}
+
+# Always returns 0: an available release is news, not a broken install.
+cp_update_problems() {
+  local installed latest
+  [ "${CPROF_NO_UPDATE_CHECK:-0}" = '1' ] && return 0
+  installed="$(cp_update_installed)"
+  [ -n "$installed" ] || return 0
+  latest="$(cp_update_latest)" || return 0
+  cp_update_report "$installed" "$latest"
+  return 0
+}
