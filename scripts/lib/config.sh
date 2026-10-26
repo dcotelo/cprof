@@ -81,7 +81,12 @@ cp_config_read() {
 cp_config_write() {
   local tmp
   mkdir -p "$(dirname "$CP_CONFIG_PATH")" || return 1
-  tmp="$CP_CONFIG_PATH.tmp.$$"
+  # mktemp, not a $$-derived name: a PID is guessable, so a predictable temp
+  # name can be pre-empted by a symlink planted before the write. jq would then
+  # write through it, and the mv below would leave the config itself a symlink
+  # pointing wherever the attacker chose -- every later write following it too.
+  tmp="$(mktemp "$CP_CONFIG_PATH.XXXXXX" 2>/dev/null)" \
+    || { cp_warn 'cannot create a temp file beside the config'; return 1; }
   if ! jq -S . > "$tmp" 2>/dev/null; then
     rm -f "$tmp"
     cp_warn 'refusing to write invalid JSON to config'

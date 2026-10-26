@@ -59,15 +59,20 @@ cp_usage_fetch() {
 # validated usage body and installs it atomically as <name>'s cache. Return 1
 # leaves whatever cache was there untouched.
 cp_usage_cache_write() {
-  local name="$1" body="$2" file dir
+  local name="$1" body="$2" file dir tmp
   file="$(cp_usage_cache_file "$name")"
   dir="$(dirname "$file")"
   mkdir -p "$dir" 2>/dev/null || return 1
   chmod 700 "$CP_STATE_DIR" "$dir" 2>/dev/null
+  # mktemp, not a $$-derived name: a PID is guessable, so a predictable temp
+  # name can be pre-empted by a symlink planted before the write. The redirect
+  # would then write through it and the chmod would change the mode of whatever
+  # it points at. mktemp refuses an existing name and creates the file 600.
+  tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)" || return 1
   printf '%s' "$body" | jq --argjson now "$(date +%s)" '. + {fetched_at: $now}' \
-    > "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
-  chmod 600 "$file.tmp.$$" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
-  mv "$file.tmp.$$" "$file" 2>/dev/null || { rm -f "$file.tmp.$$"; return 1; }
+    > "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  chmod 600 "$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$file" 2>/dev/null || { rm -f "$tmp"; return 1; }
 }
 
 # cp_usage_fetch_raw <token> -> usage JSON on stdout (fresh, from the live
