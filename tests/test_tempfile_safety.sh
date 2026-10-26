@@ -125,6 +125,14 @@ assert_eq 'untouched' "$(victim "$MARKER_VICTIM")" \
   'nor the one beside the marker being stamped'
 assert_eq '{"claudeAiOauth":{"accessToken":"tok-work"}}' "$(cat "$CRED")" \
   'and the restore still puts the primary credentials back'
+# A restore that wrote the credentials back but stopped before cleaning up
+# would satisfy the assertion above while leaving the marker in place, which
+# keeps swap-out away for good. Both are removed only on the success path --
+# a failed cleanup deliberately keeps them so the next call can retry.
+assert_eq 'gone' "$([ -e "$MARKER" ] && echo present || echo gone)" \
+  'and the finished restore removes the marker'
+assert_eq 'gone' "$([ -e "$CRED.bak" ] && echo present || echo gone)" \
+  'and removes the backup it restored from'
 rm -f "$CRED.tmp.$$" "$MARKER.tmp.$$"
 
 cp_t_summary
