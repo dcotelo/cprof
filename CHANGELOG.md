@@ -5,6 +5,12 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.16.1]
+
+### Fixed
+
+- name every staged temp file with mktemp, not the pid
+
 ## [0.16.0]
 
 ### Added
