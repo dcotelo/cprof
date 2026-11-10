@@ -184,7 +184,10 @@ cp_panel_candidate() {
       # ids count effective lines, and the written array can hold entries the
       # resolver drops, so patching it by index could edit the wrong line. The
       # whole edited layout is written back. Empty removes line n; n = count+1
-      # appends.
+      # appends. A layout left as it is, with no `lines` written, stays
+      # unwritten: an empty "add a line" must not pin the default layout. A
+      # written `lines` is replaced even when the effect is the same -- that
+      # is a rejected layout being repaired.
       eff="$(cp_sl_config "$cfg" | sed -n 1p)"
       # shellcheck disable=SC2016 # a jq program: the $names are jq variables
       printf '%s' "$cfg" | jq --arg lay "$eff" --arg n "$n" --arg v "$value" '
@@ -195,7 +198,9 @@ cp_panel_candidate() {
            then [ range(0; $L | length) as $j | select($j != $i) | $L[$j] ]
            elif $i < ($L | length) then ($L | .[$i] = $segs)
            else $L + [$segs] end) as $new
-        | setpath(["statusline", "lines"]; $new)' 2>/dev/null || return 1
+        | (try .statusline.lines catch null) as $w
+        | if $new == $L and $w == null then .
+          else setpath(["statusline", "lines"]; $new) end' 2>/dev/null || return 1
       ;;
     statusline.thresholds.warn|statusline.thresholds.critical)
       # The pair is judged together, so both keys are written: the one not
@@ -312,8 +317,11 @@ cp_panel_commit_backup() {
   return 0
 }
 
-# cp_panel_apply <id>=<value> -> 0 written; 1 rejected or refused (messages
-# on stderr, nothing written); 2 unknown id or no `=`.
+# cp_panel_apply <id>=<value> -> 0 written, or unchanged; 1 rejected or
+# refused (messages on stderr, nothing written); 2 unknown id or no `=`. A
+# value that leaves the config as it is writes nothing and prints `unchanged`
+# on stdout: a rewrite would replace the .bak with the same content and lose
+# the change it held.
 cp_panel_apply() {
   local arg="${1:-}" id value cfg cand problems staged rc line
   case "$arg" in
@@ -328,6 +336,13 @@ cp_panel_apply() {
     return 2
   fi
   if [ "$id" = default ]; then
+    # Unchanged only when it names a profile: a default naming none is left
+    # for cprof default to refuse.
+    if printf '%s' "$cfg" | jq -e --arg v "$value" '.default == $v' >/dev/null 2>&1 \
+      && cp_profile_exists "$cfg" "$value"; then
+      printf 'unchanged\n'
+      return 0
+    fi
     staged="$(cp_panel_stage_backup)" || return 1
     cp_cmd_default "$value"
     cp_panel_commit_backup "$staged" "$?"
@@ -343,6 +358,10 @@ cp_panel_apply() {
   if [ -n "$problems" ]; then
     printf '%s\n' "$problems" | while IFS= read -r line; do cp_warn "$line"; done
     return 1
+  fi
+  if [ "$(printf '%s' "$cand" | jq -S .)" = "$(printf '%s' "$cfg" | jq -S .)" ]; then
+    printf 'unchanged\n'
+    return 0
   fi
   staged="$(cp_panel_stage_backup)" || return 1
   printf '%s\n' "$cand" | cp_config_write
@@ -600,11 +619,16 @@ cp_panel_header() {
   printf '\n'
 }
 
-# cp_panel_result <id> <value> <rc> <stderr> -> one line on how an --apply
-# went: saved, or not applied with its rc and the first line it warned (the
-# `cprof: ` prefix dropped -- the header is already cprof's).
+# cp_panel_result <id> <value> <rc> <output> -> one line on how an --apply
+# went: unchanged (its output says so), saved, or not applied with its rc and
+# the first line it warned (the `cprof: ` prefix dropped -- the header is
+# already cprof's).
 cp_panel_result() {
   local id="${1:-}" value="${2:-}" rc="${3:-1}" err="${4:-}" first
+  if [ "$rc" -eq 0 ] && printf '%s\n' "$err" | grep -Fxq unchanged; then
+    printf '%s = %s unchanged; nothing written\n' "$id" "$value"
+    return 0
+  fi
   if [ "$rc" -eq 0 ]; then
     printf '%s = %s saved (cprof config undo reverts it)\n' "$id" "$value"
     return 0
@@ -655,7 +679,7 @@ cp_panel_pick_value() {
 # is the one thing no test can make: rows, previews and writes are the
 # callbacks, and fzf runs them through the resolved, quoted CP_SELF_PATH.
 cp_panel_run() {
-  local self tab stack screen rows out rc id label value kind con action result='' err sel
+  local self tab stack screen rows out rc id label value kind con action state result='' err sel
   if ! command -v "${CP_FZF_BIN:-fzf}" >/dev/null 2>&1 \
     || { [ "${CP_PANEL_ASSUME_TTY:-}" != 1 ] && ! { [ -t 0 ] && [ -t 1 ]; }; }; then
     printf '%s\n' 'cprof config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.' >&2
@@ -694,6 +718,7 @@ cp_panel_run() {
     kind="$(printf '%s\n' "$out" | cut -f4)"
     con="$(printf '%s\n' "$out" | cut -f5)"
     action="$(printf '%s\n' "$out" | cut -f6)"
+    state="$(printf '%s\n' "$out" | cut -f7)"
     case "$action" in
       drill) stack="$stack $id"; continue ;;
       set) ;;
@@ -710,7 +735,14 @@ cp_panel_run() {
       *) cp_warn "config: fzf failed (rc $rc)"; return 1 ;;
     esac
     sel="$(cp_panel_pick_value "$kind" "$con" "$out")"
-    err="$("$CP_SELF_PATH" config --apply "$id=$sel" 2>&1 >/dev/null)"
+    # The value in effect, kept: nothing to write. Not for a rejected row,
+    # whose value is the effective one and writing it is the repair.
+    if [ "$sel" = "$value" ] && [ "$state" != rejected ]; then
+      result="$(cp_panel_result "$id" "$sel" 0 unchanged)"
+      continue
+    fi
+    # Both streams: `unchanged` comes on stdout, a rejection on stderr.
+    err="$("$CP_SELF_PATH" config --apply "$id=$sel" 2>&1)"
     result="$(cp_panel_result "$id" "$sel" "$?" "$err")"
   done
   return 0

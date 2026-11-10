@@ -306,6 +306,40 @@ apply statusline.bar.width=8
 assert_eq '0:same' "$rc:$(same "$BAK" "$CP_T_TMP/bak-before")" \
   'apply with no config never drops an existing backup'
 
+# --- an unchanged value -------------------------------------------------------
+# Writing what is already there must not replace the backup: the .bak would
+# then hold the same value and the real change could no longer be undone.
+fresh
+apply statusline.bar.width=8
+cp "$CPROF_CONFIG" "$CP_T_TMP/after1"; cp "$BAK" "$CP_T_TMP/bak1"
+out="$("$CLI" config --apply statusline.bar.width=8 2>/dev/null)"; rc=$?
+assert_eq '0:unchanged:same:same' "$rc:$out:$(same "$CPROF_CONFIG" "$CP_T_TMP/after1"):$(same "$BAK" "$CP_T_TMP/bak1")" \
+  'apply the same value twice: the second writes nothing, says unchanged, and keeps the backup'
+fresh
+printf 'known backup\n' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+out="$("$CLI" config --apply default=work 2>/dev/null)"; rc=$?
+assert_eq '0:unchanged:same:same' "$rc:$out:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'apply the current default profile: nothing written, backup kept'
+jq -n '{default: "gone", profiles: [{name: "work", native: true}]}' | cp_t_write_config; snap
+printf 'known backup\n' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+apply default=gone
+assert_eq '1:yes:same:same' "$rc:$(has "$err" 'unknown profile gone'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'a default naming no profile is still refused, not called unchanged'
+fresh
+printf 'known backup\n' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+out="$("$CLI" config --apply statusline.lines.4= 2>/dev/null)"; rc=$?
+assert_eq '0:unchanged:same:same' "$rc:$out:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'an empty add-a-line changes nothing: the default layout is not pinned, backup kept'
+fresh '{"lines":[["nope"]]}'
+apply 'statusline.lines.1=badge model dir git'
+assert_eq '0:[["badge","model","dir","git"],["context","usage"],["agents"]]:same' \
+  "$rc:$(jqc .statusline.lines):$(same "$BAK" "$CP_T_TMP/before")" \
+  'a rejected layout given its effective line is a repair, and is written'
+fresh '{"bar":{"width":99}}'
+apply statusline.bar.width=10
+assert_eq '0:10:same' "$rc:$(jqc .statusline.bar.width):$(same "$BAK" "$CP_T_TMP/before")" \
+  'a rejected value given its effective value is a repair, and is written'
+
 # --- an already-rejected setting ----------------------------------------------
 fresh '{"bar":{"width":99}}'
 apply statusline.bar.width=41
@@ -596,6 +630,28 @@ statusline.bar.width = 8 saved (cprof config undo reverts it)" \
   "$rc:$(fzf_calls):$(jqc .statusline.bar.width):$([ -f "$BAK" ] && echo yes || echo no):$(header_of 4)" \
   'a full path: drill, set, apply; the next header carries the saved line'
 
+# Enter on the value already in effect: nothing written, and the header says so.
+fresh '{"bar":{"width":8}}'
+printf 'known backup\n' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+fzf_reset
+row main statusline > "$CP_T_TMP/fzf.pick.1"
+row statusline statusline.bar.width > "$CP_T_TMP/fzf.pick.2"
+pick 3 '8'
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq "0:same:same:cprof config: statusline (Enter edits, Esc goes back)
+statusline.bar.width = 8 unchanged; nothing written" \
+  "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before"):$(header_of 4)" \
+  'the loop: Enter on the current value writes nothing and says unchanged'
+# A rejected row shows its effective value; Enter on it is a repair.
+fresh '{"bar":{"width":99}}'
+fzf_reset
+row main statusline > "$CP_T_TMP/fzf.pick.1"
+row statusline statusline.bar.width > "$CP_T_TMP/fzf.pick.2"
+pick 3 '10'
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq '0:10:10	set:yes' "$rc:$(jqc .statusline.bar.width):$(row statusline statusline.bar.width | cut -f3,7):$(has "$(header_of 4)" 'statusline.bar.width = 10 saved')" \
+  'the loop: a rejected row applied with its effective value is written, and becomes set'
+
 # lines_path <row-id> <picker-output> -> drills to the lines screen, picks
 # <row-id>, and answers its picker with <picker-output>.
 lines_path() {
@@ -611,9 +667,10 @@ lines_path statusline.lines.2 "${NL}badge"
 assert_eq '0:[["badge","model","dir","git"],["agents"]]' "$rc:$(jqc .statusline.lines)" \
   'segments: an empty query removes the line, though a choice was highlighted'
 fresh
+printf 'known backup\n' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
 lines_path statusline.lines.4 "${NL}badge"
-assert_eq '[["badge","model","dir","git"],["context","usage"],["agents"]]' "$(jqc .statusline.lines)" \
-  'segments: add a line with an empty query does not add the highlighted choice'
+assert_eq 'same:same' "$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'segments: add a line with an empty query writes nothing and keeps the backup'
 fresh
 lines_path statusline.lines.1 "model d${NL}model"
 assert_eq 'same:yes' "$(same "$CP_T_TMP/before" "$CPROF_CONFIG"):$(has "$(header_of 5)" 'statusline.lines.1 = model d not applied (rc 1)')" \
