@@ -24,10 +24,10 @@ assert_eq '' "$(cp_agents_model_short '')" 'empty in, empty out'
 # An id comes from a transcript (untrusted): it must never be glob-expanded.
 mkdir -p "$CP_T_TMP/globcwd"
 touch "$CP_T_TMP/globcwd/a" "$CP_T_TMP/globcwd/b"
-assert_eq 'claude-*-5' "$(cd "$CP_T_TMP/globcwd" && cp_agents_model_short 'claude-*-5')" \
-  'a * in an id is not expanded against the cwd'
-assert_eq 'claude-/*/*-1' "$(cd "$CP_T_TMP/globcwd" && cp_agents_model_short 'claude-/*/*-1')" \
-  'a path glob in an id is not expanded'
+assert_eq '*-5' "$(cd "$CP_T_TMP/globcwd" && cp_agents_model_short 'claude-*-5')" \
+  'a * in an id stays literal, not expanded against the cwd'
+assert_eq '/*/*-1' "$(cd "$CP_T_TMP/globcwd" && cp_agents_model_short 'claude-/*/*-1')" \
+  'a path glob in an id stays literal'
 # --- duration ---------------------------------------------------------------
 assert_eq '0s'     "$(cp_agents_duration 0)"    'zero'
 assert_eq '59s'    "$(cp_agents_duration 59)"   'under a minute'
