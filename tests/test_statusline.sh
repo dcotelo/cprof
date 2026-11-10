@@ -269,8 +269,10 @@ assert_eq '' "$(jq -cn --arg p "$CP_T_TMP/proj/s" '{transcript_path:($p + ([27]|
 assert_eq "$CP_T_TMP/proj/sess.jsonl" "$(printf '%s' "$pl" | cp_sl_transcript_path)" \
   'a clean absolute transcript_path is taken as given'
 assert_eq '' "$(printf '%s' '{"transcript_path":42}' | cp_sl_transcript_path)" 'a non-string transcript_path: ignored'
-assert_eq '⚑ work' "$(agsl "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4090)).jsonl" '{transcript_path:$p}')" 2>&1)" \
-  'a transcript_path over 4096 characters: ignored'
+# The length guard is checked on the helper alone: end to end, an over-long
+# path has no subagents directory beside it (one cannot be created past the
+# filesystem's own name limits), so the output would be the same whether or
+# not the guard existed.
 assert_eq '4097' \
   "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4089)).jsonl" '{transcript_path:$p}' | cp_sl_transcript_path | wc -c | tr -d ' ')" \
   'a 4096-character transcript_path is accepted'
