@@ -22,6 +22,22 @@ cp_sl_meta_fields() {
   ' 2>/dev/null
 }
 
+# cp_sl_transcript_path: a Claude Code statusline payload on stdin -> its
+# transcript_path, or nothing. Kept apart from cp_sl_meta_fields, whose
+# two-field contract has its own tests. The path is untrusted and only ever
+# used to name the subagents directory beside it, so it is taken only when it
+# is a string, absolute, ends in .jsonl, has no control character, and is at
+# most 4096 characters; anything else prints nothing.
+cp_sl_transcript_path() {
+  jq -r '
+    .transcript_path as $p
+    | if ($p|type) == "string" and ($p|length) <= 4096
+         and ($p|startswith("/")) and ($p|endswith(".jsonl"))
+         and (($p|explode|map(select(. < 32))|length) == 0)
+      then $p else empty end
+  ' 2>/dev/null
+}
+
 # cp_sl_dir_label <dir> -> what to show for it: the last path segment, or ~
 # for the home directory itself. A statusline has one line to spend, and the
 # leading path is the part that is the same in every session.
@@ -591,15 +607,24 @@ cp_sl_wants() {
 # other adjacency takes the separator. A segment named more than once in a
 # line renders every time it appears -- the layout is taken literally, not
 # deduplicated.
+#
+# `agents` is the exception: its text is a block of rows, not a value to
+# join. A line naming it renders its other segments as above (if any have
+# text), then CP_SL_agents below that, never joined with the separator, and
+# only once however often the line names it.
 cp_sl_assemble() {
-  local layout="${1:-}" sep="${2:-}" line seg text out prev
+  local layout="${1:-}" sep="${2:-}" line seg text out prev rows
   # A trailing newline before tr, not just the ';' separators, or the last
   # configured line reaches `read` as a no-newline EOF read: `read` returns
   # non-zero for it, and `while read` treats that as the end of input, so
   # the final line of the layout is silently dropped.
   printf '%s\n' "$layout" | tr ';' '\n' | while IFS= read -r line; do
-    out=''; prev=''
+    out=''; prev=''; rows=''
     for seg in $line; do
+      if [ "$seg" = agents ]; then
+        rows="${CP_SL_agents:-}"
+        continue
+      fi
       eval "text=\${CP_SL_$seg:-}"
       [ -n "$text" ] || continue
       if [ -z "$out" ]; then
@@ -612,6 +637,7 @@ cp_sl_assemble() {
       prev="$seg"
     done
     [ -n "$out" ] && printf '%s\n' "$out"
+    [ -n "$rows" ] && printf '%s\n' "$rows"
   done
 }
 
@@ -620,7 +646,7 @@ cp_sl_assemble() {
 #
 # Each segment renders into its own shell variable -- CP_SL_badge,
 # CP_SL_model, CP_SL_dir, CP_SL_git, CP_SL_context, CP_SL_usage,
-# CP_SL_weekly -- holding
+# CP_SL_weekly, CP_SL_agents -- holding
 # only that segment's own text, with no separator. cp_sl_assemble then walks
 # the configured layout and joins what is there. A segment the layout does
 # not name is never rendered at all, so an unconfigured git segment runs no
@@ -642,7 +668,8 @@ cp_cmd_statusline() {
   # layout's own segment names, which is why nothing in this function appears
   # to use them.
   local CP_SL_badge='' CP_SL_model='' CP_SL_dir='' CP_SL_git=''
-  local CP_SL_context='' CP_SL_usage='' CP_SL_weekly=''
+  local CP_SL_context='' CP_SL_usage='' CP_SL_weekly='' CP_SL_agents=''
+  local ag_cfg ag_stale ag_keep ag_max ag_tp ag_rows
   local th_weekly='' w_data='' w_pct='' w_at='' w_reset='' w_bar='' w_code=''
 
   while [ "$#" -gt 0 ]; do
@@ -674,6 +701,10 @@ cp_cmd_statusline() {
   col_git="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f3)" 2>/dev/null)"
   col_branch="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f4)" 2>/dev/null)"
   col_label="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f5)" 2>/dev/null)"
+  ag_cfg="$(printf '%s' "$config" | sed -n '5p')"
+  ag_stale="$(printf '%s' "$ag_cfg" | cut -f1)"
+  ag_keep="$(printf '%s' "$ag_cfg" | cut -f2)"
+  ag_max="$(printf '%s' "$ag_cfg" | cut -f3)"
 
   if [ "$colour_on" -eq 1 ] && [ -n "$col_label" ]; then
     label_open="$(printf '\033[%sm' "$col_label")"
@@ -827,6 +858,21 @@ cp_cmd_statusline() {
         CP_SL_weekly="Usage Weekly $w_bar $w_pct%"
         [ -n "$w_reset" ] && CP_SL_weekly="$CP_SL_weekly (resets in $w_reset)"
       fi
+    fi
+  fi
+
+  # The session's subagents, read from <session>/subagents/ beside the
+  # transcript the payload names. Only that directory is listed; the parent
+  # transcript itself is never opened. No payload, or no usable path, leaves
+  # the variable empty and the rows simply absent.
+  if cp_sl_wants "$layout" agents && [ -n "$payload" ]; then
+    ag_tp="$(printf '%s' "$payload" | cp_sl_transcript_path)"
+    if [ -n "$ag_tp" ]; then
+      ag_rows="$(cp_agents_rows "${ag_tp%.jsonl}/subagents" "$(cp_agents_now)" \
+        "$ag_stale" "$ag_keep" 2>/dev/null)"
+      # shellcheck disable=SC2034 # read by cp_sl_assemble
+      CP_SL_agents="$(cp_agents_render "$ag_rows" "$ag_max" "$colour_on" \
+        "$col_model" "$col_label" 2>/dev/null)"
     fi
   fi
 

@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-for lib in config resolve profiles auth output color usage statusline fallback share; do
+for lib in config resolve profiles auth output color usage statusline agents fallback share; do
   # shellcheck source=/dev/null
   . "$(dirname "$0")/../scripts/lib/$lib.sh"
 done
@@ -221,6 +221,103 @@ cp_t_write_config <<JSON
 JSON
 
 rm -f "$CP_T_TMP/state/usage/work.json"
+
+# --- the agents segment: one row per running or just-finished subagent -----
+# The session's subagents live beside its transcript, in <session>/subagents/;
+# the parent transcript itself is never opened.
+ag_cfg() {     # $1 = the statusline block's contents, or empty for none
+  local sl=''
+  [ -z "$1" ] || sl=",\"statusline\":{$1}"
+  cp_t_write_config <<JSON
+{"default":"work",
+ "profiles":[{"name":"work","native":true,"color":"magenta"},
+             {"name":"personal","dir":"$CP_T_TMP/p"}],
+ "rules":[],"repos":{}$sl}
+JSON
+}
+SA="$CP_T_TMP/proj/sess/subagents"; mkdir -p "$SA"
+ag_one() {     # ag_one <id>: a running Explore agent
+  printf '%s\n' '{"agentType":"Explore","description":"Find callers"}' > "$SA/agent-$1.meta.json"
+  jq -cn '{type:"assistant",timestamp:"2026-11-10T09:00:00.000Z",message:{model:"claude-opus-5-5",content:[{type:"text",text:"x"}]}}' \
+    > "$SA/agent-$1.jsonl"
+}
+ag_one a1
+now="$(date +%s)"
+b="$(stat -f %B "$SA/agent-a1.jsonl")"
+ROW="⟳ Explore [opus-5.5]: Find callers ($(cp_agents_duration $((now + 5 - b))))"
+pl="$(printf '{"transcript_path":"%s"}' "$CP_T_TMP/proj/sess.jsonl")"
+agsl() { printf '%s' "$1" | CP_AGENTS_NOW=$((now + 5)) NO_COLOR=1 "$CLI" statusline --stdin; }
+
+ag_cfg '"lines":[["badge"],["agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>/dev/null)" 'the agents line under the badge'
+assert_eq '⚑ work' "$(agsl '{}' 2>&1)" 'no transcript_path in the payload: line vanishes, nothing on stderr'
+# Each rejected shape below would reach the real subagents dir if accepted:
+# run from $CP_T_TMP, or through a symlink to the session dir.
+assert_eq '⚑ work' "$(cd "$CP_T_TMP" && agsl '{"transcript_path":"proj/sess.jsonl"}' 2>&1)" 'relative transcript_path: ignored'
+assert_eq '⚑ work' "$(agsl "$(printf '{"transcript_path":"%s"}' "$CP_T_TMP/proj/other.jsonl")" 2>&1)" \
+  'transcript_path with no subagents dir beside it: line vanishes'
+ln -s sess "$CP_T_TMP/proj/sess.txt"
+assert_eq '⚑ work' "$(agsl "$(printf '{"transcript_path":"%s"}' "$CP_T_TMP/proj/sess.txt")" 2>&1)" \
+  'a transcript_path not ending in .jsonl: ignored'
+# A control character cannot be driven end to end (stat's listing of such a
+# dir yields no rows anyway), so the guard is checked on the helper itself.
+assert_eq '' "$(jq -cn --arg p "$CP_T_TMP/proj/s" '{transcript_path:($p + ([10]|implode) + "ess.jsonl")}' | cp_sl_transcript_path)" \
+  'a transcript_path with a control character: ignored'
+assert_eq '' "$(jq -cn --arg p "$CP_T_TMP/proj/s" '{transcript_path:($p + ([27]|implode) + "ess.jsonl")}' | cp_sl_transcript_path)" \
+  'a transcript_path with an ESC: ignored'
+assert_eq "$CP_T_TMP/proj/sess.jsonl" "$(printf '%s' "$pl" | cp_sl_transcript_path)" \
+  'a clean absolute transcript_path is taken as given'
+assert_eq '' "$(printf '%s' '{"transcript_path":42}' | cp_sl_transcript_path)" 'a non-string transcript_path: ignored'
+assert_eq '⚑ work' "$(agsl "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4090)).jsonl" '{transcript_path:$p}')" 2>&1)" \
+  'a transcript_path over 4096 characters: ignored'
+assert_eq '4097' \
+  "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4089)).jsonl" '{transcript_path:$p}' | cp_sl_transcript_path | wc -c | tr -d ' ')" \
+  'a 4096-character transcript_path is accepted'
+assert_eq '' \
+  "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4090)).jsonl" '{transcript_path:$p}' | cp_sl_transcript_path)" \
+  'a 4097-character transcript_path is dropped'
+
+ag_cfg '"lines":[["badge","agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>/dev/null)" 'agents mixed into a line: that line renders, rows follow below it'
+ag_cfg '"lines":[["badge","agents","agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>/dev/null)" 'agents named twice in a line: the rows print once'
+ag_cfg '"lines":[["agents"],["badge"]]'
+assert_eq "$ROW
+⚑ work" "$(agsl "$pl" 2>/dev/null)" 'a line of agents alone prints just the rows'
+
+ag_one a2; ag_one a3
+ag_cfg '"lines":[["badge"],["agents"]],"agents":{"max_rows":1}'
+out="$(agsl "$pl" 2>/dev/null)"
+assert_eq '3' "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 'max_rows from config applies'
+assert_eq '+2 more' "$(printf '%s\n' "$out" | sed -n '3p')" 'max_rows from config applies: the rest as a more-line'
+rm -f "$SA/agent-a2.jsonl" "$SA/agent-a2.meta.json" "$SA/agent-a3.jsonl" "$SA/agent-a3.meta.json"
+
+mkdir -p "$CP_T_TMP/proj/sess.jsonl"
+ag_cfg '"lines":[["badge"],["agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>&1)" 'the parent transcript is never opened'
+rmdir "$CP_T_TMP/proj/sess.jsonl"
+
+ag_cfg ''
+pl5="$(printf '{"transcript_path":"%s","context_window":{"used_percentage":5}}' "$CP_T_TMP/proj/sess.jsonl")"
+assert_eq "$ROW" "$(agsl "$pl5" 2>/dev/null | sed -n '3p')" 'default layout shows agents as a third line'
+
+ag_cfg '"lines":[["badge"]]'
+assert_eq '⚑ work' "$(agsl "$pl" 2>&1)" 'a layout without agents renders no rows'
+
+# Coloured: the model and the duration take the configured colours.
+ag_cfg '"lines":[["agents"]]'
+out="$(printf '%s' "$pl" | CP_AGENTS_NOW=$((now + 5)) "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in
+  *"${ESC}[36m[opus-5.5]${ESC}[0m"*"${ESC}[2m("*) assert_eq ok ok 'agents rows take the model and label colours' ;;
+  *) assert_eq 'coloured row' "$out" 'agents rows take the model and label colours' ;;
+esac
+
+# Restore the fixture the rest of the file expects.
+ag_cfg ''
 
 # --- and coloured ----------------------------------------------------------
 out="$(printf '%s' "$PAY" | "$CLI" statusline --stdin 2>/dev/null)"
