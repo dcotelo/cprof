@@ -223,3 +223,65 @@ cp_agents_rows() {
   done | sort -t "$tab" -k1,1n -k2,2nr | cut -f3-
   return 0
 }
+
+# cp_agents_render <rows> <max_rows> <colour_on> <model_sgr> <label_sgr>
+# Draws cp_agents_rows output as the segment text: one line per agent, at most
+# max_rows of them, then "+N more" for the rest. No trailing newline; nothing
+# for empty input. The SGR arguments are bare parameters (e.g. 36); empty means
+# plain, and colour_on 0 means no escape bytes at all.
+cp_agents_render() {
+  local rows="${1:-}" max="${2:-3}" on="${3:-0}" msgr="${4:-}" lsgr="${5:-}"
+  [ -n "$rows" ] || return 0
+  case "$max" in '' | *[!0-9]*) max=3 ;; esac
+  [ "$max" -ge 1 ] || max=3
+  local tab=$'\t' esc=$'\033' out="" n=0 total=0 line
+  local state type model desc dur rest glyph gsgr short body
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    total=$((total + 1))
+    [ "$n" -lt "$max" ] || continue
+    n=$((n + 1))
+    # Split by hand: an empty model would collapse under read's tab-as-IFS.
+    state="${line%%"$tab"*}"; rest="${line#*"$tab"}"
+    type="${rest%%"$tab"*}"; rest="${rest#*"$tab"}"
+    model="${rest%%"$tab"*}"; rest="${rest#*"$tab"}"
+    desc="${rest%"$tab"*}"; dur="${rest##*"$tab"}"
+    case "$state" in
+      running)  glyph='⟳'; gsgr="$(cp_color_code yellow)" ;;
+      finished) glyph='✓'; gsgr="$(cp_color_code green)" ;;
+      *)        glyph='✗'; gsgr="$(cp_color_code red)" ;;
+    esac
+    [ -n "$type" ] || type=agent
+    # Blank description means empty after trimming spaces.
+    desc="${desc#"${desc%%[! ]*}"}"; desc="${desc%"${desc##*[! ]}"}"
+    short=""; [ -z "$model" ] || short="$(cp_agents_model_short "$model")"
+    body="$type"
+    if [ -n "$short" ]; then
+      if [ "$on" = 1 ] && [ -n "$msgr" ]; then
+        body="$body ${esc}[${msgr}m[${short}]${esc}[0m"
+      else
+        body="$body [${short}]"
+      fi
+    fi
+    [ -z "$desc" ] || body="$body: $desc"
+    dur="$(cp_agents_duration "$dur")"
+    if [ "$on" = 1 ] && [ -n "$lsgr" ]; then
+      body="$body ${esc}[${lsgr}m(${dur})${esc}[0m"
+    else
+      body="$body (${dur})"
+    fi
+    if [ "$on" = 1 ] && [ -n "$gsgr" ]; then
+      glyph="${esc}[${gsgr}m${glyph}${esc}[0m"
+    fi
+    [ -z "$out" ] || out="$out"$'\n'
+    out="$out$glyph $body"
+  done <<EOF2
+$rows
+EOF2
+  if [ "$total" -gt "$max" ]; then
+    local more="+$((total - max)) more"
+    if [ "$on" = 1 ] && [ -n "$lsgr" ]; then more="${esc}[${lsgr}m${more}${esc}[0m"; fi
+    out="$out"$'\n'"$more"
+  fi
+  printf '%s' "$out"
+}

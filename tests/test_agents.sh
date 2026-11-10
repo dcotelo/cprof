@@ -215,4 +215,34 @@ fresh
 out="$(rows 2>"$CP_T_TMP/err")"; rc=$?
 assert_eq "0||" "$rc|$out|$(cat "$CP_T_TMP/err")" 'empty dir: nothing, rc 0, no stderr'
 
+# --- cp_agents_render ---
+R1="$(printf 'running\tgeneral-purpose\tclaude-opus-5-5\tImplement Task 2: cache layer\t72')"
+R2="$(printf 'finished\tclaude-code-guide\tclaude-haiku-4-5-20251001\tCheck subagent lifecycle hooks\t3')"
+R3="$(printf 'stopped\tExplore\t\tFind callers\t14')"
+R4="$(printf 'running\t\tx\t \t5')"
+assert_eq '⟳ general-purpose [opus-5.5]: Implement Task 2: cache layer (1m 12s)' \
+  "$(cp_agents_render "$R1" 3 0 '' '')" 'plain running row'
+assert_eq '✓ claude-code-guide [haiku-4.5]: Check subagent lifecycle hooks (3s)' \
+  "$(cp_agents_render "$R2" 3 0 '' '')" 'plain finished row, the agreed format'
+assert_eq '✗ Explore: Find callers (14s)' "$(cp_agents_render "$R3" 3 0 '' '')" 'no model: no brackets'
+assert_eq '⟳ agent [x] (5s)' "$(cp_agents_render "$R4" 3 0 '' '')" 'empty type: agent; blank description: no colon'
+assert_eq '' "$(cp_agents_render '' 3 0 '' '')" 'no rows: nothing'
+five="$(printf '%s\n' "$R1" "$R1" "$R2" "$R3" "$R3")"
+assert_eq 4 "$(cp_agents_render "$five" 3 0 '' '' | grep -c .)" 'three rows plus one more-line'
+assert_eq '+2 more' "$(cp_agents_render "$five" 3 0 '' '' | tail -n 1)" 'the hidden count'
+three="$(printf '%s\n' "$R1" "$R2" "$R3")"
+assert_eq 3 "$(cp_agents_render "$three" 3 0 '' '' | grep -c .)" 'exactly max_rows: no more-line'
+assert_eq "${ESC}[33m⟳${ESC}[0m general-purpose ${ESC}[36m[opus-5.5]${ESC}[0m: Implement Task 2: cache layer ${ESC}[2m(1m 12s)${ESC}[0m" \
+  "$(cp_agents_render "$R1" 3 1 36 2)" 'colour: yellow glyph, model colour, dim duration'
+case "$(cp_agents_render "$R2" 3 1 36 2)" in "${ESC}[32m✓${ESC}[0m "*) r=ok ;; *) r=bad ;; esac
+assert_eq ok "$r" 'finished glyph green'
+case "$(cp_agents_render "$R3" 3 1 36 2)" in "${ESC}[31m✗${ESC}[0m "*) r=ok ;; *) r=bad ;; esac
+assert_eq ok "$r" 'stopped glyph red'
+assert_eq "${ESC}[2m+2 more${ESC}[0m" "$(cp_agents_render "$five" 3 1 36 2 | tail -n 1)" 'more-line in the label colour'
+case "$(cp_agents_render "$R1" 3 0 36 2)" in *"$ESC"*) r=bad ;; *) r=ok ;; esac
+assert_eq ok "$r" 'colour off: no escape bytes even with SGR arguments'
+assert_eq 4 "$(cp_agents_render "$five" abc 0 '' '' | grep -c .)" 'invalid max_rows falls back to 3'
+assert_eq 4 "$(cp_agents_render "$five" 0 0 '' '' | grep -c .)" 'max_rows 0 falls back to 3'
+assert_eq 0 "$(cp_agents_render "$R1" 3 0 '' '' | tail -c 1 | wc -l | tr -d ' ')" 'no trailing newline'
+
 cp_t_summary
