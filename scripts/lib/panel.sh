@@ -421,7 +421,7 @@ cp_panel_fake_agents() {
 cp_panel_render() {
   local cand="${1:-}" id="${2:-}"
   (
-    tmp='' sess=''
+    tmp='' sess='' name='' pdir=''
     # shellcheck disable=SC2317,SC2329 # run by the traps below
     cleanup() {
       [ -z "$tmp" ] || rm -f "$tmp"
@@ -440,6 +440,37 @@ cp_panel_render() {
         ;;
     esac
     CP_CONFIG_PATH="$tmp"
+    # The statusline names the session's profile from CLAUDE_CONFIG_DIR (see
+    # cp_cmd_status) and renders nothing for stock. The panel usually runs in
+    # a plain terminal, so when the session is not a cprof profile (stock, or
+    # unknown) the render is pinned to the config's default profile, else
+    # its first one. CLAUDE_PROFILE would not do it: cp_cmd_status never
+    # reads it. Only this subshell sees the change.
+    name="$(CPROF_COLOR=never cp_cmd_status 2>/dev/null)"
+    case "$name" in
+      ''|stock|unknown)
+        name="$(printf '%s' "$cand" | jq -r '
+          [.profiles[]? | objects | .name | strings | select(length > 0)] as $n
+          | .default as $d
+          | if ([$n[] | select(. == $d)] | length) > 0
+            then $d else ($n[0] // "") end' 2>/dev/null)"
+        if [ -n "$name" ]; then
+          pdir="$(cp_profile_dir "$cand" "$name")"
+          if [ -n "$pdir" ]; then
+            export CLAUDE_CONFIG_DIR="$pdir"
+          else
+            unset CLAUDE_CONFIG_DIR
+          fi
+          name="$(CPROF_COLOR=never cp_cmd_status 2>/dev/null)"
+        fi
+        case "$name" in
+          ''|stock|unknown)
+            printf 'no profile configured: the statusline renders only for a cprof profile\n'
+            exit 0
+            ;;
+        esac
+        ;;
+    esac
     printf '%s' "$payload" | cp_cmd_statusline --stdin
   )
 }

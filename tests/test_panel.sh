@@ -428,6 +428,35 @@ preview statusline.lines.9=usage; r="$r $rc"
 preview statusline=x; r="$r $rc"
 assert_eq '2 2 2' "$r" 'preview: an unknown id, or a value on a screen, is a usage error'
 
+# --- preview from a plain terminal --------------------------------------------
+# No native profile and no CLAUDE_CONFIG_DIR: the ambient session is stock,
+# yet the preview still renders for a cprof profile.
+plain() {
+  jq -n --arg a "$CP_T_TMP/pa" --arg b "$CP_T_TMP/pb" --argjson d "${1:-null}" '
+    {profiles: [{name: "pa", dir: $a}, {name: "pb", dir: $b}], rules: [], repos: {}}
+    + (if $d == null then {} else {default: $d} end)' | cp_t_write_config
+}
+plain '"pb"'
+preview statusline.bar.width=6
+assert_eq '0:yes:6' "$rc:$(has "$(upto_blank "$pv" | head -1)" '⚑ pb │ [Opus 5]'):$(barw "$(upto_blank "$pv")")" \
+  'plain terminal: the preview renders for the default profile'
+plain
+preview statusline.bar.width=6
+assert_eq '0:yes' "$rc:$(has "$(upto_blank "$pv" | head -1)" '⚑ pa │ [Opus 5]')" \
+  'plain terminal, no default: the preview renders for the first profile'
+plain '"pb"'
+pv="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/elsewhere" NO_COLOR=1 "$CLI" config --preview statusline.bar.width=6 2>/dev/null)"
+assert_eq 'yes:no' "$(has "$(upto_blank "$pv" | head -1)" '⚑ pb │'):$(has "$pv" 'unknown')" \
+  'an unknown session profile: the preview renders for the default profile'
+pv="$(CLAUDE_CONFIG_DIR="$CP_T_TMP/pa" NO_COLOR=1 "$CLI" config --preview statusline.bar.width=6 2>/dev/null)"
+assert_eq 'yes' "$(has "$(upto_blank "$pv" | head -1)" '⚑ pa │')" \
+  'a session already running as a profile keeps that profile'
+jq -n '{profiles: [], rules: [], repos: {}}' | cp_t_write_config
+preview statusline.bar.width=6
+assert_eq '0:no profile configured: the statusline renders only for a cprof profile
+bar width — integer, 1..40' "$rc:$(upto_blank "$pv")
+$(after_blank "$pv")" 'no profiles: the preview says so in place of the render'
+
 printf '{not json' > "$CPROF_CONFIG"
 preview statusline.bar.width=6
 assert_eq '1:' "$rc:$pv" 'malformed config: preview refuses, rc 1'
