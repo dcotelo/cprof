@@ -142,3 +142,89 @@ cp_agents_inspect() {
     | jq -R -s -r --slurpfile m "$meta" --argjson whole "$whole" "$prog" 2>/dev/null
   [ "${PIPESTATUS[1]}" -eq 0 ] || return 1
 }
+
+# cp_agents_rows <dir> <now> <stale_after> <keep_finished>: the subagents worth
+# showing, one line each, state, agentType, model, description and duration in
+# seconds, tab-joined: running ones first, newest start first, then finished
+# and stopped ones, latest end first. A missing or unreadable <dir> prints
+# nothing. One stat call lists every file's birth, mtime and size; a jsonl
+# whose newer mtime (its own or its meta's) is older than the larger of the
+# two windows is never opened, so a long session's hundreds of old agents cost
+# one directory listing. Ages below 0 (a clock that went backwards) count as
+# 0, and a duration is never negative.
+cp_agents_rows() {
+  local dir="${1:-}" now="${2:-}" stale="${3:-}" keep="${4:-}" tab win
+  case "$now" in '' | *[!0-9]*) now="$(cp_agents_now)" ;; esac
+  case "$stale" in '' | *[!0-9]*) stale=600 ;; esac
+  case "$keep" in '' | *[!0-9]*) keep=120 ;; esac
+  [ -d "$dir" ] && [ -r "$dir" ] || return 0
+  tab="$(printf '\t')"
+  win="$stale"; [ "$keep" -gt "$win" ] && win="$keep"
+  # Positional parameters, not an array: an empty array trips set -u in bash
+  # 3.2. An unmatched glob stays literal and is dropped here.
+  set --
+  local f
+  for f in "$dir"/agent-*.jsonl "$dir"/agent-*.meta.json; do
+    [ -f "$f" ] && set -- "$@" "$f"
+  done
+  [ "$#" -gt 0 ] || return 0
+  # Candidates: path, birth, jsonl mtime, meta mtime (the jsonl mtime when
+  # there is no meta; inspect then skips it), size. No field is ever empty,
+  # which matters because read collapses adjacent tabs. Meta lines are keyed
+  # by the path of the jsonl beside them.
+  local cands
+  cands="$(stat -f "%N${tab}%B${tab}%m${tab}%z" "$@" 2>/dev/null \
+    | awk -F '\t' -v now="$now" -v win="$win" '
+        NF != 4 { next }
+        $1 ~ /\.meta\.json$/ { p = $1; sub(/\.meta\.json$/, ".jsonl", p); mm[p] = $3; next }
+        $1 ~ /\.jsonl$/ { order[++n] = $1; b[$1] = $2; jm[$1] = $3; sz[$1] = $4 }
+        END {
+          for (i = 1; i <= n; i++) {
+            p = order[i]; last = jm[p]
+            if ((p in mm) && mm[p] > last) last = mm[p]
+            a = now - last; if (a < 0) a = 0
+            if (a <= win) printf "%s\t%s\t%s\t%s\t%s\n", p, b[p], jm[p], ((p in mm) ? mm[p] : jm[p]), sz[p]
+          }
+        }')"
+  [ -n "$cands" ] || return 0
+  local path birth jm mm size whole line state mid mfin start end dur ts
+  printf '%s\n' "$cands" | while IFS="$tab" read -r path birth jm mm size; do
+    [ -n "$path" ] || continue
+    case "$jm$mm" in '' | *[!0-9]*) continue ;; esac
+    whole=0; [ "${size:-0}" -le 65536 ] 2>/dev/null && whole=1
+    line="$(cp_agents_inspect "$path" "${path%.jsonl}.meta.json" "$whole")" || continue
+    # Split by hand: model or agentType may be empty, and read would collapse
+    # the adjacent tabs. The middle three fields pass through untouched.
+    state="${line%%"$tab"*}"; mfin="${line##*"$tab"}"
+    mid="${line#*"$tab"}"; mid="${mid%"$tab"*}"
+    # Start: birth time; failing that, the first record timestamp near the
+    # head (it sits a few KB into the first line); failing that, the mtime.
+    start="$birth"
+    case "$start" in '' | 0 | *[!0-9]*)
+      ts="$(head -c 16384 "$path" 2>/dev/null)"
+      case "$ts" in
+        *'"timestamp":"'*) ts="${ts#*\"timestamp\":\"}"; ts="${ts%%\"*}" ;;
+        *) ts="" ;;
+      esac
+      start="$(cp_time_epoch "$ts" 2>/dev/null)" || start=""
+      case "$start" in '' | *[!0-9]*) start="$jm" ;; esac
+      ;;
+    esac
+    if [ "$state" = running ]; then
+      [ $((now - jm)) -le "$stale" ] || continue
+      dur=$((now - start)); [ "$dur" -ge 0 ] || dur=0
+      printf '0\t%s\t%s\t%s\t%s\n' "$start" "$state" "$mid" "$dur"
+    else
+      if [ "$state" = finished ]; then
+        if [ "$mfin" = 1 ]; then end="$mm"; else end="$jm"; fi
+      else
+        end="$jm"; [ "$mm" -gt "$end" ] && end="$mm"
+      fi
+      [ "$keep" -gt 0 ] || continue
+      [ $((now - end)) -le "$keep" ] || continue
+      dur=$((end - start)); [ "$dur" -ge 0 ] || dur=0
+      printf '1\t%s\t%s\t%s\t%s\n' "$end" "$state" "$mid" "$dur"
+    fi
+  done | sort -t "$tab" -k1,1n -k2,2nr | cut -f3-
+  return 0
+}
