@@ -91,8 +91,9 @@ cp_agents_inspect() {
     def clean: if type == "string"
       then (explode | map(select(. >= 32)) | implode) | if length > 60 then .[0:59] + "…" else . end
       else "" end;
-    # message.content as a list of items; a plain string is one text item.
-    def items: .message.content
+    # message.content as a list of items; a plain string is one text item. A
+    # record whose message is not an object has no items rather than failing.
+    def items: (.message | objects | .content)
       | if type == "array" then .
         elif type == "string" then [{type: "text", text: .}]
         else [] end;
@@ -129,7 +130,7 @@ cp_agents_inspect() {
        else "running" end) as $state
     # Model, in order: the last assistant record in the tail, the effort model
     # meta recorded at spawn, the meta alias, nothing.
-    | ((if $ia >= 0 then $recs[$ia].message.model else null end) as $tm
+    | ((if $ia >= 0 then ($recs[$ia].message | objects | .model) else null end) as $tm
        | if ($tm | type) == "string" and $tm != "" then $tm
          elif ($meta.pickedEffortModel | type) == "string" and $meta.pickedEffortModel != "" then $meta.pickedEffortModel
          elif ($meta.model | type) == "string" then $meta.model

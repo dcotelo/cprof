@@ -85,4 +85,12 @@ printf '%s\n' "$(r_asst x)" > "$AG/agent-nometa.jsonl"
 assert_eq '' "$(insp nometa)" 'no meta.json: nothing'
 ag badm 'not json' "$(r_asst x)"
 assert_eq '' "$(insp badm)" 'malformed meta.json: nothing'
+# malformed records must not blank the agent
+MM='{"agentType":"E","description":"d","model":"haiku"}'
+ag mu "$MM" '{"type":"assistant","message":{"model":"m-1"}}' '{"type":"user","message":"hello"}'
+assert_eq "running	m-1" "$(insp mu | cut -f1,3)" 'a user record whose message is a string is skipped, not fatal'
+ag ma "$MM" '{"type":"assistant","message":"x"}'
+assert_eq "running	haiku" "$(insp ma | cut -f1,3)" 'an assistant record whose message is a string: meta model'
+ag mc "$MM" '{"type":"assistant","message":{"model":7,"content":5}}' '{"type":"user","message":{"content":{"a":1}}}' '{"type":"user","message":{"content":[7,null,{"type":"tool_result","content":[1,{"type":"text","text":5}]}]}}'
+assert_eq "running	haiku" "$(insp mc | cut -f1,3)" 'non-array content, non-string model and text are tolerated'
 cp_t_summary
