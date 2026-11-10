@@ -130,7 +130,7 @@ cp_agents_inspect() {
        else "running" end) as $state
     # Model, in order: the last assistant record in the tail, the effort model
     # meta recorded at spawn, the meta alias, nothing.
-    | ((if $ia >= 0 then ($recs[$ia].message | objects | .model) else null end) as $tm
+    | ((if $ia >= 0 then (($recs[$ia].message | objects | .model) // null) else null end) as $tm
        | if ($tm | type) == "string" and $tm != "" then $tm
          elif ($meta.pickedEffortModel | type) == "string" and $meta.pickedEffortModel != "" then $meta.pickedEffortModel
          elif ($meta.model | type) == "string" then $meta.model
