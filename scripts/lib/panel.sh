@@ -156,6 +156,198 @@ cp_panel_rows_all() {
   '
 }
 
+# jq: a string that is all digits as a number, anything else as itself. An
+# integer setting goes through this, so "8" is written as 8 while "abc" or
+# "-1" stays a string the resolver rejects in its own words, rather than this
+# panel coercing it into something the reader did not type.
+CP_PANEL_JQ_NUM='def num: if length > 0
+                            and (explode | map(select(. < 48 or . > 57)) | length) == 0
+                          then tonumber else . end;'
+
+# cp_panel_candidate <cfg> <id> <value> -> the config <cfg> would become with
+# <value> written at <id>, as JSON on stdout. Pure: it writes nothing and
+# judges nothing -- whether the candidate is acceptable is the resolver's call
+# (see cp_panel_new_problems). rc 2 for an id that is not a setting; rc 1 when
+# the value cannot be placed (a section on its path is not an object).
+cp_panel_candidate() {
+  local cfg="${1:-}" id="${2:-}" value="${3:-}" eff n th warn crit
+  [ -n "$cfg" ] || cfg='{}'
+  case "$id" in
+    default)
+      printf '%s' "$cfg" | jq --arg v "$value" '.default = $v' 2>/dev/null || return 1
+      ;;
+    statusline.lines.*)
+      n="${id#statusline.lines.}"
+      case "$n" in ''|0|*[!0-9]*) return 2 ;; esac
+      # Always the effective layout, never the written `lines` array: the row
+      # ids count effective lines, and the written array can hold entries the
+      # resolver drops, so patching it by index could edit the wrong line. The
+      # whole edited layout is written back. Empty removes line n; n = count+1
+      # appends.
+      eff="$(cp_sl_config "$cfg" | sed -n 1p)"
+      # shellcheck disable=SC2016 # a jq program: the $names are jq variables
+      printf '%s' "$cfg" | jq --arg lay "$eff" --arg n "$n" --arg v "$value" '
+        ($lay | split(";") | map(split(" "))) as $L
+        | (($n | tonumber) - 1) as $i
+        | ($v | split(" ") | map(select(length > 0))) as $segs
+        | (if ($segs | length) == 0
+           then [ range(0; $L | length) as $j | select($j != $i) | $L[$j] ]
+           elif $i < ($L | length) then ($L | .[$i] = $segs)
+           else $L + [$segs] end) as $new
+        | setpath(["statusline", "lines"]; $new)' 2>/dev/null || return 1
+      ;;
+    statusline.thresholds.warn|statusline.thresholds.critical)
+      # The pair is judged together, so both keys are written: the one not
+      # being set keeps the value the resolver uses for it now.
+      th="$(cp_sl_config "$cfg" | sed -n 3p)"
+      warn="$(printf '%s' "$th" | cut -f1)"
+      crit="$(printf '%s' "$th" | cut -f2)"
+      if [ "$id" = statusline.thresholds.warn ]; then warn="$value"; else crit="$value"; fi
+      # shellcheck disable=SC2016 # a jq program: the $names are jq variables
+      printf '%s' "$cfg" | jq --arg w "$warn" --arg c "$crit" "$CP_PANEL_JQ_NUM"'
+        setpath(["statusline", "thresholds", "warn"]; $w | num)
+        | setpath(["statusline", "thresholds", "critical"]; $c | num)' 2>/dev/null || return 1
+      ;;
+    statusline.bar.filled|statusline.bar.empty|statusline.colors.model|\
+    statusline.colors.dir|statusline.colors.git|statusline.colors.branch|\
+    statusline.colors.label)
+      # shellcheck disable=SC2016 # a jq program: the $names are jq variables
+      printf '%s' "$cfg" | jq --arg id "$id" --arg v "$value" \
+        'setpath($id | split("."); $v)' 2>/dev/null || return 1
+      ;;
+    statusline.bar.width|statusline.weekly_threshold|statusline.agents.stale_after|\
+    statusline.agents.keep_finished|statusline.agents.max_rows)
+      # shellcheck disable=SC2016 # a jq program: the $names are jq variables
+      printf '%s' "$cfg" | jq --arg id "$id" --arg v "$value" "$CP_PANEL_JQ_NUM"'
+        setpath($id | split("."); $v | num)' 2>/dev/null || return 1
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+# cp_panel_new_problems <cur_cfg> <cand_cfg> <id> -> the problems writing <id>
+# would introduce, one per line, nothing when it is clean. A problem is new
+# when cp_sl_config_problems reports it for the candidate and not for the
+# current config, so a value already rejected elsewhere never blocks an
+# unrelated setting. It is attributed to <id> when it names <id> itself or
+# <id>'s section (`statusline.bar`, `statusline.lines`, ...) followed by `:`
+# or `.`: the thresholds pair, the lines layout and an unknown colour are
+# all reported at that level. The resolver's own wording is passed through
+# untouched -- it is the wording `cprof doctor` uses.
+cp_panel_new_problems() {
+  local cur="${1:-}" cand="${2:-}" id="${3:-}" sec cur_p line nl
+  nl='
+'
+  case "$id" in
+    # statusline.bar.width -> statusline.bar; statusline.weekly_threshold is
+    # its own section.
+    statusline.*) sec="${id#statusline.}"; sec="statusline.${sec%%.*}" ;;
+    *) return 0 ;;
+  esac
+  cur_p="$(cp_sl_config_problems "$cur")"
+  cp_sl_config_problems "$cand" | while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$nl$cur_p$nl" in *"$nl$line$nl"*) continue ;; esac
+    case "$line" in
+      "$id:"*|"$sec:"*|"$sec."*) printf '%s\n' "$line" ;;
+    esac
+  done
+}
+
+# cp_panel_stage_backup -> path of a copy of the current config, made beside
+# it with the same permissions, or nothing when there is no config yet. rc 1
+# (with a warning) when the copy cannot be made: nothing is written without
+# one.
+cp_panel_stage_backup() {
+  local tmp
+  [ -f "$CP_CONFIG_PATH" ] || return 0
+  tmp="$(mktemp "$CP_CONFIG_PATH.bak.XXXXXX" 2>/dev/null)" \
+    || { cp_warn 'config: cannot create a backup beside the config; nothing written'; return 1; }
+  # -p: the backup is never more readable than the config it copies.
+  if ! cp -p "$CP_CONFIG_PATH" "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    cp_warn 'config: cannot back up the config; nothing written'
+    return 1
+  fi
+  printf '%s\n' "$tmp"
+}
+
+# cp_panel_commit_backup <staged> <rc> -> on rc 0 the staged copy becomes
+# the .bak; otherwise it is dropped and the previous .bak stays. Passes <rc>
+# through. A write that had no config to copy leaves no .bak at all: an older
+# one would restore a config from before this write's predecessor.
+cp_panel_commit_backup() {
+  local staged="${1:-}" rc="${2:-1}"
+  if [ "$rc" -ne 0 ]; then
+    [ -z "$staged" ] || rm -f "$staged"
+    return "$rc"
+  fi
+  if [ -n "$staged" ]; then
+    mv "$staged" "$CP_CONFIG_PATH.bak" \
+      || { rm -f "$staged"; cp_warn 'config: written, but the backup could not be kept'; }
+  else
+    rm -f "$CP_CONFIG_PATH.bak"
+  fi
+  return 0
+}
+
+# cp_panel_apply <id>=<value> -> 0 written; 1 rejected or refused (messages
+# on stderr, nothing written); 2 unknown id or no `=`.
+cp_panel_apply() {
+  local arg="${1:-}" id value cfg cand problems staged rc line
+  case "$arg" in
+    *=*) ;;
+    *) cp_warn 'config: --apply needs <id>=<value>'; return 2 ;;
+  esac
+  id="${arg%%=*}"
+  value="${arg#*=}"
+  cfg="$(cp_config_read)" || return 1
+  if ! cp_panel_known_ids "$cfg" | grep -Fxq -- "$id"; then
+    cp_warn "config: unknown setting $id"
+    return 2
+  fi
+  if [ "$id" = default ]; then
+    staged="$(cp_panel_stage_backup)" || return 1
+    cp_cmd_default "$value"
+    cp_panel_commit_backup "$staged" "$?"
+    return
+  fi
+  cand="$(cp_panel_candidate "$cfg" "$id" "$value")"; rc=$?
+  case "$rc" in
+    0) ;;
+    2) cp_warn "config: $id is a screen, not a setting"; return 2 ;;
+    *) cp_warn "config: cannot set $id: a section on its path is not a JSON object"; return 1 ;;
+  esac
+  problems="$(cp_panel_new_problems "$cfg" "$cand" "$id")"
+  if [ -n "$problems" ]; then
+    printf '%s\n' "$problems" | while IFS= read -r line; do cp_warn "$line"; done
+    return 1
+  fi
+  staged="$(cp_panel_stage_backup)" || return 1
+  printf '%s\n' "$cand" | cp_config_write
+  cp_panel_commit_backup "$staged" "$?"
+}
+
+# cp_panel_undo -> 0 restored the .bak over the config (and it is gone); 1
+# nothing to undo, or a backup that is not a usable config, left untouched.
+cp_panel_undo() {
+  local bak="$CP_CONFIG_PATH.bak"
+  if [ ! -e "$bak" ] && [ ! -L "$bak" ]; then
+    cp_warn 'nothing to undo'
+    return 1
+  fi
+  # A link would leave the config itself a link to wherever it points.
+  if [ -L "$bak" ] || [ ! -f "$bak" ]; then
+    cp_warn "config: $bak is not a regular file; not restoring it"
+    return 1
+  fi
+  if ! jq -e . "$bak" >/dev/null 2>&1; then
+    cp_warn "config: $bak is not valid JSON; not restoring it"
+    return 1
+  fi
+  mv "$bak" "$CP_CONFIG_PATH" || { cp_warn 'config: could not restore the backup'; return 1; }
+}
+
 # cp_cmd_config [--rows <screen> | --preview <arg> | --apply <arg> | undo]
 cp_cmd_config() {
   local sub="${1:-}" cfg
@@ -169,9 +361,14 @@ cp_cmd_config() {
       cfg="$(cp_config_read)" || return 1
       cp_panel_rows "$2" "$cfg"
       ;;
-    # Placeholders: --preview, --apply and undo, and the panel itself, land in
-    # the tasks that follow.
-    --preview|--apply|undo|'')
+    --apply)
+      [ "$#" -ge 2 ] || { cp_warn 'config: --apply needs <id>=<value>'; return 2; }
+      cp_panel_apply "$2"
+      ;;
+    undo) cp_panel_undo ;;
+    # Placeholders: --preview and the panel itself land in the tasks that
+    # follow.
+    --preview|'')
       cp_warn 'config: not implemented yet'
       return 2
       ;;

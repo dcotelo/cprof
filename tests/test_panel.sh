@@ -144,4 +144,148 @@ assert_eq '2' "$rc" 'unknown flag: rc 2'
 "$CLI" config --rows >/dev/null 2>&1; rc=$?
 assert_eq '2' "$rc" 'missing screen: rc 2'
 
+# --- apply -------------------------------------------------------------------
+BAK="$CPROF_CONFIG.bak"
+TAB="$(printf '\t')"
+NL="$(printf '\nx')"; NL="${NL%x}"
+# apply <id>=<value> -> rc in $rc, stderr in $err
+apply() { err="$("$CLI" config --apply "$1" 2>&1 >/dev/null)"; rc=$?; }
+# has <haystack> <needle> -> yes | no
+has() { case "$1" in *"$2"*) printf 'yes' ;; *) printf 'no' ;; esac; }
+# same <a> <b> -> same | differ
+same() { if cmp -s "$1" "$2"; then printf 'same'; else printf 'differ'; fi; }
+snap() { cp "$CPROF_CONFIG" "$CP_T_TMP/before"; }
+fresh() { rm -f "$BAK"; fixture "${1:-null}"; snap; }
+jqc() { jq -c "$1" "$CPROF_CONFIG"; }
+
+fresh
+apply statusline.bar.width=8
+assert_eq '0:8:number:same' "$rc:$(jqc .statusline.bar.width):$(jq -r '.statusline.bar.width|type' "$CPROF_CONFIG"):$(same "$BAK" "$CP_T_TMP/before")" \
+  'apply a valid integer writes it and backs up the old file'
+
+fresh
+cp "$CPROF_CONFIG" "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+apply statusline.bar.width=41
+assert_eq '1:yes:same:same' \
+  "$rc:$(has "$err" 'statusline.bar.width: must be a whole number from 1 to 40; using 10'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'apply out of range is rejected with the doctor wording'
+
+fresh
+apply statusline.bar.width=abc
+assert_eq '1:yes:same:no' \
+  "$rc:$(has "$err" 'statusline.bar.width: must be a whole number from 1 to 40; using 10'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'a non-numeric integer is rejected, not coerced'
+
+fresh
+r=''
+apply statusline.bar.width=1; r="$r$rc$(jqc .statusline.bar.width) "
+apply statusline.bar.width=40; r="$r$rc$(jqc .statusline.bar.width) "
+apply statusline.agents.keep_finished=0; r="$r$rc$(jqc .statusline.agents.keep_finished)"
+assert_eq '01 040 00' "$r" 'boundary values are accepted'
+
+fresh
+apply 'statusline.bar.filled=##'
+r="$rc:$(has "$err" 'statusline.bar.filled: must be exactly one character; using ▓')"
+apply 'statusline.bar.filled=#'
+assert_eq '1:yes 0:"#"' "$r $rc:$(jqc .statusline.bar.filled)" 'a glyph must be one character'
+
+fresh
+cp "$CPROF_CONFIG" "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+r=''
+for ch in "$TAB" "$NL" "$ESC"; do
+  apply "statusline.bar.filled=$ch"
+  r="$r$rc$(has "$err" 'statusline.bar.filled: must not contain an invisible character such as a tab; using ▓') "
+  apply "statusline.colors.model=re${ch}d"
+  r="$r$rc$(has "$err" 'statusline.colors.model: must not contain an invisible character such as a tab; using cyan') "
+done
+assert_eq '1yes 1yes 1yes 1yes 1yes 1yes :same:same' \
+  "$r:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'a control character in the value is rejected'
+
+fresh
+apply statusline.colors.model=bogus
+assert_eq '1:yes:same' "$rc:$(has "$err" 'statusline.colors.model: unknown colour "bogus"; rendering it plain'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before")" \
+  'an out-of-palette colour is rejected'
+apply statusline.colors.model=red
+assert_eq '0:"red"' "$rc:$(jqc .statusline.colors.model)" 'a palette colour is accepted'
+
+fresh
+apply statusline.thresholds.warn=80
+r="$rc:$(jqc .statusline.thresholds)"
+apply statusline.thresholds.warn=95
+assert_eq '0:{"critical":90,"warn":80} 1:yes:{"critical":90,"warn":80}' \
+  "$r $rc:$(has "$err" 'statusline.thresholds: warn must be a whole number below critical'):$(jqc .statusline.thresholds)" \
+  'thresholds: setting warn keeps the effective critical'
+
+fresh '{"bar":{"width":99}}'
+apply statusline.bar.empty=.
+assert_eq '0:"."' "$rc:$(jqc .statusline.bar.empty)" 'a pre-existing rejected value does not block another setting'
+
+fresh
+apply statusline.lines.2=usage
+assert_eq '0:[["badge","model","dir","git"],["usage"],["agents"]]' "$rc:$(jqc .statusline.lines)" \
+  'lines: editing a line of the default layout copies the layout first'
+fresh
+apply statusline.lines.3=
+assert_eq '0:2' "$rc:$(jqc '.statusline.lines|length')" 'lines: an empty value removes that line'
+fresh
+apply statusline.lines.4=weekly
+assert_eq '0:["weekly"]' "$rc:$(jqc '.statusline.lines[3]')" 'lines: the add row appends'
+fresh
+apply 'statusline.lines.1=badge bogus'
+assert_eq '1:yes:same' "$rc:$(has "$err" 'unknown segment "bogus"'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before")" \
+  'lines: an unknown segment is rejected'
+
+fresh
+apply default=personal
+r="$rc:$(jqc .default):$(same "$BAK" "$CP_T_TMP/before")"
+rm -f "$BAK"; snap
+apply default=nobody
+assert_eq '0:"personal":same 1:yes:same:no' \
+  "$r $rc:$(has "$err" 'unknown profile nobody'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'default goes through cprof default'
+
+fresh
+apply statusline.nope=1; r="$rc"
+apply statusline.bar.width; r="$r $rc"
+assert_eq '2 2:same:no' "$r:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'unknown id and missing = are usage errors'
+
+rm -f "$CPROF_CONFIG" "$BAK"
+apply statusline.bar.width=8
+assert_eq '0:8:no' "$rc:$(jq .statusline.bar.width "$CPROF_CONFIG" 2>/dev/null):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'fresh install: apply creates the config and no backup'
+
+# In a directory of its own, so the chmod below cannot touch state/ or home/.
+saved_config="$CPROF_CONFIG"
+mkdir -p "$CP_T_TMP/ro"
+export CPROF_CONFIG="$CP_T_TMP/ro/config.json"
+fixture null
+printf 'known backup\n' > "$CPROF_CONFIG.bak"
+cp "$CPROF_CONFIG" "$CP_T_TMP/before"; cp "$CPROF_CONFIG.bak" "$CP_T_TMP/bak-before"
+chmod 500 "$CP_T_TMP/ro"
+apply statusline.bar.width=8
+chmod 700 "$CP_T_TMP/ro"
+assert_eq '1:same:same' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$CPROF_CONFIG.bak" "$CP_T_TMP/bak-before")" \
+  'a failed write keeps the old backup and the old file'
+export CPROF_CONFIG="$saved_config"
+
+# --- undo --------------------------------------------------------------------
+fresh
+apply statusline.bar.width=8
+"$CLI" config undo >/dev/null 2>&1; r="$?:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)"
+err="$("$CLI" config undo 2>&1 >/dev/null)"; rc=$?
+assert_eq '0:same:no 1:yes' "$r $rc:$(has "$err" 'nothing to undo')" 'undo restores the backup and removes it'
+
+fresh
+printf 'not json' > "$BAK"
+"$CLI" config undo >/dev/null 2>&1; rc=$?
+assert_eq '1:same' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before")" 'undo refuses a malformed backup'
+
+rm -f "$BAK"
+printf '{not json' > "$CPROF_CONFIG"; snap
+apply statusline.bar.width=8
+assert_eq '1:same:no' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'malformed config: apply refuses'
+
 cp_t_summary
