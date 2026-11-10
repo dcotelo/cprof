@@ -669,7 +669,7 @@ cp_cmd_statusline() {
   # to use them.
   local CP_SL_badge='' CP_SL_model='' CP_SL_dir='' CP_SL_git=''
   local CP_SL_context='' CP_SL_usage='' CP_SL_weekly='' CP_SL_agents=''
-  local ag_cfg ag_stale ag_keep ag_max ag_tp ag_rows
+  local ag_stale ag_keep ag_max ag_tab ag_tp ag_rows
   local th_weekly='' w_data='' w_pct='' w_at='' w_reset='' w_bar='' w_code=''
 
   while [ "$#" -gt 0 ]; do
