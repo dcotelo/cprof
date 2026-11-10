@@ -500,7 +500,6 @@ SELF_Q="$(printf '%q' "$CLI")"
 PICK_PROMPT='default profile> '
 FZF_SHARED='--ansi
 --layout=reverse
---no-sort
 --preview-window=down:60%:wrap'
 NO_FZF='cprof config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.'
 
@@ -524,6 +523,7 @@ panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
 assert_eq "0:1:$(rows main)" "$rc:$(fzf_calls):$(stdin_of 1)" \
   'fzf gets the main rows and a preview that calls back into cprof'
 assert_eq "$FZF_SHARED
+--no-sort
 --delimiter
 $TAB
 --with-nth
@@ -576,6 +576,65 @@ $PICK_PROMPT
 default (Enter applies, Esc cancels)
 --preview
 $SELF_Q config --preview default={q}" "$(argv_of 2)" 'the value picker call, flag by flag'
+assert_eq 'yes:no' "$(argv_of 1 | grep -qx -- --no-sort && echo yes || echo no):$(argv_of 2 | grep -qx -- --no-sort && echo yes || echo no)" \
+  'the screen keeps row order (--no-sort); the picker ranks its matches'
+
+# Whole paths through the stub. A picker's pick file is what fzf
+# --print-query prints: the query, then the highlighted choice if any.
+# header_of <n> -> the --header argument of call <n> (both of its lines)
+header_of() { argv_of "$1" | awk '$0 == "--preview" { exit } on { print } $0 == "--header" { on = 1 }'; }
+pick() { printf '%s\n' "$2" > "$CP_T_TMP/fzf.pick.$1"; }
+
+fresh
+fzf_reset
+row main statusline > "$CP_T_TMP/fzf.pick.1"
+row statusline statusline.bar.width > "$CP_T_TMP/fzf.pick.2"
+pick 3 '8'
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq "0:5:8:yes:cprof config: statusline (Enter edits, Esc goes back)
+statusline.bar.width = 8 saved (cprof config undo reverts it)" \
+  "$rc:$(fzf_calls):$(jqc .statusline.bar.width):$([ -f "$BAK" ] && echo yes || echo no):$(header_of 4)" \
+  'a full path: drill, set, apply; the next header carries the saved line'
+
+# lines_path <row-id> <picker-output> -> drills to the lines screen, picks
+# <row-id>, and answers its picker with <picker-output>.
+lines_path() {
+  fzf_reset
+  row main statusline > "$CP_T_TMP/fzf.pick.1"
+  row statusline statusline.lines > "$CP_T_TMP/fzf.pick.2"
+  row statusline.lines "$1" > "$CP_T_TMP/fzf.pick.3"
+  pick 4 "$2"
+  panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+}
+fresh
+lines_path statusline.lines.2 "${NL}badge"
+assert_eq '0:[["badge","model","dir","git"],["agents"]]' "$rc:$(jqc .statusline.lines)" \
+  'segments: an empty query removes the line, though a choice was highlighted'
+fresh
+lines_path statusline.lines.4 "${NL}badge"
+assert_eq '[["badge","model","dir","git"],["context","usage"],["agents"]]' "$(jqc .statusline.lines)" \
+  'segments: add a line with an empty query does not add the highlighted choice'
+fresh
+lines_path statusline.lines.1 "model d${NL}model"
+assert_eq 'same:yes' "$(same "$CP_T_TMP/before" "$CPROF_CONFIG"):$(has "$(header_of 5)" 'statusline.lines.1 = model d not applied (rc 1)')" \
+  'segments: a partial query is applied as typed -- rejected, nothing written'
+
+rm -f "$BAK"
+jq -n --arg a "$CP_T_TMP/cm" --arg b "$CP_T_TMP/c" '
+  {default: "claude", profiles: [{name: "claude-max", dir: $a}, {name: "claude", dir: $b}],
+   rules: [], repos: {}}' | cp_t_write_config
+fzf_reset
+row main default > "$CP_T_TMP/fzf.pick.1"
+pick 2 "claude${NL}claude-max"
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq '0:"claude"' "$rc:$(jqc .default)" \
+  'profile: a query that names a choice exactly wins over the highlighted one'
+fzf_reset
+row main default > "$CP_T_TMP/fzf.pick.1"
+pick 2 "cla${NL}claude-max"
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq '0:"claude-max"' "$rc:$(jqc .default)" \
+  'profile: a partial query takes the highlighted choice'
 
 # --- panel helpers --------------------------------------------------------------
 assert_eq 'red

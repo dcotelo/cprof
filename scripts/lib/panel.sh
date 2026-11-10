@@ -598,8 +598,34 @@ cp_panel_result() {
 # runs --preview through $SHELL, and the self path in it is quoted with
 # bash's %q, so the callbacks run under bash whatever the login shell is.
 cp_panel_fzf() {
-  SHELL=/bin/bash "${CP_FZF_BIN:-fzf}" --ansi --layout=reverse --no-sort \
+  SHELL=/bin/bash "${CP_FZF_BIN:-fzf}" --ansi --layout=reverse \
     --preview-window=down:60%:wrap "$@"
+}
+
+# cp_panel_pick_value <kind> <constraint> <picker-output> -> the value a
+# picker's Enter writes, from fzf --print-query output (the query, then the
+# highlighted choice if any). It must be the value the preview showed, and the
+# preview renders the query:
+#   segments      always the query -- a line is several segments, an empty
+#                 query removes it, and the choices are only a reference
+#   color/profile the query when it names a choice exactly (`claude` must not
+#                 become a higher-ranked `claude-max`), else the highlighted
+#                 choice, else the query
+#   others        the query (they are fed no choices)
+cp_panel_pick_value() {
+  local kind="${1:-}" con="${2:-}" out="${3:-}" query sel
+  query="$(printf '%s\n' "$out" | sed -n 1p)"
+  sel="$(printf '%s\n' "$out" | sed -n 2p)"
+  case "$kind" in
+    color|profile)
+      if [ -z "$sel" ] || cp_panel_choices "$kind" "$con" | grep -Fxq -- "$query"; then
+        printf '%s\n' "$query"
+      else
+        printf '%s\n' "$sel"
+      fi
+      ;;
+    *) printf '%s\n' "$query" ;;
+  esac
 }
 
 # cp_panel_run -> the interactive panel: rc 0 on a normal exit (Esc on the
@@ -622,7 +648,7 @@ cp_panel_run() {
   while [ -n "$stack" ]; do
     screen="${stack##* }"
     rows="$(cp_panel_rows "$screen")" || return 1
-    out="$(printf '%s\n' "$rows" | cp_panel_fzf --delimiter "$tab" --with-nth 2,3 \
+    out="$(printf '%s\n' "$rows" | cp_panel_fzf --no-sort --delimiter "$tab" --with-nth 2,3 \
       --header "$(cp_panel_header "$screen" "$result")" \
       --preview "$self config --preview {1}")"
     rc=$?
@@ -662,9 +688,7 @@ cp_panel_run() {
       130) continue ;;
       *) cp_warn "config: fzf failed (rc $rc)"; return 1 ;;
     esac
-    # --print-query: the query, then the selected choice if one matched.
-    sel="$(printf '%s\n' "$out" | sed -n 2p)"
-    [ -n "$sel" ] || sel="$(printf '%s\n' "$out" | sed -n 1p)"
+    sel="$(cp_panel_pick_value "$kind" "$con" "$out")"
     err="$("$CP_SELF_PATH" config --apply "$id=$sel" 2>&1 >/dev/null)"
     result="$(cp_panel_result "$id" "$sel" "$?" "$err")"
   done
