@@ -109,7 +109,7 @@ statusline.thresholds: warn must be a whole number below critical, both from 1 t
 (one line per rejected setting — a config with only one problem prints only one line)
 
 A key cprof doesn't recognise is reported too, at whichever level inside the
-block it was written — `statusline`, `bar`, `thresholds` or `colors` — because
+block it was written — `statusline`, `bar`, `thresholds`, `colors` or `agents` — because
 the resolver ignores it in silence and a misspelling is the likeliest reason
 it is there:
 
@@ -251,9 +251,9 @@ finds them sharing:
 statusline.lines: agents shares a line with other segments; its rows print below that line
 ```
 
-The statusline reads only the subagents' own small files, under a
+The statusline reads only the subagents' own files, under a
 `subagents` directory beside the session's transcript, and only the tail of
-those that are recent. It never opens the main session transcript, which can
+those that are recent (a subagent's file can run to megabytes). It never opens the main session transcript, which can
 run to megabytes and is re-read by Claude Code itself every few seconds. With
 no payload there is nothing to read and the segment prints nothing.
 
