@@ -461,4 +461,138 @@ printf '{not json' > "$CPROF_CONFIG"
 preview statusline.bar.width=6
 assert_eq '1:' "$rc:$pv" 'malformed config: preview refuses, rc 1'
 
+# --- the panel loop ------------------------------------------------------------
+# The loop itself is the one function no test can drive with a key. What it
+# hands fzf is pinned here with a stub fzf that logs each call -- its argv one
+# arg per line, then its stdin -- and answers Esc (130), unless a file
+# fzf.pick.<n> holds what call <n> should print as the selection.
+FZF="$CP_T_TMP/fzf"
+FZF_LOG="$CP_T_TMP/fzf.log"
+cat > "$FZF" <<EOF
+#!/usr/bin/env bash
+n=\$(( \$(cat "$CP_T_TMP/fzf.n" 2>/dev/null || echo 0) + 1 ))
+printf '%s\n' "\$n" > "$CP_T_TMP/fzf.n"
+printf '%s\n' "\$SHELL" > "$CP_T_TMP/fzf.shell"
+{
+  printf '=== call %s\n' "\$n"
+  for a in "\$@"; do printf '%s\n' "\$a"; done
+  printf -- '--- stdin\n'
+  cat
+  printf -- '--- end\n'
+} >> "$FZF_LOG"
+if [ -f "$CP_T_TMP/fzf.pick.\$n" ]; then cat "$CP_T_TMP/fzf.pick.\$n"; exit 0; fi
+exit 130
+EOF
+chmod +x "$FZF"
+fzf_reset() { rm -f "$FZF_LOG" "$CP_T_TMP/fzf.n" "$CP_T_TMP"/fzf.pick.*; }
+fzf_calls() { cat "$CP_T_TMP/fzf.n" 2>/dev/null || printf '0'; }
+# argv_of <n> / stdin_of <n> -> what call <n> was given
+argv_of() {
+  awk -v h="=== call $1" '$0 == h { on = 1; next } on && $0 == "--- stdin" { exit } on' "$FZF_LOG"
+}
+stdin_of() {
+  awk -v h="=== call $1" '$0 == h { c = 1; next } c && $0 == "--- stdin" { on = 1; next }
+    on && $0 == "--- end" { exit } on' "$FZF_LOG"
+}
+# panel [env...] -> runs a bare `cprof config` on the stub; rc in $rc, stderr in $err
+panel() { err="$(env "$@" "$CLI" config 2>&1 >/dev/null </dev/null)"; rc=$?; }
+SELF_Q="$(printf '%q' "$CLI")"
+PICK_PROMPT='default profile> '
+FZF_SHARED='--ansi
+--layout=reverse
+--no-sort
+--preview-window=down:60%:wrap'
+NO_FZF='cprof config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.'
+
+fresh
+fzf_reset
+panel CP_FZF_BIN=/nonexistent CP_PANEL_ASSUME_TTY=1
+assert_eq "0:$NO_FZF" "$rc:$err" 'no fzf: says what to install and exits 0'
+
+fzf_reset
+panel CP_FZF_BIN="$FZF"
+assert_eq "0:$NO_FZF:0" "$rc:$err:$(fzf_calls)" 'not a terminal: same message, exit 0'
+
+printf '{not json' > "$CPROF_CONFIG"
+fzf_reset
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq '1:0' "$rc:$(fzf_calls)" 'malformed config: refuses to open, rc 1'
+
+fresh
+fzf_reset
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq "0:1:$(rows main)" "$rc:$(fzf_calls):$(stdin_of 1)" \
+  'fzf gets the main rows and a preview that calls back into cprof'
+assert_eq "$FZF_SHARED
+--delimiter
+$TAB
+--with-nth
+2,3
+--header
+cprof config (Enter opens or edits, Esc quits)
+--preview
+$SELF_Q config --preview {1}" "$(argv_of 1)" 'the main fzf call, flag by flag'
+assert_eq 'same:no' "$(same "$CP_T_TMP/before" "$CPROF_CONFIG"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'Esc on the main screen exits 0 and writes nothing'
+# fzf runs --preview through $SHELL; the self path is quoted with bash's %q,
+# so a fish or other login shell must not be the one to read it.
+assert_eq '/bin/bash' "$(SHELL=/usr/bin/fish panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1; cat "$CP_T_TMP/fzf.shell")" \
+  'fzf runs its callbacks through bash, whatever the login shell'
+
+# Run through a relative symlink, from another directory: the preview must
+# still name the resolved, absolute scripts/cprof -- fzf runs it from a fresh
+# shell -- and shell-quoted, which an install under a spaced path needs.
+ln -s "$(cd "$(dirname "$CLI")/.." && pwd -P)" "$CP_T_TMP/repo link"
+mkdir -p "$CP_T_TMP/rel" "$CP_T_TMP/spaced dir"
+ln -s '../repo link/scripts/cprof' "$CP_T_TMP/rel/cprof"
+cp -R "$(dirname "$CLI")" "$CP_T_TMP/spaced dir/scripts"
+ln -s '../spaced dir/scripts/cprof' "$CP_T_TMP/rel/cprof-spaced"
+fzf_reset
+(cd "$CP_T_TMP" && CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1 rel/cprof config </dev/null >/dev/null 2>&1)
+r1="$(argv_of 1 | awk 'p { print; exit } $0 == "--preview" { p = 1 }')"
+fzf_reset
+(cd "$CP_T_TMP" && CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1 rel/cprof-spaced config </dev/null >/dev/null 2>&1)
+r2="$(argv_of 1 | awk 'p { print; exit } $0 == "--preview" { p = 1 }')"
+assert_eq "$SELF_Q config --preview {1}
+$(printf '%q' "$CP_T_TMP/spaced dir/scripts/cprof") config --preview {1}" "$r1
+$r2" 'a relative symlink: the preview names the resolved absolute cprof, quoted'
+
+# One selection: the default row. Its value picker is the second call, and
+# Esc there cancels without writing; Esc on main then exits.
+fresh
+fzf_reset
+row main default > "$CP_T_TMP/fzf.pick.1"
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
+assert_eq "0:3:work
+personal:same" "$rc:$(fzf_calls):$(stdin_of 2):$(same "$CP_T_TMP/before" "$CPROF_CONFIG")" \
+  'a set row opens a value picker fed its choices; Esc there writes nothing'
+assert_eq "$FZF_SHARED
+--print-query
+--query
+work
+--prompt
+$PICK_PROMPT
+--header
+default (Enter applies, Esc cancels)
+--preview
+$SELF_Q config --preview default={q}" "$(argv_of 2)" 'the value picker call, flag by flag'
+
+# --- panel helpers --------------------------------------------------------------
+assert_eq 'red
+green' "$(cp_panel_choices color 'red green')" 'choices: a colour row offers its palette'
+assert_eq 'work' "$(cp_panel_choices profile 'work')" 'choices: a profile row offers the profiles'
+assert_eq 'model
+agents' "$(cp_panel_choices segments 'model agents')" 'choices: a lines row offers the segments'
+assert_eq '' "$(cp_panel_choices integer '1..40')$(cp_panel_choices glyph '1 char')" \
+  'choices: integer and glyph rows offer none'
+assert_eq 'cprof config: statusline (Enter edits, Esc goes back)' "$(cp_panel_header statusline '')" \
+  'header: a sub-screen names itself and Esc goes back'
+assert_eq 'cprof config (Enter opens or edits, Esc quits)
+statusline.bar.width = 8 saved (cprof config undo reverts it)' \
+  "$(cp_panel_header main "$(cp_panel_result statusline.bar.width 8 0 '')")" \
+  'header: the last result goes on its second line'
+assert_eq 'statusline.bar.width = 99 not applied (rc 1): first problem' \
+  "$(cp_panel_result statusline.bar.width 99 1 "cprof: first problem${NL}cprof: second")" \
+  'result: a rejection shows its rc and its first stderr line, without the prefix'
+
 cp_t_summary

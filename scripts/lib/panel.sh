@@ -556,6 +556,121 @@ cp_panel_preview() {
   return 0
 }
 
+# cp_panel_choices <kind> <constraint> -> what a set row's value picker
+# offers, one per line: the palette, the profiles or the segments, which the
+# row's constraint already lists space-separated. Nothing for the free-typed
+# kinds (integer, glyph), whose picker is the query line alone.
+cp_panel_choices() {
+  case "${1:-}" in
+    color|profile|segments) printf '%s\n' "${2:-}" | tr ' ' '\n' | awk 'NF' ;;
+  esac
+}
+
+# cp_panel_header <screen> <result> -> fzf's header: the screen and its keys,
+# then the last write's result line when there is one.
+cp_panel_header() {
+  local screen="${1:-}" result="${2:-}"
+  if [ "$screen" = main ]; then
+    printf 'cprof config (Enter opens or edits, Esc quits)'
+  else
+    printf 'cprof config: %s (Enter edits, Esc goes back)' "$screen"
+  fi
+  [ -z "$result" ] || printf '\n%s' "$result"
+  printf '\n'
+}
+
+# cp_panel_result <id> <value> <rc> <stderr> -> one line on how an --apply
+# went: saved, or not applied with its rc and the first line it warned (the
+# `cprof: ` prefix dropped -- the header is already cprof's).
+cp_panel_result() {
+  local id="${1:-}" value="${2:-}" rc="${3:-1}" err="${4:-}" first
+  if [ "$rc" -eq 0 ]; then
+    printf '%s = %s saved (cprof config undo reverts it)\n' "$id" "$value"
+    return 0
+  fi
+  first="$(printf '%s\n' "$err" | awk 'NF { print; exit }')"
+  first="${first#cprof: }"
+  printf '%s = %s not applied (rc %s)%s\n' "$id" "$value" "$rc" "${first:+: $first}"
+}
+
+# cp_panel_fzf <args...> -> fzf with the flags every panel call shares. The
+# one place the panel's fzf options live; each stays within fzf 0.30. fzf
+# runs --preview through $SHELL, and the self path in it is quoted with
+# bash's %q, so the callbacks run under bash whatever the login shell is.
+cp_panel_fzf() {
+  SHELL=/bin/bash "${CP_FZF_BIN:-fzf}" --ansi --layout=reverse --no-sort \
+    --preview-window=down:60%:wrap "$@"
+}
+
+# cp_panel_run -> the interactive panel: rc 0 on a normal exit (Esc on the
+# main screen), and when fzf or a terminal is missing; rc 1 for a config it
+# will not open. Deliberately thin -- rows, fzf, dispatch -- since a key press
+# is the one thing no test can make: rows, previews and writes are the
+# callbacks, and fzf runs them through the resolved, quoted CP_SELF_PATH.
+cp_panel_run() {
+  local self tab stack screen rows out rc id label value kind con action result='' err sel
+  if ! command -v "${CP_FZF_BIN:-fzf}" >/dev/null 2>&1 \
+    || { [ "${CP_PANEL_ASSUME_TTY:-}" != 1 ] && ! { [ -t 0 ] && [ -t 1 ]; }; }; then
+    printf '%s\n' 'cprof config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.' >&2
+    return 0
+  fi
+  cp_config_read >/dev/null || return 1
+  self="$(printf '%q' "$CP_SELF_PATH")"
+  tab="$(printf '\t')"
+  # A stack of screens, space-separated (screen names carry no space).
+  stack=main
+  while [ -n "$stack" ]; do
+    screen="${stack##* }"
+    rows="$(cp_panel_rows "$screen")" || return 1
+    out="$(printf '%s\n' "$rows" | cp_panel_fzf --delimiter "$tab" --with-nth 2,3 \
+      --header "$(cp_panel_header "$screen" "$result")" \
+      --preview "$self config --preview {1}")"
+    rc=$?
+    result=''
+    case "$rc" in
+      0) ;;
+      1) continue ;;
+      130)
+        case "$stack" in
+          *' '*) stack="${stack% *}" ;;
+          *) stack='' ;;
+        esac
+        continue
+        ;;
+      *) cp_warn "config: fzf failed (rc $rc)"; return 1 ;;
+    esac
+    # cut, not `IFS=<tab> read`: a tab is IFS whitespace, so read would fold
+    # the empty value of an "add a line" row into the next field.
+    id="$(printf '%s\n' "$out" | cut -f1)"
+    label="$(printf '%s\n' "$out" | cut -f2)"
+    value="$(printf '%s\n' "$out" | cut -f3)"
+    kind="$(printf '%s\n' "$out" | cut -f4)"
+    con="$(printf '%s\n' "$out" | cut -f5)"
+    action="$(printf '%s\n' "$out" | cut -f6)"
+    case "$action" in
+      drill) stack="$stack $id"; continue ;;
+      set) ;;
+      *) continue ;;
+    esac
+    out="$(cp_panel_choices "$kind" "$con" | cp_panel_fzf --print-query \
+      --query "$value" --prompt "$label> " \
+      --header "$id (Enter applies, Esc cancels)" \
+      --preview "$self config --preview $id={q}")"
+    rc=$?
+    case "$rc" in
+      0|1) ;;
+      130) continue ;;
+      *) cp_warn "config: fzf failed (rc $rc)"; return 1 ;;
+    esac
+    # --print-query: the query, then the selected choice if one matched.
+    sel="$(printf '%s\n' "$out" | sed -n 2p)"
+    [ -n "$sel" ] || sel="$(printf '%s\n' "$out" | sed -n 1p)"
+    err="$("$CP_SELF_PATH" config --apply "$id=$sel" 2>&1 >/dev/null)"
+    result="$(cp_panel_result "$id" "$sel" "$?" "$err")"
+  done
+  return 0
+}
+
 # cp_cmd_config [--rows <screen> | --preview <id>[=<value>] | --apply <arg> | undo]
 cp_cmd_config() {
   local sub="${1:-}" cfg
@@ -578,11 +693,7 @@ cp_cmd_config() {
       cp_panel_preview "$2"
       ;;
     undo) cp_panel_undo ;;
-    # Placeholder: the panel itself lands in a task that follows.
-    '')
-      cp_warn 'config: not implemented yet'
-      return 2
-      ;;
+    '') cp_panel_run ;;
     *)
       cp_warn "config: unknown option $sub"
       return 2
