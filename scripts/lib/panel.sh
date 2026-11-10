@@ -381,8 +381,10 @@ cp_panel_undo() {
     cp_warn "config: $bak is not a regular file; not restoring it"
     return 1
   fi
-  if ! jq -e . "$bak" >/dev/null 2>&1; then
-    cp_warn "config: $bak is not valid JSON; not restoring it"
+  # A config is an object: `[]` or `1` is valid JSON, but restoring it would
+  # leave every other command failing on the config.
+  if ! jq -e 'type == "object"' "$bak" >/dev/null 2>&1; then
+    cp_warn "config: $bak is not a JSON config object; not restoring it"
     return 1
   fi
   mv "$bak" "$CP_CONFIG_PATH" || { cp_warn 'config: could not restore the backup'; return 1; }

@@ -373,6 +373,13 @@ fresh
 printf 'not json' > "$BAK"
 "$CLI" config undo >/dev/null 2>&1; rc=$?
 assert_eq '1:same' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before")" 'undo refuses a malformed backup'
+r=''
+for b in '[]' '1' '"x"'; do
+  fresh
+  printf '%s' "$b" > "$BAK"
+  "$CLI" config undo >/dev/null 2>&1; r="$r$?:$(same "$CPROF_CONFIG" "$CP_T_TMP/before") "
+done
+assert_eq '1:same 1:same 1:same ' "$r" 'undo refuses a backup that is JSON but not a config object'
 
 rm -f "$BAK"
 printf '{not json' > "$CPROF_CONFIG"; snap
