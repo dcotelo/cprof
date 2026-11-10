@@ -67,11 +67,13 @@ cp_sl_bar() {
   printf '\033[%sm%s\033[2m%s\033[0m\n' "$code" "$filled" "$rest"
 }
 
-# cp_sl_config <cfg> -> four lines of resolved configuration:
+# cp_sl_config <cfg> -> five lines of resolved configuration:
 #   1  layout:     segments space-separated, lines joined by ';'
 #   2  bar:        filled<TAB>empty<TAB>width
-#   3  thresholds: warn<TAB>critical
+#   3  thresholds: warn<TAB>critical<TAB>weekly_threshold
 #   4  colours:    model<TAB>dir<TAB>git<TAB>branch<TAB>label   (names)
+#   5  agents:     stale_after<TAB>keep_finished<TAB>max_rows   (seconds,
+#                  seconds, rows)
 #
 # One jq pass, so a tick spends one call here and the renderers never read a
 # raw value. Every rejected value is replaced by its default and nothing is
@@ -92,7 +94,15 @@ cp_sl_bar() {
 # from the same JSON the jq program uses, rather than a second hand-typed
 # copy, so the two paths cannot silently drift apart.
 #
-# The four lines are all or nothing, which is why the jq output is captured
+# An `agents` section that is not an object resets only the agents settings
+# to their defaults, and the rest of the block keeps what it was given. That
+# is deliberately unlike `bar`, `thresholds` and `colors`, which are indexed
+# straight through and so take the whole block down with them (see below):
+# the agent rows are an addition to the statusline, and a mistake in how
+# they are tuned should not cost a reader the layout and colours they wrote
+# correctly.
+#
+# The five lines are all or nothing, which is why the jq output is captured
 # instead of being piped straight out. jq prints the results of a
 # comma-separated expression one at a time, so a program that errors partway
 # -- which is what indexing a wrongly typed section does -- has already
@@ -101,15 +111,16 @@ cp_sl_bar() {
 # that is a string, the layout line lands where the bar configuration
 # should be and the statusline draws its usage bar out of the layout string.
 # So the resolved lines are used only when jq succeeded and produced exactly
-# four of them. No value the jq program keeps can carry a newline of its own
+# five of them. No value the jq program keeps can carry a newline of its own
 # any more -- clean() refuses every character below 32 -- so that count is
 # belt and braces now rather than the thing standing between a configured
 # newline and a consumer reading the wrong row.
 cp_sl_config() {
-  local cfg="${1:-}" out rc=0 four=0 nl
-  local d_layout='[["badge","model","dir","git"],["context","usage"]]'
+  local cfg="${1:-}" out rc=0 five=0 nl
+  local d_layout='[["badge","model","dir","git"],["context","usage"],["agents"]]'
   local d_fill='▓' d_empty='░' d_width=10 d_warn=70 d_crit=90 d_weekly=50
   local d_model=cyan d_dir=yellow d_git=magenta d_branch=cyan d_label=dim
+  local d_stale=600 d_keep=120 d_max=3
   nl='
 '
   [ -n "$cfg" ] || cfg='{}'
@@ -119,9 +130,10 @@ cp_sl_config() {
     --argjson width "$d_width" --argjson warn "$d_warn" --argjson crit "$d_crit" \
     --argjson weekly "$d_weekly" \
     --arg model "$d_model" --arg dir "$d_dir" --arg git "$d_git" \
-    --arg branch "$d_branch" --arg label "$d_label" '
-    def known: ["badge","model","dir","git","context","usage","weekly"];
-    # Nothing below character 32 in a value that is kept. These four lines are
+    --arg branch "$d_branch" --arg label "$d_label" \
+    --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" '
+    def known: ["badge","model","dir","git","context","usage","weekly","agents"];
+    # Nothing below character 32 in a value that is kept. These five lines are
     # read by their delimiters, and an invisible character collides with them:
     # a tab shifts every field after it on its row -- so the directory colour
     # would take the value meant for the branch and the label colour would
@@ -144,6 +156,9 @@ cp_sl_config() {
     | ($s.bar // {}) as $b
     | ($s.thresholds // {}) as $t
     | ($s.colors // {}) as $c
+    # Type-checked rather than indexed straight through, so that a bad agents
+    # section resets itself and nothing else (see above).
+    | (if ($s.agents|type) == "object" then $s.agents else {} end) as $a
     | (whole($t.warn; 1; 100; 0)) as $w
     | (whole($t.critical; 1; 100; 0)) as $cr
     | (if $w > 0 and $cr > 0 and $w < $cr then [$w, $cr] else [$warn, $crit] end) as $th
@@ -156,20 +171,23 @@ cp_sl_config() {
         (whole($b.width; 1; 40; $width) | tostring)] | join("\t")),
       (($th + [$wk]) | map(tostring) | join("\t")),
       ([pick($c.model; $model), pick($c.dir; $dir), pick($c.git; $git),
-        pick($c.branch; $branch), pick($c.label; $label)] | join("\t"))
+        pick($c.branch; $branch), pick($c.label; $label)] | join("\t")),
+      ([whole($a.stale_after; 30; 86400; $stale), whole($a.keep_finished; 0; 86400; $keep),
+        whole($a.max_rows; 1; 20; $max)] | map(tostring) | join("\t"))
   ' 2>/dev/null)" || rc=$?
   case "$out" in
-    *"$nl"*"$nl"*"$nl"*"$nl"*) ;;
-    *"$nl"*"$nl"*"$nl"*) four=1 ;;
+    *"$nl"*"$nl"*"$nl"*"$nl"*"$nl"*) ;;
+    *"$nl"*"$nl"*"$nl"*"$nl"*) five=1 ;;
   esac
-  if [ "$rc" -eq 0 ] && [ "$four" -eq 1 ]; then
+  if [ "$rc" -eq 0 ] && [ "$five" -eq 1 ]; then
     printf '%s\n' "$out"
     return 0
   fi
-  printf '%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\n%s\t%s\t%s\n%s\t%s\t%s\n%s\t%s\t%s\t%s\t%s\n%s\t%s\t%s\n' \
     "$(printf '%s' "$d_layout" | jq -r '[.[] | join(" ")] | join(";")')" \
     "$d_fill" "$d_empty" "$d_width" "$d_warn" "$d_crit" "$d_weekly" \
-    "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label"
+    "$d_model" "$d_dir" "$d_git" "$d_branch" "$d_label" \
+    "$d_stale" "$d_keep" "$d_max"
 }
 
 # cp_sl_config_problems <cfg> -> one line per rejected statusline setting,
@@ -202,8 +220,8 @@ cp_sl_config() {
 # A key cprof does not read at all is the one report that is not about a
 # value: the resolver ignores it in silence, so there is no fallback to name,
 # and what a reader needs is the key and the level it was written at. Every
-# level inside the block gets that check -- the block, `bar`, `thresholds`
-# and `colors` -- because a misspelled key is the most common real
+# level inside the block gets that check -- the block, `bar`, `thresholds`,
+# `colors` and `agents` -- because a misspelled key is the most common real
 # misconfiguration there is, and staying silent about it while naming an
 # unknown segment teaches a reader to trust a check that was not there. An
 # unknown key at the top level of the config, outside the block, is a
@@ -218,7 +236,13 @@ cp_sl_config() {
 # resolver honours a layout partially: it keeps every inner array that has
 # at least one known segment and drops the rest. So it gets the same $clean
 # computation the resolver performs -- a fallback is a $clean that came out
-# empty -- plus one line per unknown segment.
+# empty -- plus one line per unknown segment. It also carries the one report
+# here that is not about a rejected value: an `agents` segment that shares a
+# line with other segments is kept by the resolver, but its rows cannot sit
+# inside that line and print below it instead, which a reader who put it
+# there should hear once. That advisory reads the same $clean layout the
+# resolver keeps, so a segment the resolver drops cannot trigger it, and a
+# line holding only `agents` never does.
 #
 # Every section is type-checked before it is indexed. cp_sl_config can get
 # away with indexing straight through, because a crash partway through its
@@ -227,13 +251,14 @@ cp_sl_config() {
 # the jq program finishing normally. This function has no such net: a crash
 # partway through would silently drop every report queued after the crash
 # point, in a function whose entire purpose is to not be silent. So a wrongly
-# typed `statusline`, `bar`, `thresholds` or `colors` value gets its own
-# guard and its own line, naming the default the resolver actually falls
+# typed `statusline`, `bar`, `thresholds`, `colors` or `agents` value gets its
+# own guard and its own line, naming the default the resolver actually falls
 # back to, and one bad section can never suppress another's report.
 cp_sl_config_problems() {
   local cfg="${1:-}" key name default state colors_ok tab defaults esc_def
   local d_fill='' d_empty='' d_width='' d_warn='' d_crit='' d_weekly=''
   local d_model='' d_dir='' d_git='' d_branch='' d_label=''
+  local d_stale='' d_keep='' d_max=''
   tab="$(printf '\t')"
   # The fallbacks these messages name are read off the resolver itself,
   # rather than typed out a second time here where they could drift.
@@ -243,19 +268,21 @@ cp_sl_config_problems() {
     IFS="$tab" read -r d_fill d_empty d_width
     IFS="$tab" read -r d_warn d_crit d_weekly
     IFS="$tab" read -r d_model d_dir d_git d_branch d_label
+    IFS="$tab" read -r d_stale d_keep d_max
   } <<EOF
 $defaults
 EOF
   # Every message below names the value the resolver substituted. Handed no
   # defaults at all, there is nothing honest to report: a message with an
   # empty fallback in it would be worse than silence. So say nothing rather
-  # than repeating the ten defaults here as a third hand-typed copy, which
+  # than repeating every default here as a third hand-typed copy, which
   # could only drift from the resolver it is meant to describe.
   if [ -z "$d_fill" ] || [ -z "$d_empty" ] || [ -z "$d_width" ] \
      || [ -z "$d_warn" ] || [ -z "$d_crit" ] || [ -z "$d_weekly" ] \
      || [ -z "$d_model" ] \
      || [ -z "$d_dir" ] || [ -z "$d_git" ] || [ -z "$d_branch" ] \
-     || [ -z "$d_label" ]; then
+     || [ -z "$d_label" ] \
+     || [ -z "$d_stale" ] || [ -z "$d_keep" ] || [ -z "$d_max" ]; then
     return 0
   fi
   # Every name below that came out of the configuration file reaches the
@@ -265,7 +292,7 @@ EOF
   # the one function whose job is honest reporting. Escaped, not filtered by a
   # wider character predicate -- a predicate has to be widened again for the
   # next character class, and safe() is total over every code point. The
-  # resolver's own `< 32` rule stays as it is: it guards the four resolved
+  # resolver's own `< 32` rule stays as it is: it guards the five resolved
   # lines' delimiters, which is a different job from this one.
   #
   # tojson does the quoting, and the escaping of everything below 32 plus the
@@ -295,8 +322,9 @@ EOF
   printf '%s' "$cfg" | jq -r \
     --arg fill "$d_fill" --arg empty "$d_empty" --argjson width "$d_width" \
     --argjson warn "$d_warn" --argjson crit "$d_crit" \
-    --argjson weekly "$d_weekly" "$esc_def"'
-    def known: ["badge","model","dir","git","context","usage","weekly"];
+    --argjson weekly "$d_weekly" \
+    --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" "$esc_def"'
+    def known: ["badge","model","dir","git","context","usage","weekly","agents"];
     # The resolver rules, as cp_sl_config states them, so that a value is
     # judged by what the resolver did with it and not by a second reading.
     def clean($v): ($v|type) == "string" and (($v|explode|map(select(. < 32))|length) == 0);
@@ -328,9 +356,12 @@ EOF
         # Two ways for the block to be discarded whole rather than setting
         # by setting, both worth a line of their own: naming only the
         # section at fault would leave a reader wondering why the layout
-        # they wrote correctly did not take either.
-        ( if ( [$s.bar, $s.thresholds, $s.colors]
-               | map(. != null and . != false and (type != "object")) | any )
+        # they wrote correctly did not take either. `agents` is not among
+        # these sections: a bad one resets only itself (see cp_sl_config),
+        # and is reported on its own further down.
+        ( [$s.bar, $s.thresholds, $s.colors]
+          | map(. != null and . != false and (type != "object")) | any ) as $discarded
+        | ( if $discarded
           then "statusline: a section that is not a JSON object takes the whole block with it; using the default configuration"
           else empty end ),
         # A key nobody recognises is a typo often enough that silence is a
@@ -345,8 +376,8 @@ EOF
         # piped in, the way the unknown-segment check binds $seg: inside the
         # pipe `.` is the list, and index() given a list looks for it as a
         # subsequence instead.
-        ( $s | keys[] | select(. as $k | ["lines","bar","thresholds","colors","weekly_threshold"] | index($k) | not)
-          | "statusline: unknown key \(safe(.)) (known: lines bar thresholds colors weekly_threshold)" ),
+        ( $s | keys[] | select(. as $k | ["lines","bar","thresholds","colors","weekly_threshold","agents"] | index($k) | not)
+          | "statusline: unknown key \(safe(.)) (known: lines bar thresholds colors weekly_threshold agents)" ),
         ( obj($s.bar) | keys[] | select(. as $k | ["filled","empty","width"] | index($k) | not)
           | "statusline.bar: unknown key \(safe(.)) (known: filled empty width)" ),
         ( obj($s.thresholds) | keys[] | select(. as $k | ["warn","critical"] | index($k) | not)
@@ -359,6 +390,8 @@ EOF
           | keys[] | select(. as $k
                      | ["model","dir","git","branch","label","badge"] | index($k) | not)
           | "statusline.colors: unknown key \(safe(.)) (known: model dir git branch label)" ),
+        ( obj($s.agents) | keys[] | select(. as $k | ["stale_after","keep_finished","max_rows"] | index($k) | not)
+          | "statusline.agents: unknown key \(safe(.)) (known: stale_after keep_finished max_rows)" ),
         ( if $s.lines == null then empty
           elif ($s.lines|type) != "array"
           then "statusline.lines: not a list of segment lists; using the default layout"
@@ -373,7 +406,24 @@ EOF
         ( if ($s.lines|type) == "array"
           then ( [ $s.lines[] | select(type == "array") | .[] | select(type == "string") ]
                  | map(select(. as $seg | known | index($seg) | not)) | unique | .[]
-                 | "statusline.lines: unknown segment \(safe(.)) (known: badge model dir git context usage weekly)" )
+                 | "statusline.lines: unknown segment \(safe(.)) (known: badge model dir git context usage weekly agents)" )
+          else empty end ),
+        # Once overall, not once per line: the message names no line, so a
+        # second copy would add nothing. A line is judged after the resolver
+        # has cleaned it, and only a segment other than agents counts as
+        # company. Withheld when the block is discarded whole: the default
+        # layout is drawn then, and there agents has a line of its own.
+        ( if ($s.lines|type) == "array" and ($discarded | not)
+          then ( [ $s.lines[] | select(type == "array")
+                   | [ .[] | select(type == "string")
+                       | select(. as $seg | known | index($seg)) ]
+                   | select(length > 0) ] ) as $clean
+               | if ( $clean
+                      | map(select((map(select(. == "agents")) | length) > 0
+                                   and (map(select(. != "agents")) | length) > 0))
+                      | length ) > 0
+                 then "statusline.lines: agents shares a line with other segments; its rows print below that line"
+                 else empty end
           else empty end ),
         ( (ifnull($s.bar; {})) as $b
           | if ($b|type) != "object"
@@ -409,7 +459,21 @@ EOF
         # about the pair.
         ( if rejected($s.weekly_threshold; whole($s.weekly_threshold; 1; 100; $weekly))
           then "statusline.weekly_threshold: must be a whole number from 1 to 100; using \($weekly)"
-          else empty end )
+          else empty end ),
+        ( (ifnull($s.agents; {})) as $a
+          | if ($a|type) != "object"
+            then "statusline.agents: not a JSON object; using \($stale), \($keep) and \($max)"
+            else
+              ( if rejected($a.stale_after; whole($a.stale_after; 30; 86400; $stale))
+                then "statusline.agents.stale_after: must be a whole number from 30 to 86400; using \($stale)"
+                else empty end ),
+              ( if rejected($a.keep_finished; whole($a.keep_finished; 0; 86400; $keep))
+                then "statusline.agents.keep_finished: must be a whole number from 0 to 86400; using \($keep)"
+                else empty end ),
+              ( if rejected($a.max_rows; whole($a.max_rows; 1; 20; $max))
+                then "statusline.agents.max_rows: must be a whole number from 1 to 20; using \($max)"
+                else empty end )
+            end )
       end
   ' 2>/dev/null
   # Colours last, and in bash: cp_sl_code decides what a usable name is, and
