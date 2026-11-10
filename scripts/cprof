@@ -47,6 +47,8 @@ fi
 . "$CP_LIB_DIR/usage.sh"
 # shellcheck source=lib/statusline.sh
 . "$CP_LIB_DIR/statusline.sh"
+# shellcheck source=lib/agents.sh
+. "$CP_LIB_DIR/agents.sh"
 # shellcheck source=lib/fallback.sh
 . "$CP_LIB_DIR/fallback.sh"
 # shellcheck source=lib/share.sh
