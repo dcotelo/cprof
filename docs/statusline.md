@@ -44,6 +44,9 @@ instead, and `cprof doctor` is where you find out about it.
 
 ## Configuration
 
+`cprof config` opens a panel that edits these settings with a live preview; see
+[Config panel](config.md). The file works the same way if you edit it by hand.
+
 A `statusline` block in `~/.cprof.json` chooses which segments appear, in
 what order, and how they group into lines, along with the bar's glyphs and
 width, the severity thresholds, and the colours of the model, directory, git,

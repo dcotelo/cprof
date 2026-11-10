@@ -94,7 +94,7 @@ usage:
                                     branch, context and usage bars. --stdin reads Claude
                                     Code's payload, without which only the account and
                                     the cached usage can be filled in
-  cprof config [undo]   interactive panel for the statusline and default profile (needs fzf)
+  cprof config [undo]               interactive panel for the statusline and default profile (needs fzf)
   cprof update                      refresh the marketplace, then update this plugin
   cprof remove <name> [--purge]
   cprof version
