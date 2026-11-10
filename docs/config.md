@@ -44,6 +44,11 @@ by the same code that renders it in Claude Code, and it updates as you type.
 Under it, the preview names the setting, its kind and its accepted range, and
 lists any problem the value would cause.
 
+The preview always shows the value Enter will write. For colours and
+profiles, a query that names a choice exactly is that value. Otherwise (a
+partial or empty query) Enter writes the highlighted choice when there is one,
+and the preview renders that choice rather than what you typed.
+
 The panel usually runs in a plain terminal, where there is no session profile
 to render for. The preview then renders as your default profile, or as the
 first profile when no default is set. With no profile configured at all it says
@@ -57,20 +62,26 @@ the usage endpoint.
 
 A value is written the moment you press Enter. Before each write, the previous
 file is copied to `~/.cprof.json.bak`, and the header reports the result.
+Applying a value that is already in effect does nothing: the header says
+`unchanged; nothing written`, and the backup is kept, so the last real change
+can still be undone.
 
-`cprof config undo` puts that backup back and removes it, so undo is one step
-deep: a second undo, or one before any write, reports `nothing to undo` and
-changes nothing. A write that fails leaves the existing backup alone.
+`cprof config undo` puts that backup back and removes it. The current file is
+not kept, so an undo cannot itself be undone, and undo is one step deep: a
+second undo, or one before any write, reports `nothing to undo` and changes
+nothing. A write that fails leaves the existing backup alone.
 
-A value `cprof` would reject is refused with the same message
-`cprof doctor` gives for it, and
-nothing is written. An advisory that the resolver still accepts, such as the
-`agents` segment sharing a line, does not block a write.
+A value `cprof` would reject is refused, and nothing is written. A statusline
+setting is refused with the same message `cprof doctor` gives for it; a default
+profile that does not exist is refused as `cprof default` refuses it, with
+`unknown profile <name>`. An advisory that the resolver still accepts, such as
+the `agents` segment sharing a line, does not block a write.
 
 ## Scripting
 
-`--rows`, `--preview` and `--apply` are the panel's own callbacks, which fzf
-calls to fill the list, draw the preview and write a value. They are not a
+`--rows`, `--preview`, `--preview-pick` and `--apply` are the panel's own
+callbacks, which fzf calls to fill the list, draw the previews and write a
+value. They are not a
 scripting interface, and their ids may change between releases. Scripts should
 use the subcommands (`cprof default`, `cprof color`, and so on) or edit the JSON
 file.
