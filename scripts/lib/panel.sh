@@ -227,13 +227,25 @@ cp_panel_candidate() {
 
 # cp_panel_new_problems <cur_cfg> <cand_cfg> <id> -> the problems writing <id>
 # would introduce, one per line, nothing when it is clean. A problem is new
-# when cp_sl_config_problems reports it for the candidate and not for the
-# current config, so a value already rejected elsewhere never blocks an
-# unrelated setting. It is attributed to <id> when it names <id> itself or
-# <id>'s section (`statusline.bar`, `statusline.lines`, ...) followed by `:`
-# or `.`: the thresholds pair, the lines layout and an unknown colour are
-# all reported at that level. The resolver's own wording is passed through
-# untouched -- it is the wording `cprof doctor` uses.
+# problems the candidate has that are about <id>. Three kinds of line from
+# cp_sl_config_problems <cand> count:
+#
+#   `<id>:` ...                     always. The resolver's messages do not
+#                                   carry the raw value, so a bad value
+#                                   written over an already-rejected one
+#                                   reads exactly like the current line; a
+#                                   not-in-current filter would let it in.
+#   statusline.thresholds / .lines  always, for an id in those sections: the
+#                                   write replaces the pair or the layout
+#                                   whole, so whatever it reports is the
+#                                   write's own doing.
+#   any other `<sec>:` / `<sec>.`   only when the current config does not
+#                                   report it already, so a sibling value
+#                                   rejected before never blocks an
+#                                   unrelated setting in the same section.
+#
+# The resolver's own wording is passed through untouched -- it is the
+# wording `cprof doctor` uses.
 cp_panel_new_problems() {
   local cur="${1:-}" cand="${2:-}" id="${3:-}" sec cur_p line nl
   nl='
@@ -247,10 +259,16 @@ cp_panel_new_problems() {
   cur_p="$(cp_sl_config_problems "$cur")"
   cp_sl_config_problems "$cand" | while IFS= read -r line; do
     [ -n "$line" ] || continue
-    case "$nl$cur_p$nl" in *"$nl$line$nl"*) continue ;; esac
     case "$line" in
-      "$id:"*|"$sec:"*|"$sec."*) printf '%s\n' "$line" ;;
+      "$id:"*) printf '%s\n' "$line"; continue ;;
+      "$sec:"*|"$sec."*) ;;
+      *) continue ;;
     esac
+    case "$sec" in
+      statusline.thresholds|statusline.lines) printf '%s\n' "$line"; continue ;;
+    esac
+    case "$nl$cur_p$nl" in *"$nl$line$nl"*) continue ;; esac
+    printf '%s\n' "$line"
   done
 }
 
@@ -274,8 +292,8 @@ cp_panel_stage_backup() {
 
 # cp_panel_commit_backup <staged> <rc> -> on rc 0 the staged copy becomes
 # the .bak; otherwise it is dropped and the previous .bak stays. Passes <rc>
-# through. A write that had no config to copy leaves no .bak at all: an older
-# one would restore a config from before this write's predecessor.
+# through. A write that had no config to copy leaves an existing .bak alone:
+# with the config gone it may be the only copy of it there is.
 cp_panel_commit_backup() {
   local staged="${1:-}" rc="${2:-1}"
   if [ "$rc" -ne 0 ]; then
@@ -285,8 +303,6 @@ cp_panel_commit_backup() {
   if [ -n "$staged" ]; then
     mv "$staged" "$CP_CONFIG_PATH.bak" \
       || { rm -f "$staged"; cp_warn 'config: written, but the backup could not be kept'; }
-  else
-    rm -f "$CP_CONFIG_PATH.bak"
   fi
   return 0
 }

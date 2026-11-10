@@ -267,8 +267,52 @@ chmod 500 "$CP_T_TMP/ro"
 apply statusline.bar.width=8
 chmod 700 "$CP_T_TMP/ro"
 assert_eq '1:same:same' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$CPROF_CONFIG.bak" "$CP_T_TMP/bak-before")" \
-  'a failed write keeps the old backup and the old file'
+  'a backup that cannot be staged: nothing written, old backup kept'
 export CPROF_CONFIG="$saved_config"
+
+# The write itself failing, after the backup was staged: cp_config_write is
+# overridden in a subshell that sources the libraries, as the CLI does.
+fresh
+printf 'known backup\n' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+(
+  # shellcheck disable=SC2329 # called by cp_panel_apply
+  cp_config_write() { cat >/dev/null; return 1; }
+  # shellcheck disable=SC2034 # read by the panel and config libraries
+  CP_CONFIG_PATH="$CPROF_CONFIG"
+  cp_panel_apply statusline.bar.width=8 2>/dev/null
+); rc=$?
+left="$(cd "$CP_T_TMP" && ls -d config.json.bak.* 2>/dev/null)"
+assert_eq '1:same:same:' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before"):$left" \
+  'a failed write keeps the old backup and the old file, and leaves no staged copy'
+
+# A backup with no config beside it may be the only copy of the old config.
+rm -f "$CPROF_CONFIG"
+printf '{"profiles":[],"precious":1}' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+apply statusline.bar.width=8
+assert_eq '0:same' "$rc:$(same "$BAK" "$CP_T_TMP/bak-before")" \
+  'apply with no config never drops an existing backup'
+
+# --- an already-rejected setting ----------------------------------------------
+fresh '{"bar":{"width":99}}'
+apply statusline.bar.width=41
+assert_eq '1:yes:same:no' \
+  "$rc:$(has "$err" 'statusline.bar.width: must be a whole number'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'a bad value on an already-rejected integer is still rejected'
+fresh '{"thresholds":{"warn":95,"critical":90}}'
+apply statusline.thresholds.critical=50
+assert_eq '1:yes:same:no' \
+  "$rc:$(has "$err" 'statusline.thresholds: warn must be'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'a bad value on an already-rejected thresholds pair is still rejected'
+fresh '{"bar":{"filled":"##"}}'
+apply 'statusline.bar.filled=@@@'
+assert_eq '1:yes:same:no' \
+  "$rc:$(has "$err" 'statusline.bar.filled: must be exactly one character'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
+  'a bad value on an already-rejected glyph is still rejected'
+fresh '{"thresholds":{"warn":95,"critical":90}}'
+apply statusline.thresholds.critical=99
+# The other key is the effective one: the rejected pair resolves to 70/90.
+assert_eq '0:{"critical":99,"warn":70}' "$rc:$(jqc .statusline.thresholds)" \
+  'a good value repairs an already-rejected thresholds pair'
 
 # --- undo --------------------------------------------------------------------
 fresh
