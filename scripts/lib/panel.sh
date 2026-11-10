@@ -244,8 +244,10 @@ cp_panel_candidate() {
 #                                   rejected before never blocks an
 #                                   unrelated setting in the same section.
 #
-# The resolver's own wording is passed through untouched -- it is the
-# wording `cprof doctor` uses.
+# One line never counts: CP_SL_AGENTS_SHARED_MSG, doctor's note that agents
+# shares a line. The resolver keeps that layout, so it is advice, not a
+# rejection. The resolver's own wording is passed through untouched -- it is
+# the wording `cprof doctor` uses.
 cp_panel_new_problems() {
   local cur="${1:-}" cand="${2:-}" id="${3:-}" sec cur_p line nl
   nl='
@@ -259,6 +261,8 @@ cp_panel_new_problems() {
   cur_p="$(cp_sl_config_problems "$cur")"
   cp_sl_config_problems "$cand" | while IFS= read -r line; do
     [ -n "$line" ] || continue
+    # Doctor's advisory, not a rejection: the resolver keeps that layout.
+    [ "$line" = "$CP_SL_AGENTS_SHARED_MSG" ] && continue
     case "$line" in
       "$id:"*) printf '%s\n' "$line"; continue ;;
       "$sec:"*|"$sec."*) ;;

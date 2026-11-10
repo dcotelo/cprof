@@ -236,6 +236,20 @@ apply 'statusline.lines.1=badge bogus'
 assert_eq '1:yes:same' "$rc:$(has "$err" 'unknown segment "bogus"'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before")" \
   'lines: an unknown segment is rejected'
 
+# Doctor's shared-line note is advice, not a rejection: it must not block.
+fresh
+apply 'statusline.lines.1=badge agents'
+assert_eq '0:["badge","agents"]' "$rc:$(jqc '.statusline.lines[0]')" \
+  'lines: agents may share a line, the advisory does not block'
+fresh '{"lines":[["model","agents"],["usage"]]}'
+apply statusline.lines.2=weekly
+assert_eq '0:[["model","agents"],["weekly"]]' "$rc:$(jqc .statusline.lines)" \
+  'lines: a layout already sharing agents does not block editing another line'
+fresh '{"lines":[["model","agents"],["usage"]]}'
+apply 'statusline.lines.2=badge bogus'
+assert_eq '1:yes:same' "$rc:$(has "$err" 'unknown segment "bogus"'):$(same "$CPROF_CONFIG" "$CP_T_TMP/before")" \
+  'lines: beside the advisory, an unknown segment still blocks'
+
 fresh
 apply default=personal
 r="$rc:$(jqc .default):$(same "$BAK" "$CP_T_TMP/before")"

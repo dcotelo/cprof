@@ -14,6 +14,11 @@
 # and the config panel offers it as the segments a line may hold, so the
 # three cannot disagree.
 CP_SL_SEGMENTS='badge model dir git context usage weekly agents'
+# The one lines report that is advice rather than a rejection: the resolver
+# keeps an agents segment that shares a line. One copy, because
+# cp_sl_config_problems emits it and the config panel must recognise it to
+# let such a layout be written.
+CP_SL_AGENTS_SHARED_MSG='statusline.lines: agents shares a line with other segments; its rows print below that line'
 
 # cp_sl_meta_fields: a Claude Code statusline payload on stdin -> either
 # nothing at all, or exactly two tab-separated fields, the model display name
@@ -347,7 +352,7 @@ EOF
     --argjson warn "$d_warn" --argjson crit "$d_crit" \
     --argjson weekly "$d_weekly" \
     --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" \
-    --arg segs "$CP_SL_SEGMENTS" "$esc_def"'
+    --arg segs "$CP_SL_SEGMENTS" --arg shared "$CP_SL_AGENTS_SHARED_MSG" "$esc_def"'
     def known: $segs | split(" ");
     # The resolver rules, as cp_sl_config states them, so that a value is
     # judged by what the resolver did with it and not by a second reading.
@@ -446,7 +451,7 @@ EOF
                       | map(select((map(select(. == "agents")) | length) > 0
                                    and (map(select(. != "agents")) | length) > 0))
                       | length ) > 0
-                 then "statusline.lines: agents shares a line with other segments; its rows print below that line"
+                 then $shared
                  else empty end
           else empty end ),
         ( (ifnull($s.bar; {})) as $b
