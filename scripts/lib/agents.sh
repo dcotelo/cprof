@@ -160,20 +160,15 @@ cp_agents_rows() {
   [ -d "$dir" ] && [ -r "$dir" ] || return 0
   tab="$(printf '\t')"
   win="$stale"; [ "$keep" -gt "$win" ] && win="$keep"
-  # Positional parameters, not an array: an empty array trips set -u in bash
-  # 3.2. An unmatched glob stays literal and is dropped here.
-  set --
-  local f
-  for f in "$dir"/agent-*.jsonl "$dir"/agent-*.meta.json; do
-    [ -f "$f" ] && set -- "$@" "$f"
-  done
-  [ "$#" -gt 0 ] || return 0
   # Candidates: path, birth, jsonl mtime, meta mtime (the jsonl mtime when
   # there is no meta; inspect then skips it), size. No field is ever empty,
   # which matters because read collapses adjacent tabs. Meta lines are keyed
   # by the path of the jsonl beside them.
   local cands
-  cands="$(stat -f "%N${tab}%B${tab}%m${tab}%z" "$@" 2>/dev/null \
+  # Both globs go straight to stat, with no per-file shell loop: an unmatched
+  # glob stays literal, stat's "No such file" for it is discarded, and the
+  # other files still print.
+  cands="$(stat -f "%N${tab}%B${tab}%m${tab}%z" "$dir"/agent-*.jsonl "$dir"/agent-*.meta.json 2>/dev/null \
     | awk -F '\t' -v now="$now" -v win="$win" '
         NF != 4 { next }
         $1 ~ /\.meta\.json$/ { p = $1; sub(/\.meta\.json$/, ".jsonl", p); mm[p] = $3; next }

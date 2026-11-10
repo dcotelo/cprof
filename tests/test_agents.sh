@@ -175,6 +175,14 @@ done
 touch -t "$(at $((NOW - 3600)))" "$AG"/agent-old*
 ag live '{"agentType":"E","description":"live"}' "$(r_asst m)"
 assert_eq live "$(rows | cut -f4)" '120 stale agents and one live one: exactly one row'
+# The per-tick cost must not grow with session history: with the same 120
+# stale agents, only the live one is ever handed to cp_agents_inspect.
+cp_agents_inspect() { printf '%s\n' "$1" >> "$CP_T_TMP/inspected"; }
+: > "$CP_T_TMP/inspected"
+rows > /dev/null
+# shellcheck source=/dev/null
+. "$(dirname "$0")/../scripts/lib/agents.sh"   # the real cp_agents_inspect again
+assert_eq "$AG/agent-live.jsonl" "$(cat "$CP_T_TMP/inspected")" 'stale agents are never inspected'
 
 fresh
 printf '%s\n' '{"agentType":"E","description":"big","model":"haiku"}' > "$AG/agent-big.meta.json"
@@ -199,5 +207,12 @@ assert_eq 50 "$(nobirth $((T0 + 100)) | cut -f5)" 'birth and timestamp unavailab
 
 fresh; ag em '{"agentType":"E","description":" d "}' '{"type":"attachment"}'
 assert_eq "running	E		 d " "$(rows | cut -f1-4)" 'an empty model field keeps its place; spaces in a description survive'
+
+fresh; printf '%s\n' "$M" > "$AG/agent-onlymeta.meta.json"
+out="$(rows 2>"$CP_T_TMP/err")"; rc=$?
+assert_eq "0||" "$rc|$out|$(cat "$CP_T_TMP/err")" 'only meta files, no jsonl: nothing, rc 0, no stderr'
+fresh
+out="$(rows 2>"$CP_T_TMP/err")"; rc=$?
+assert_eq "0||" "$rc|$out|$(cat "$CP_T_TMP/err")" 'empty dir: nothing, rc 0, no stderr'
 
 cp_t_summary
