@@ -29,10 +29,14 @@ cp_agents_model_short() {
     *[!0-9]*) ;;
     ????????) [ "$last" != "$rest" ] && rest="${rest%-*}" ;;
   esac
-  local IFS=-
-  # shellcheck disable=SC2086  # splitting on - is the point
-  set -- $rest
-  for part in "$@"; do
+  # Walk the parts by hand: the id is untrusted, so no word splitting (which
+  # would also glob-expand a * in it) and no shell-option state to restore.
+  while [ -n "$rest" ]; do
+    part="${rest%%-*}"
+    case "$rest" in
+      *-*) rest="${rest#*-}" ;;
+      *) rest="" ;;
+    esac
     case "$part" in
       '' | *[!0-9]*)
         # A word: part of the family only while no version digit has been seen.
