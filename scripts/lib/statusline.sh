@@ -701,10 +701,6 @@ cp_cmd_statusline() {
   col_git="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f3)" 2>/dev/null)"
   col_branch="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f4)" 2>/dev/null)"
   col_label="$(cp_sl_code "$(printf '%s' "$colors_cfg" | cut -f5)" 2>/dev/null)"
-  ag_cfg="$(printf '%s' "$config" | sed -n '5p')"
-  ag_stale="$(printf '%s' "$ag_cfg" | cut -f1)"
-  ag_keep="$(printf '%s' "$ag_cfg" | cut -f2)"
-  ag_max="$(printf '%s' "$ag_cfg" | cut -f3)"
 
   if [ "$colour_on" -eq 1 ] && [ -n "$col_label" ]; then
     label_open="$(printf '\033[%sm' "$col_label")"
@@ -868,6 +864,13 @@ cp_cmd_statusline() {
   if cp_sl_wants "$layout" agents && [ -n "$payload" ]; then
     ag_tp="$(printf '%s' "$payload" | cp_sl_transcript_path)"
     if [ -n "$ag_tp" ]; then
+      # Line 5 of the config: stale_after, keep_finished, max_rows. All three
+      # are always numbers, so splitting on tab cannot collapse an empty field.
+      ag_tab=$'\t'
+      {
+        read -r _; read -r _; read -r _; read -r _
+        IFS="$ag_tab" read -r ag_stale ag_keep ag_max
+      } <<< "$config"
       ag_rows="$(cp_agents_rows "${ag_tp%.jsonl}/subagents" "$(cp_agents_now)" \
         "$ag_stale" "$ag_keep" 2>/dev/null)"
       # shellcheck disable=SC2034 # read by cp_sl_assemble
