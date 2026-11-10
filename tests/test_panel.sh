@@ -346,4 +346,90 @@ apply statusline.bar.width=8
 assert_eq '1:same:no' "$rc:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$([ -e "$BAK" ] && echo yes || echo no)" \
   'malformed config: apply refuses'
 
+# --- preview -----------------------------------------------------------------
+# upto_blank / after_blank <text> -> the lines before / after the first empty one
+upto_blank() { printf '%s\n' "$1" | awk '$0 == "" { exit } { print }'; }
+after_blank() { printf '%s\n' "$1" | awk 'seen { print } $0 == "" { seen = 1 }'; }
+# preview <arg> -> rc in $rc, stdout in $pv (no colour), stderr in $err
+preview() {
+  local e="$CP_T_TMP/preview.err"
+  pv="$(NO_COLOR=1 "$CLI" config --preview "$1" 2>"$e")"; rc=$?
+  err="$(cat "$e")"; rm -f "$e"
+}
+# barw <render> -> the width of the Usage bar in it, in characters
+barw() { printf '%s\n' "$1" | sed -n 's/.*Usage \([^ ]*\) 63%.*/\1/p' | tr -d '\n' | wc -m | tr -d ' '; }
+PTMP="$CP_T_TMP/ptmp"; mkdir -p "$PTMP"
+
+fresh
+cp_panel_candidate "$(cat "$CPROF_CONFIG")" statusline.bar.width 6 > "$CP_T_TMP/cand.json"
+want="$(cp_panel_payload | CPROF_CONFIG="$CP_T_TMP/cand.json" NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+preview statusline.bar.width=6
+assert_eq "0:$want:6:yes" "$rc:$(upto_blank "$pv"):$(barw "$want"):$(has "$want" '[Opus 5]')" \
+  'preview renders exactly what cprof statusline renders for the same override'
+assert_eq 'bar width — integer, 1..40' "$(after_blank "$pv")" \
+  'preview: the description line follows the blank line, and nothing else for a clean value'
+
+fresh '{"bar":{"width":8}}'
+want="$(cp_panel_payload | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+preview statusline.bar.width
+assert_eq "0:$want:8" "$rc:$(upto_blank "$pv"):$(barw "$(upto_blank "$pv")")" \
+  'preview without a value shows the current setting'
+
+fresh
+preview statusline.bar.width=99
+assert_eq '0:10:yes' \
+  "$rc:$(barw "$(upto_blank "$pv")"):$(has "$(after_blank "$pv")" 'statusline.bar.width: must be a whole number from 1 to 40; using 10')" \
+  'preview of a rejected candidate shows the fallback render and the doctor message'
+
+fresh
+printf '{"profiles":[],"old":1}' > "$BAK"; cp "$BAK" "$CP_T_TMP/bak-before"
+ls_before="$(ls -A "$CP_T_TMP")"
+r=''
+for a in statusline.bar.width=6 statusline.bar.width=99 statusline.agents.max_rows=1 default=personal statusline; do
+  pv="$(TMPDIR="$PTMP" NO_COLOR=1 "$CLI" config --preview "$a" 2>/dev/null)"; r="$r$? "
+done
+ls_after="$(ls -A "$CP_T_TMP")"
+assert_eq '0 0 0 0 0 :same:same:same:' \
+  "$r:$(same "$CPROF_CONFIG" "$CP_T_TMP/before"):$(same "$BAK" "$CP_T_TMP/bak-before"):$([ "$ls_before" = "$ls_after" ] && echo same || echo differ):$(ls -A "$PTMP")" \
+  'preview leaves the config and backup untouched, and no temp file behind'
+
+fresh
+pv="$(TMPDIR="$PTMP" NO_COLOR=1 "$CLI" config --preview statusline.agents.max_rows=1 2>/dev/null)"; rc=$?
+agents_out="$(upto_blank "$pv")"
+assert_eq '0:yes:1:' \
+  "$rc:$(has "$agents_out" '+3 more'):$(printf '%s\n' "$agents_out" | grep -c '^[⟳✓✗] '):$(ls -A "$PTMP")" \
+  'agents preview shows the max_rows effect, and its session dir is gone afterwards'
+preview statusline.agents.max_rows=20
+assert_eq '3 1' "$(printf '%s\n' "$pv" | grep -c '^⟳ ') $(printf '%s\n' "$pv" | grep -c '^✓ ')" \
+  'agents preview: three running agents and one finished'
+
+fresh
+rm -f "$CP_T_TMP/curl-called"
+printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "$CP_T_TMP/curl-called" > "$CP_CURL_BIN"; chmod +x "$CP_CURL_BIN"
+preview default=personal
+r="$rc:$(has "$pv" 'personal'):$(has "$pv" "$CP_T_TMP/personal"):$(has "$pv" 'usage: not cached')"
+assert_eq "0:yes:yes:yes:no" "$r:$([ -e "$CP_T_TMP/curl-called" ] && echo yes || echo no)" \
+  'default preview is cache-only'
+mkdir -p "$(dirname "$(cp_usage_cache_file work)")"
+printf '{"five_hour":{"utilization":37.6,"resets_at":"2026-11-10T12:00:00Z"}}' > "$(cp_usage_cache_file work)"
+preview default=work
+assert_eq "0:yes:yes:no:no" \
+  "$rc:$(has "$pv" 'native'):$(has "$pv" '37%'):$(has "$pv" 'not cached'):$([ -e "$CP_T_TMP/curl-called" ] && echo yes || echo no)" \
+  'default preview: a native profile, and its cached 5-hour percentage'
+assert_eq 'default profile — profile, work personal' "$(after_blank "$pv")" 'default preview: the description line'
+preview default=nobody
+assert_eq '0:yes' "$rc:$(has "$(after_blank "$pv")" 'unknown profile nobody')" \
+  'default preview: a profile that does not exist is reported'
+rm -f "$CP_CURL_BIN" "$(cp_usage_cache_file work)"
+
+fresh
+preview statusline.nope=1; r="$rc"
+preview statusline.lines.9=usage; r="$r $rc"
+preview statusline=x; r="$r $rc"
+assert_eq '2 2 2' "$r" 'preview: an unknown id, or a value on a screen, is a usage error'
+
+printf '{not json' > "$CPROF_CONFIG"
+preview statusline.bar.width=6
+assert_eq '1:' "$rc:$pv" 'malformed config: preview refuses, rc 1'
+
 cp_t_summary

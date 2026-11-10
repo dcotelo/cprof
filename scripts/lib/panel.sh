@@ -368,7 +368,164 @@ cp_panel_undo() {
   mv "$bak" "$CP_CONFIG_PATH" || { cp_warn 'config: could not restore the backup'; return 1; }
 }
 
-# cp_cmd_config [--rows <screen> | --preview <arg> | --apply <arg> | undo]
+# cp_panel_payload -> the synthetic Claude Code payload a preview renders
+# against: a fixed model, the current directory, context at 42% and the
+# 5-hour window at 63%. The reset is two hours and thirty seconds out, mid-
+# minute, so a second render a few seconds later reads the same "resets in".
+cp_panel_payload() {
+  local now
+  now="$(date +%s)"
+  jq -cn --arg d "$PWD" --argjson r "$((now + 7230))" '
+    {model: {display_name: "Opus 5"}, workspace: {current_dir: $d},
+     context_window: {used_percentage: 42},
+     rate_limits: {five_hour: {used_percentage: 63, resets_at: $r}}}'
+}
+
+# cp_panel_fake_agents <subagents-dir> -> three running subagents and one
+# finished one, in the record shapes Claude Code writes, so an agents setting
+# previews against something. Their files are aged a little (an mtime moved
+# into the past drags the birth time with it), giving each a plausible
+# duration and letting a short stale_after or keep_finished visibly hide one.
+cp_panel_fake_agents() {
+  local dir="${1:-}" now hb
+  mkdir -p "$dir" || return 1
+  now="$(cp_agents_now)"
+  hb='{"success":true,"message":"Report delivered to your caller."}'
+  # _fa <id> <type> <model> <description> <jsonl-age> <meta-age> [finished]
+  _fa() {
+    local f="$dir/agent-$1" fin="${7:-}"
+    jq -cn --arg t "$2" --arg d "$4" --arg f "$fin" \
+      '{agentType: $t, description: $d} + (if $f == "" then {} else {finished: true} end)' \
+      > "$f.meta.json"
+    jq -cn --arg m "$3" \
+      '{type: "assistant", timestamp: "2026-11-10T09:00:00.000Z",
+        message: {model: $m, content: [{type: "text", text: "x"}]}}' > "$f.jsonl"
+    if [ -n "$fin" ]; then
+      jq -cn --arg t "$hb" '{type: "user", message: {content: [{type: "tool_result",
+        tool_use_id: "t1", content: [{type: "text", text: $t}]}]}}' >> "$f.jsonl"
+    fi
+    touch -t "$(date -r "$((now - $5))" '+%Y%m%d%H%M.%S')" "$f.jsonl"
+    touch -t "$(date -r "$((now - $6))" '+%Y%m%d%H%M.%S')" "$f.meta.json"
+  }
+  _fa a1 Explore claude-opus-5-5 'Find the callers' 12 12
+  _fa a2 general-purpose claude-sonnet-5 'Draft the migration' 45 45
+  _fa a3 Plan claude-haiku-4-5 'Outline the tests' 75 75
+  _fa a4 Explore claude-haiku-4-5 'Map the config readers' 110 20 1
+  unset -f _fa
+}
+
+# cp_panel_render <cand-cfg> <id> -> what `cprof statusline --stdin` prints
+# for <cand-cfg> and the synthetic payload. In a subshell: CP_CONFIG_PATH
+# points at a temp copy of the candidate for this render only, and the temp
+# files go on every way out -- fzf kills a preview it no longer needs.
+cp_panel_render() {
+  local cand="${1:-}" id="${2:-}"
+  (
+    tmp='' sess=''
+    # shellcheck disable=SC2317,SC2329 # run by the traps below
+    cleanup() {
+      [ -z "$tmp" ] || rm -f "$tmp"
+      case "$sess" in */cprof-preview.*) rm -rf "$sess" ;; esac
+    }
+    trap cleanup EXIT
+    trap 'exit 1' HUP INT TERM
+    tmp="$(mktemp "${TMPDIR:-/tmp}/cprof-preview.XXXXXX")" || exit 1
+    printf '%s\n' "$cand" > "$tmp" || exit 1
+    payload="$(cp_panel_payload)"
+    case "$id" in
+      statusline.agents.*)
+        sess="$(mktemp -d "${TMPDIR:-/tmp}/cprof-preview.XXXXXX")" || exit 1
+        cp_panel_fake_agents "$sess/sess/subagents" || exit 1
+        payload="$(printf '%s' "$payload" | jq -c --arg t "$sess/sess.jsonl" '.transcript_path = $t')"
+        ;;
+    esac
+    CP_CONFIG_PATH="$tmp"
+    printf '%s' "$payload" | cp_cmd_statusline --stdin
+  )
+}
+
+# cp_panel_preview_default <cfg> <name> -> the default row's preview: the
+# profile's name, its directory or `native`, and its cached 5-hour usage.
+# Cache-only: a preview runs on every cursor move and never fetches.
+cp_panel_preview_default() {
+  local cfg="${1:-}" name="${2:-}" dir data pct
+  if [ -z "$name" ]; then
+    printf 'no default profile\n'
+    return 0
+  fi
+  printf '%s\n' "$name"
+  cp_profile_exists "$cfg" "$name" || return 0
+  dir="$(cp_profile_dir "$cfg" "$name")"
+  printf '%s\n' "${dir:-native}"
+  data="$(cp_usage_read_cached_only "$name" 2>/dev/null)"
+  pct="$(cp_usage_pct "$data" five_hour)"
+  if [ -n "$pct" ]; then
+    printf 'usage: %s%% (5-hour, cached)\n' "$pct"
+  else
+    printf 'usage: not cached\n'
+  fi
+}
+
+# cp_panel_preview <id>[=<value>] -> the preview pane for a row: the real
+# statusline as it would render with <value> written at <id> (the current
+# config without a value), a blank line, `<label> — <kind>, <constraint>`,
+# then the problems the candidate would introduce, in doctor's wording.
+# Nothing is written. rc 2 for an unknown id or a value on a screen row; rc 1
+# for a malformed config or a value that cannot be placed.
+cp_panel_preview() {
+  local arg="${1:-}" id value has_value=0 cfg row label kind con action cur cand rc problems
+  case "$arg" in
+    *=*) id="${arg%%=*}"; value="${arg#*=}"; has_value=1 ;;
+    *)   id="$arg"; value='' ;;
+  esac
+  [ -n "$id" ] || { cp_warn 'config: --preview needs <id>[=<value>]'; return 2; }
+  cfg="$(cp_config_read)" || return 1
+  # Checked before the candidate: cp_panel_candidate would quietly append a
+  # statusline.lines.<n> far past the end.
+  if ! cp_panel_known_ids "$cfg" | grep -Fxq -- "$id"; then
+    cp_warn "config: unknown setting $id"
+    return 2
+  fi
+  row="$(cp_panel_rows_all "$cfg" "$(cp_sl_config "$cfg")" \
+    | awk -F'\t' -v id="$id" '$2 == id { print; exit }')"
+  label="$(printf '%s' "$row" | cut -f3)"
+  cur="$(printf '%s' "$row" | cut -f4)"
+  kind="$(printf '%s' "$row" | cut -f5)"
+  con="$(printf '%s' "$row" | cut -f6)"
+  action="$(printf '%s' "$row" | cut -f7)"
+
+  if [ "$id" = default ]; then
+    [ "$has_value" -eq 1 ] || value="$cur"
+    cp_panel_preview_default "$cfg" "$value"
+    printf '\n%s — %s, %s\n' "$label" "$kind" "$con"
+    if [ -n "$value" ] && ! cp_profile_exists "$cfg" "$value"; then
+      printf 'unknown profile %s\n' "$value"
+    fi
+    return 0
+  fi
+
+  cand="$cfg"
+  if [ "$action" = drill ]; then
+    if [ "$has_value" -eq 1 ]; then
+      cp_warn "config: $id is a screen, not a setting"
+      return 2
+    fi
+  elif [ "$has_value" -eq 1 ]; then
+    cand="$(cp_panel_candidate "$cfg" "$id" "$value")"; rc=$?
+    case "$rc" in
+      0) ;;
+      2) cp_warn "config: $id is a screen, not a setting"; return 2 ;;
+      *) cp_warn "config: cannot set $id: a section on its path is not a JSON object"; return 1 ;;
+    esac
+  fi
+  cp_panel_render "$cand" "$id"
+  printf '\n%s — %s, %s\n' "$label" "$kind" "$con"
+  problems="$(cp_panel_new_problems "$cfg" "$cand" "$id")"
+  [ -z "$problems" ] || printf '%s\n' "$problems"
+  return 0
+}
+
+# cp_cmd_config [--rows <screen> | --preview <id>[=<value>] | --apply <arg> | undo]
 cp_cmd_config() {
   local sub="${1:-}" cfg
   case "$sub" in
@@ -385,10 +542,13 @@ cp_cmd_config() {
       [ "$#" -ge 2 ] || { cp_warn 'config: --apply needs <id>=<value>'; return 2; }
       cp_panel_apply "$2"
       ;;
+    --preview)
+      [ "$#" -ge 2 ] || { cp_warn 'config: --preview needs <id>[=<value>]'; return 2; }
+      cp_panel_preview "$2"
+      ;;
     undo) cp_panel_undo ;;
-    # Placeholders: --preview and the panel itself land in the tasks that
-    # follow.
-    --preview|'')
+    # Placeholder: the panel itself lands in a task that follows.
+    '')
       cp_warn 'config: not implemented yet'
       return 2
       ;;
