@@ -53,10 +53,11 @@ defaults behind the render above:
 ```json
 {
   "statusline": {
-    "lines": [["badge", "model", "dir", "git"], ["context", "usage"]],
+    "lines": [["badge", "model", "dir", "git"], ["context", "usage"], ["agents"]],
     "bar": {"filled": "▓", "empty": "░", "width": 10},
     "thresholds": {"warn": 70, "critical": 90},
     "weekly_threshold": 50,
+    "agents": {"stale_after": 600, "keep_finished": 120, "max_rows": 3},
     "colors": {"model": "cyan", "dir": "yellow", "git": "magenta", "branch": "cyan", "label": "dim"}
   }
 }
@@ -67,10 +68,12 @@ becomes one printed line, its segments joined by ` │ ` (`git` hugs the `dir`
 before it with a single space instead, so a directory and its branch read as
 one thing). An inner list with no segment cprof recognises is dropped, and if
 that empties the whole thing the default layout above is used instead — one
-typo doesn't blank the statusline. Six segment names exist today: `badge`,
-`model`, `dir`, `git`, `context`, `usage`. A seventh, `agents`, is planned for
-a later release and is not a valid segment name yet — write it into `lines`
-now and it is dropped like any other name cprof doesn't recognise.
+typo doesn't blank the statusline. Eight segment names exist: `badge`,
+`model`, `dir`, `git`, `context`, `usage`, `weekly`, `agents`. Any other name
+is dropped. The default layout has no `weekly` (it is for you to add; see
+[below](#the-weekly-bar-appears-only-when-it-matters)), and its third line
+holds only `agents`, which prints nothing unless a subagent is running or has
+just finished.
 
 Most other settings validate on their own and fall back to their own default
 rather than failing the whole block — the thresholds and the colours are the
@@ -83,6 +86,10 @@ rely on them:
 | `statusline.bar.width` | a whole number from 1 to 40 | `10` |
 | `statusline.thresholds.warn` **and** `.critical` | both, together: whole numbers from 1 to 100 with `warn` below `critical` | `70` **and** `90` — setting only one, or an out-of-order pair, reverts both |
 | `statusline.weekly_threshold` | a whole number from 1 to 100 | `50` — its own setting, so a rejected `thresholds` pair does not change it, and a rejected value here does not change the pair |
+| `statusline.agents.stale_after` | a whole number of seconds from 30 to 86400 | `600` |
+| `statusline.agents.keep_finished` | a whole number of seconds from 0 to 86400; `0` hides finished and stopped agents at once | `120` |
+| `statusline.agents.max_rows` | a whole number from 1 to 20 | `3` |
+| `statusline.agents` — not an object | a JSON object | `600`, `120` and `3` — and only these three settings: the rest of the block keeps what you wrote |
 | `statusline.colors.*` — wrong shape | a string, 1-19 characters, with no invisible character in it — a trailing tab is rejected, with a message of its own | its own default (`cyan` for `model`/`branch`, `yellow` for `dir`, `magenta` for `git`, `dim` for `label`) |
 | `statusline.colors.*` — right shape, unknown name | any name from [the palette](#colours), plus `dim` | *(not a fallback — see below)* |
 
@@ -102,8 +109,8 @@ statusline.thresholds: warn must be a whole number below critical, both from 1 t
 (one line per rejected setting — a config with only one problem prints only one line)
 
 A key cprof doesn't recognise is reported too, at whichever level inside the
-block it was written — `statusline`, `bar`, `thresholds` or `colors` — because
-the resolver ignores it in silence and a misspelling is the likeliest reason
+block it was written — `statusline`, `bar`, `thresholds`, `colors` or
+`agents` — because the resolver ignores it in silence and a misspelling is the likeliest reason
 it is there:
 
 ```console
@@ -171,6 +178,7 @@ Usage ██···· 30% (resets in 2h 19m)
 | `context` | `Context ▓▓▓▓░░░░░░ 37%` | the payload |
 | `usage` | `Usage ▓▓▓░░░░░░░ 30% (resets in 2h 19m)` | the payload, else the profile's cached usage |
 | `weekly` | `Usage Weekly ▓▓▓▓▓▓░░░░ 64% (resets in 3d 13h)`, and nothing at all below the threshold | the profile's cached usage — a payload never carries the week |
+| `agents` | `⟳ Explore [haiku-4.5]: map the config loader (42s)`, one row per subagent | the session's subagent files, beside its transcript |
 
 ### The weekly bar appears only when it matters
 
@@ -199,6 +207,65 @@ weekly bar. And a reset days away is rendered as `3d 13h` rather than `85h
 It is its own threshold, not `thresholds.warn`. Those two are colour
 thresholds, validated as a pair; retuning them should not silently change when
 a line appears.
+
+### agents
+
+`agents` shows the subagents of the current session, one row each, below the
+rest of the statusline:
+
+```console
+⟳ Explore [haiku-4.5]: map the config loader (42s)
+✓ code-reviewer [opus-5]: review the diff (3m 10s)
+✗ general-purpose [sonnet-5]: draft the migration (1m 5s)
++2 more
+```
+
+A row is the glyph, the agent type, the model in brackets, the description
+the agent was given, and how long it has run or ran, in parentheses. The model
+is the last one the agent used, which can differ from the one it was started
+with; a row with no model or no description leaves that part out. The glyphs:
+
+- `⟳` (yellow) running.
+- `✓` (green) finished.
+- `✗` (red) stopped by you, with an interrupt.
+
+Running agents come first, newest first, then finished and stopped ones, the
+latest to end first. `max_rows` caps the rows shown (default 3); whatever does
+not fit collapses into one `+N more` line.
+
+"Running" is an approximation. Claude Code does not tell a statusline that a
+subagent is alive, so cprof infers it from the agent's own files: an agent
+whose files have been silent for `stale_after` seconds is taken to be gone and
+disappears. The default is 10 minutes because a single tool call can run that
+long without writing anything; lower it if you would rather lose a stuck agent
+sooner, raise it if you run longer calls. Finished and stopped agents stay for
+`keep_finished` seconds (default 2 minutes) and then go. A finished row shows
+the time from start to end, so it stops counting.
+
+Give `agents` a line of its own, as the default layout does. Its rows are
+several lines tall and print below the line it sits on, so beside other
+segments they would trail the whole line; `cprof doctor` says so when it
+finds them sharing:
+
+```console
+statusline.lines: agents shares a line with other segments; its rows print below that line
+```
+
+The statusline reads only the subagents' own files, under a
+`subagents` directory beside the session's transcript, and only the tail of
+those that are recent (a subagent's file can run to megabytes). It never opens
+the main session transcript, which can run to megabytes and is re-read by Claude Code itself every few seconds. With
+no payload there is nothing to read and the segment prints nothing.
+
+A bad `agents` section resets only its own settings. Written as anything but
+an object it falls back to `600`, `120` and `3` while `lines`, `bar`, the
+thresholds and the colours keep what you wrote, and a value out of range
+resets only that one setting. `cprof doctor` reports both:
+
+```console
+statusline.agents: not a JSON object; using 600, 120 and 3
+statusline.agents.max_rows: must be a whole number from 1 to 20; using 3
+```
 
 ## Colours
 

@@ -5,7 +5,7 @@ set -u
 . "$(dirname "$0")/lib.sh"
 cp_t_setup
 trap cp_t_teardown EXIT
-for lib in config resolve profiles auth output color usage statusline fallback share; do
+for lib in config resolve profiles auth output color usage statusline agents fallback share; do
   # shellcheck source=/dev/null
   . "$(dirname "$0")/../scripts/lib/$lib.sh"
 done
@@ -222,6 +222,105 @@ JSON
 
 rm -f "$CP_T_TMP/state/usage/work.json"
 
+# --- the agents segment: one row per running or just-finished subagent -----
+# The session's subagents live beside its transcript, in <session>/subagents/;
+# the parent transcript itself is never opened.
+ag_cfg() {     # $1 = the statusline block's contents, or empty for none
+  local sl=''
+  [ -z "$1" ] || sl=",\"statusline\":{$1}"
+  cp_t_write_config <<JSON
+{"default":"work",
+ "profiles":[{"name":"work","native":true,"color":"magenta"},
+             {"name":"personal","dir":"$CP_T_TMP/p"}],
+ "rules":[],"repos":{}$sl}
+JSON
+}
+SA="$CP_T_TMP/proj/sess/subagents"; mkdir -p "$SA"
+ag_one() {     # ag_one <id>: a running Explore agent
+  printf '%s\n' '{"agentType":"Explore","description":"Find callers"}' > "$SA/agent-$1.meta.json"
+  jq -cn '{type:"assistant",timestamp:"2026-11-10T09:00:00.000Z",message:{model:"claude-opus-5-5",content:[{type:"text",text:"x"}]}}' \
+    > "$SA/agent-$1.jsonl"
+}
+ag_one a1
+now="$(date +%s)"
+b="$(stat -f %B "$SA/agent-a1.jsonl")"
+ROW="⟳ Explore [opus-5.5]: Find callers ($(cp_agents_duration $((now + 5 - b))))"
+pl="$(printf '{"transcript_path":"%s"}' "$CP_T_TMP/proj/sess.jsonl")"
+agsl() { printf '%s' "$1" | CP_AGENTS_NOW=$((now + 5)) NO_COLOR=1 "$CLI" statusline --stdin; }
+
+ag_cfg '"lines":[["badge"],["agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>/dev/null)" 'the agents line under the badge'
+assert_eq '⚑ work' "$(agsl '{}' 2>&1)" 'no transcript_path in the payload: line vanishes, nothing on stderr'
+# Each rejected shape below would reach the real subagents dir if accepted:
+# run from $CP_T_TMP, or through a symlink to the session dir.
+assert_eq '⚑ work' "$(cd "$CP_T_TMP" && agsl '{"transcript_path":"proj/sess.jsonl"}' 2>&1)" 'relative transcript_path: ignored'
+assert_eq '⚑ work' "$(agsl "$(printf '{"transcript_path":"%s"}' "$CP_T_TMP/proj/other.jsonl")" 2>&1)" \
+  'transcript_path with no subagents dir beside it: line vanishes'
+ln -s sess "$CP_T_TMP/proj/sess.txt"
+assert_eq '⚑ work' "$(agsl "$(printf '{"transcript_path":"%s"}' "$CP_T_TMP/proj/sess.txt")" 2>&1)" \
+  'a transcript_path not ending in .jsonl: ignored'
+# A control character cannot be driven end to end (stat's listing of such a
+# dir yields no rows anyway), so the guard is checked on the helper itself.
+assert_eq '' "$(jq -cn --arg p "$CP_T_TMP/proj/s" '{transcript_path:($p + ([10]|implode) + "ess.jsonl")}' | cp_sl_transcript_path)" \
+  'a transcript_path with a control character: ignored'
+assert_eq '' "$(jq -cn --arg p "$CP_T_TMP/proj/s" '{transcript_path:($p + ([27]|implode) + "ess.jsonl")}' | cp_sl_transcript_path)" \
+  'a transcript_path with an ESC: ignored'
+assert_eq "$CP_T_TMP/proj/sess.jsonl" "$(printf '%s' "$pl" | cp_sl_transcript_path)" \
+  'a clean absolute transcript_path is taken as given'
+assert_eq '' "$(printf '%s' '{"transcript_path":42}' | cp_sl_transcript_path)" 'a non-string transcript_path: ignored'
+# The length guard is checked on the helper alone: end to end, an over-long
+# path has no subagents directory beside it (one cannot be created past the
+# filesystem's own name limits), so the output would be the same whether or
+# not the guard existed.
+assert_eq '4097' \
+  "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4089)).jsonl" '{transcript_path:$p}' | cp_sl_transcript_path | wc -c | tr -d ' ')" \
+  'a 4096-character transcript_path is accepted'
+assert_eq '' \
+  "$(jq -cn --arg p "/$(printf 'x%.0s' $(seq 1 4090)).jsonl" '{transcript_path:$p}' | cp_sl_transcript_path)" \
+  'a 4097-character transcript_path is dropped'
+
+ag_cfg '"lines":[["badge","agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>/dev/null)" 'agents mixed into a line: that line renders, rows follow below it'
+ag_cfg '"lines":[["badge","agents","agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>/dev/null)" 'agents named twice in a line: the rows print once'
+ag_cfg '"lines":[["agents"],["badge"]]'
+assert_eq "$ROW
+⚑ work" "$(agsl "$pl" 2>/dev/null)" 'a line of agents alone prints just the rows'
+
+ag_one a2; ag_one a3
+ag_cfg '"lines":[["badge"],["agents"]],"agents":{"max_rows":1}'
+out="$(agsl "$pl" 2>/dev/null)"
+assert_eq '3' "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 'max_rows from config applies'
+assert_eq '+2 more' "$(printf '%s\n' "$out" | sed -n '3p')" 'max_rows from config applies: the rest as a more-line'
+rm -f "$SA/agent-a2.jsonl" "$SA/agent-a2.meta.json" "$SA/agent-a3.jsonl" "$SA/agent-a3.meta.json"
+
+mkdir -p "$CP_T_TMP/proj/sess.jsonl"
+ag_cfg '"lines":[["badge"],["agents"]]'
+assert_eq "⚑ work
+$ROW" "$(agsl "$pl" 2>&1)" 'the parent transcript is never opened'
+rmdir "$CP_T_TMP/proj/sess.jsonl"
+
+ag_cfg ''
+pl5="$(printf '{"transcript_path":"%s","context_window":{"used_percentage":5}}' "$CP_T_TMP/proj/sess.jsonl")"
+assert_eq "$ROW" "$(agsl "$pl5" 2>/dev/null | sed -n '3p')" 'default layout shows agents as a third line'
+
+ag_cfg '"lines":[["badge"]]'
+assert_eq '⚑ work' "$(agsl "$pl" 2>&1)" 'a layout without agents renders no rows'
+
+# Coloured: the model and the duration take the configured colours.
+ag_cfg '"lines":[["agents"]]'
+out="$(printf '%s' "$pl" | CP_AGENTS_NOW=$((now + 5)) "$CLI" statusline --stdin 2>/dev/null)"
+case "$out" in
+  *"${ESC}[36m[opus-5.5]${ESC}[0m"*"${ESC}[2m("*) assert_eq ok ok 'agents rows take the model and label colours' ;;
+  *) assert_eq 'coloured row' "$out" 'agents rows take the model and label colours' ;;
+esac
+
+# Restore the fixture the rest of the file expects.
+ag_cfg ''
+
 # --- and coloured ----------------------------------------------------------
 out="$(printf '%s' "$PAY" | "$CLI" statusline --stdin 2>/dev/null)"
 case "$out" in
@@ -282,7 +381,7 @@ cfgline() { cp_sl_config "$1" | sed -n "${2}p"; }
 # the same split every consumer uses, so a tab inside a kept value shifts a
 # row and the oracle inherits the shift instead of seeing it.
 slfields() { cp_sl_config "$1" | sed -n "${2}p" | awk -F'\t' '{print NF}'; }
-DEFLAYOUT='badge model dir git;context usage'
+DEFLAYOUT='badge model dir git;context usage;agents'
 assert_eq "$DEFLAYOUT" "$(cfgline '{}' 1)" 'no statusline block: the default layout'
 assert_eq "▓	░	10" "$(cfgline '{}' 2)" 'no statusline block: cprof own bar, ten cells'
 assert_eq "70	90	50" "$(cfgline '{}' 3)" 'no statusline block: the documented thresholds'
@@ -318,9 +417,9 @@ assert_eq "red	blue	green	bright-cyan	dim" \
   'colours are configurable and an unset one keeps its default'
 
 # --- weekly_threshold: when the 7-day bar appears -------------------------
-# It rides on the thresholds line as a third field rather than a fifth line,
-# so the four-line contract below is untouched and a consumer reading fields
-# one and two is unaffected. It is its own setting, not part of the
+# It rides on the thresholds line as a third field rather than a line of its
+# own, so a consumer reading fields one and two of that line is unaffected.
+# It is its own setting, not part of the
 # warn/critical pair: those are colour thresholds validated together, and a
 # bad pair must not drag the visibility threshold down with it.
 assert_eq "70	90	40" "$(cfgline '{"statusline":{"weekly_threshold":40}}' 3)" \
@@ -345,26 +444,55 @@ assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["weekly"]],"week
   'a layout naming weekly, with a valid threshold, is silent'
 assert_eq "cyan	yellow	magenta	cyan	dim" "$(cfgline '{"statusline":{"colors":{"model":123}}}' 4)" \
   'a non-string colour value falls back to its default'
-assert_eq '4' "$(cp_sl_config '{}' | wc -l | tr -d ' ')" 'always exactly four lines'
+
+# --- agents: when a finished subagent row goes, and how many show ----------
+# Its own line, the fifth: stale_after, keep_finished and max_rows, seconds,
+# seconds and rows. Unlike `bar`, an `agents` section that is not an object
+# resets only itself; the layout and every other section keep what they were
+# given.
+assert_eq '600	120	3' "$(cfgline '{}' 5)" 'agents defaults'
+assert_eq '30	0	20' "$(cfgline '{"statusline":{"agents":{"stale_after":30,"keep_finished":0,"max_rows":20}}}' 5)" 'agents lower and upper bounds accepted'
+assert_eq '86400	86400	1' "$(cfgline '{"statusline":{"agents":{"stale_after":86400,"keep_finished":86400,"max_rows":1}}}' 5)" \
+  'agents upper and lower bounds accepted the other way round'
+for bad in 29 86401 1.5 '"600"' true; do
+  assert_eq '600	120	3' "$(cfgline "{\"statusline\":{\"agents\":{\"stale_after\":$bad}}}" 5)" "stale_after $bad falls back"
+done
+for bad in -1 86401 2.5 '"120"' false; do
+  assert_eq '600	120	3' "$(cfgline "{\"statusline\":{\"agents\":{\"keep_finished\":$bad}}}" 5)" "keep_finished $bad falls back"
+done
+assert_eq '600	120	3' "$(cfgline '{"statusline":{"agents":{"max_rows":0}}}' 5)" 'max_rows 0 falls back'
+assert_eq '600	120	3' "$(cfgline '{"statusline":{"agents":{"max_rows":21}}}' 5)" 'max_rows 21 falls back'
+assert_eq '600	45	3' "$(cfgline '{"statusline":{"agents":{"stale_after":1,"keep_finished":45}}}' 5)" \
+  'one rejected agents setting leaves the others alone'
+assert_eq '600	120	3' "$(cfgline '{"statusline":{"agents":"x"}}' 5)" 'a non-object agents section falls back'
+assert_eq "$DEFLAYOUT" "$(cfgline '{"statusline":{"agents":"x"}}' 1)" 'a bad agents section resets only itself'
+assert_eq "▓	░	24" "$(cfgline '{"statusline":{"agents":"x","bar":{"width":24}}}' 2)" \
+  'a bad agents section leaves the bar it sits beside alone'
+assert_eq 'badge' "$(cfgline '{"statusline":{"agents":5,"lines":[["badge"]]}}' 1)" \
+  'a bad agents section leaves a configured layout alone'
+assert_eq 'agents' "$(cfgline '{"statusline":{"lines":[["agents"]]}}' 1)" 'agents is a known segment'
+
+assert_eq '5' "$(cp_sl_config '{}' | wc -l | tr -d ' ')" 'always exactly five lines'
 assert_eq "$DEFLAYOUT" "$(cfgline 'not json' 1)" 'an unreadable config yields the defaults'
-assert_eq '4' "$(cp_sl_config '' | wc -l | tr -d ' ')" 'an empty config argument still yields four lines'
+assert_eq '5' "$(cp_sl_config '' | wc -l | tr -d ' ')" 'an empty config argument still yields five lines'
 assert_eq "$DEFLAYOUT" "$(cfgline '' 1)" 'an empty config argument yields the default layout'
 assert_eq "$(cp_sl_config '{}')" "$(cp_sl_config 'not json')" \
   'the fallback and the jq defaults cannot drift apart'
 
-# --- four lines, for every input whatsoever --------------------------------
+# --- five lines, for every input whatsoever --------------------------------
 # Every consumer reads this output by line number, so the contract is not
-# "four lines when the config makes sense" but "four lines, always". It used
+# "five lines when the config makes sense" but "five lines, always". It used
 # to be neither. jq prints the results of a comma-separated expression one at
 # a time, so a wrongly typed section printed the layout line, then errored on
-# the next expression, and the old `|| printf <defaults>` appended four more:
-# five lines for a bad `bar`, seven for bad `colors`, every consumer shifted
-# by one row, and the statusline drawing its usage bar out of the layout
-# string. Nothing caught it because every malformed input that had ever been
-# tested here failed before any output (`not json`, the empty string) or
-# succeeded whole. The resolver now uses its resolution only when jq exited
-# zero and produced exactly four lines, so the contract is one assertion per
-# shape and the shapes are enumerated rather than chosen.
+# the next expression, and the old `|| printf <defaults>` appended a full set
+# of defaults after it: one extra line for a bad `bar`, three for bad
+# `colors`, every consumer shifted by one row, and the statusline drawing its
+# usage bar out of the layout string. Nothing caught it because every
+# malformed input that had ever been tested here failed before any output
+# (`not json`, the empty string) or succeeded whole. The resolver now uses its
+# resolution only when jq exited zero and produced exactly five lines (four,
+# before the agents line), so the contract is one assertion per shape and the
+# shapes are enumerated rather than chosen.
 sllines() { cp_sl_config "$1" | awk 'END {print NR}'; }
 # A value the resolver would otherwise keep that carries an invisible
 # character breaks the contract from the inside -- a newline forges a row, a
@@ -425,6 +553,13 @@ SL_SHAPE=(
   '{"statusline":{"colors":{"label":true}}}'
   '{"statusline":{"bar":"x","lines":[["context"]]}}'
   '{"statusline":{"colors":"x","bar":{"width":20}}}'
+  '{"statusline":{"agents":"x"}}'
+  '{"statusline":{"agents":5}}'
+  '{"statusline":{"agents":[]}}'
+  '{"statusline":{"agents":true}}'
+  '{"statusline":{"agents":false}}'
+  '{"statusline":{"agents":{"stale_after":"600","keep_finished":[],"max_rows":{}}}}'
+  '{"statusline":{"agents":"x","bar":"x"}}'
   "$nlglyph"
   "$nlcolour"
   "$tabglyph"
@@ -434,7 +569,7 @@ SL_SHAPE=(
 )
 i=0
 while [ "$i" -lt "${#SL_SHAPE[@]}" ]; do
-  assert_eq '4' "$(sllines "${SL_SHAPE[$i]}")" "four lines for ${SL_SHAPE[$i]}"
+  assert_eq '5' "$(sllines "${SL_SHAPE[$i]}")" "five lines for ${SL_SHAPE[$i]}"
   i=$((i + 1))
 done
 
@@ -597,7 +732,7 @@ assert_eq '' "$(cp_sl_config_problems '{}')" 'no statusline block, nothing to re
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"█"}}}')" 'a valid block, nothing to report'
 assert_eq 'statusline.lines: not a list of segment lists; using the default layout' \
   "$(cp_sl_config_problems '{"statusline":{"lines":"nonsense"}}')" 'a malformed layout is reported'
-assert_eq 'statusline.lines: unknown segment "nonsense" (known: badge model dir git context usage weekly)' \
+assert_eq 'statusline.lines: unknown segment "nonsense" (known: badge model dir git context usage weekly agents)' \
   "$(cp_sl_config_problems '{"statusline":{"lines":[["badge","nonsense"]]}}')" 'an unknown segment is named'
 assert_eq 'statusline.bar.filled: must be exactly one character; using ▓' \
   "$(cp_sl_config_problems '{"statusline":{"bar":{"filled":"ab"}}}')" 'a bad glyph is reported with the fallback'
@@ -652,7 +787,7 @@ sl_ctl() { LC_ALL=C tr -dc '\001-\011\013-\037' | od -An -c; }
 forgekey="$(jq -cn '{statusline:{("x"+([10]|implode)+"statusline.bar.width: must be a whole number from 1 to 40; using 40"):1}}')"
 assert_eq 1 "$(cp_sl_config_problems "$forgekey" | wc -l | tr -d ' ')" \
   'a newline in a key name cannot forge a second doctor line'
-assert_eq 'statusline: unknown key "x\nstatusline.bar.width: must be a whole number from 1 to 40; using 40" (known: lines bar thresholds colors weekly_threshold)' \
+assert_eq 'statusline: unknown key "x\nstatusline.bar.width: must be a whole number from 1 to 40; using 40" (known: lines bar thresholds colors weekly_threshold agents)' \
   "$(cp_sl_config_problems "$forgekey")" \
   'the forged text comes back escaped inside the name it was written as'
 # All four levels that name a key, in one config: four reports, four lines.
@@ -704,13 +839,13 @@ assert_eq 'statusline.bar.width: must be a whole number from 1 to 40; using 10' 
 # --- a misspelled key inside the block is named --------------------------
 # Every one of these used to be silent, while a misspelled *segment* name was
 # reported -- and that asymmetry is the trap: being told `unknown segment
-# agents` teaches a reader that doctor catches names it does not recognise,
+# clock` teaches a reader that doctor catches names it does not recognise,
 # and then it did not catch `wdith`. A misspelled key is the most common real
 # misconfiguration there is.
-assert_eq 'statusline: unknown key "line" (known: lines bar thresholds colors weekly_threshold)' \
+assert_eq 'statusline: unknown key "line" (known: lines bar thresholds colors weekly_threshold agents)' \
   "$(cp_sl_config_problems '{"statusline":{"line":[["badge"]]}}')" \
   'an unknown key directly under statusline is named'
-assert_eq 'statusline: unknown key "threshold" (known: lines bar thresholds colors weekly_threshold)' \
+assert_eq 'statusline: unknown key "threshold" (known: lines bar thresholds colors weekly_threshold agents)' \
   "$(cp_sl_config_problems '{"statusline":{"threshold":{"warn":50,"critical":80}}}')" \
   'a section name that is nearly right is named at the level it was written'
 assert_eq 'statusline.bar: unknown key "wdith" (known: filled empty width)' \
@@ -726,6 +861,62 @@ assert_eq 'statusline.bar: unknown key "fill" (known: filled empty width)
 statusline.bar: unknown key "wdith" (known: filled empty width)' \
   "$(cp_sl_config_problems '{"statusline":{"bar":{"fill":"x","wdith":5}}}')" \
   'two unknown keys at one level are both named, in a fixed order'
+assert_eq 'statusline.agents: unknown key "stale" (known: stale_after keep_finished max_rows)' \
+  "$(cp_sl_config_problems '{"statusline":{"agents":{"stale":60}}}')" \
+  'an unknown key under agents is named'
+
+# --- agents: one honest report per rejected value --------------------------
+assert_eq 'statusline.agents: not a JSON object; using 600, 120 and 3' \
+  "$(cp_sl_config_problems '{"statusline":{"agents":"x"}}')" \
+  'an agents section that is not an object is reported with its fallbacks'
+assert_eq 'statusline.agents: not a JSON object; using 600, 120 and 3' \
+  "$(cp_sl_config_problems '{"statusline":{"agents":false}}')" \
+  'an agents value of false is reported, not treated as nothing configured'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"agents":null}}')" \
+  'an agents value of null stays silent, unlike false'
+# Unlike `bar`, a bad agents section resets only itself, so the message that
+# says a section took the whole block with it must not fire for it.
+out="$(cp_sl_config_problems '{"statusline":{"agents":5}}')"
+case "$out" in *'takes the whole block'*) assert_eq 'no whole-block line' "$out" \
+    'a bad agents section does not claim the whole block fell back' ;;
+  *) assert_eq ok ok 'a bad agents section does not claim the whole block fell back' ;;
+esac
+assert_eq 'statusline.agents.stale_after: must be a whole number from 30 to 86400; using 600' \
+  "$(cp_sl_config_problems '{"statusline":{"agents":{"stale_after":29}}}')" \
+  'a bad stale_after is reported with the fallback'
+assert_eq 'statusline.agents.keep_finished: must be a whole number from 0 to 86400; using 120' \
+  "$(cp_sl_config_problems '{"statusline":{"agents":{"keep_finished":-1}}}')" \
+  'a bad keep_finished is reported with the fallback'
+assert_eq 'statusline.agents.max_rows: must be a whole number from 1 to 20; using 3' \
+  "$(cp_sl_config_problems '{"statusline":{"agents":{"max_rows":0}}}')" \
+  'a bad max_rows is reported with the fallback'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"agents":{"stale_after":30,"keep_finished":0,"max_rows":20}}}')" \
+  'agents settings at their bounds are silent'
+
+# --- agents sharing a line: an advisory, not a rejection --------------------
+# The resolver keeps such a layout, so nothing fell back; but the agent rows
+# cannot sit inside a line of segments, so they print below it, and a reader
+# who put agents mid-line should hear that once.
+assert_eq 'statusline.lines: agents shares a line with other segments; its rows print below that line' \
+  "$(cp_sl_config_problems '{"statusline":{"lines":[["badge","agents"]]}}')" \
+  'agents sharing a line with other segments is reported'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["badge"],["agents"]]}}')" \
+  'agents on a line of its own is silent'
+assert_eq 'statusline.lines: unknown segment "nonsense" (known: badge model dir git context usage weekly agents)' \
+  "$(cp_sl_config_problems '{"statusline":{"lines":[["agents","nonsense"]]}}')" \
+  'an unknown segment beside agents is dropped, so agents shares that line with nothing'
+assert_eq 'statusline.lines: agents shares a line with other segments; its rows print below that line' \
+  "$(cp_sl_config_problems '{"statusline":{"lines":[["badge","agents"],["context","agents"]]}}')" \
+  'the shared-line advisory is printed once overall, however many lines share'
+assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["agents","agents"]]}}')" \
+  'agents repeated on its own line shares it with nothing else'
+# A block discarded whole renders the default layout, where agents has a line
+# of its own, so the advisory about the written layout would be false there.
+out="$(cp_sl_config_problems '{"statusline":{"bar":"x","lines":[["badge","agents"]]}}')"
+case "$out" in *'shares a line'*) assert_eq 'no shared-line advisory' "$out" \
+    'a discarded block withholds the shared-line advisory' ;;
+  *) assert_eq ok ok 'a discarded block withholds the shared-line advisory' ;;
+esac
 # The badge takes its colour from `cprof color`, so that a profile colour
 # lives in one place, and colors.badge is accepted and ignored on purpose
 # (pinned at the render further up). A general unknown-key check must not
@@ -862,23 +1053,24 @@ assert_eq '' "$(cp_sl_config_problems '{"statusline":{"colors":{"model":null}}}'
 # the rest, so "the resolver fell back" is not a yes or no there.
 #
 # Reading the resolver's output by line number is safe here because it
-# guarantees exactly four lines for every input, which the contract table
-# further down pins for every malformed shape. Before that guarantee a
-# wrongly typed section left the resolver printing five or seven lines, and
-# a comparison against those would have been a comparison against rubble.
+# guarantees exactly five lines for every input, which the contract table
+# further up pins for every malformed shape. Before that guarantee a wrongly
+# typed section left the resolver printing a line or three too many, and a
+# comparison against those would have been a comparison against rubble.
 
 # cp_t_sl_fallbacks <cfg> -> one line per key the resolver did not keep
 cp_t_sl_fallbacks() {
   local cfg="$1" resolved tab key rv state
   local rfill='' rempty='' rwidth='' rwarn='' rcrit='' rweekly=''
   local rmodel='' rdir='' rgit='' rbranch='' rlabel=''
+  local rstale='' rkeep='' rmax=''
   tab="$(printf '\t')"
   # The block and the sections: structural, so no resolved value is needed.
   printf '%s' "$cfg" | jq -r '
     .statusline as $s
     | if $s == null then empty
       elif ($s|type) != "object" then "statusline"
-      else ( ["bar","thresholds","colors"][] as $sec
+      else ( ["bar","thresholds","colors","agents"][] as $sec
              | $s[$sec] as $v
              | if $v == null or ($v|type) == "object" then empty
                else "statusline." + $sec end )
@@ -889,12 +1081,14 @@ cp_t_sl_fallbacks() {
     IFS="$tab" read -r rfill rempty rwidth
     IFS="$tab" read -r rwarn rcrit rweekly
     IFS="$tab" read -r rmodel rdir rgit rbranch rlabel
+    IFS="$tab" read -r rstale rkeep rmax
   } <<EOF
 $resolved
 EOF
   printf '%s' "$cfg" | jq -r \
     --arg fill "$rfill" --arg empty "$rempty" --argjson width "$rwidth" \
-    --argjson warn "$rwarn" --argjson crit "$rcrit" --argjson weekly "$rweekly" '
+    --argjson warn "$rwarn" --argjson crit "$rcrit" --argjson weekly "$rweekly" \
+    --argjson stale "$rstale" --argjson keep "$rkeep" --argjson max "$rmax" '
     def fell($v; $r): $v != null and $v != $r;
     .statusline as $s
     | if ($s|type) != "object" then empty else
@@ -907,7 +1101,12 @@ EOF
           ( if fell($s.thresholds.warn; $warn) then "statusline.thresholds.warn" else empty end ),
           ( if fell($s.thresholds.critical; $crit) then "statusline.thresholds.critical" else empty end )
         else empty end ),
-      ( if fell($s.weekly_threshold; $weekly) then "statusline.weekly_threshold" else empty end )
+      ( if fell($s.weekly_threshold; $weekly) then "statusline.weekly_threshold" else empty end ),
+      ( if ($s.agents|type) == "object" then
+          ( if fell($s.agents.stale_after; $stale) then "statusline.agents.stale_after" else empty end ),
+          ( if fell($s.agents.keep_finished; $keep) then "statusline.agents.keep_finished" else empty end ),
+          ( if fell($s.agents.max_rows; $max) then "statusline.agents.max_rows" else empty end )
+        else empty end )
       end' 2>/dev/null
   # The colours have a second resolution stage that cp_sl_code owns: a name
   # pick() keeps but the palette does not know is rendered plain, which is a
@@ -1023,6 +1222,19 @@ SL_RULE_CFG=(
   '{"statusline":{"bar":"x","thresholds":{"warn":50,"critical":60}}}'
   '{"statusline":{"colors":"x","bar":{"width":20}}}'
   '{"statusline":{"thresholds":[],"colors":{"model":"red"}}}'
+  '{"statusline":{"agents":null}}'
+  '{"statusline":{"agents":false}}'
+  '{"statusline":{"agents":"x"}}'
+  '{"statusline":{"agents":[1]}}'
+  '{"statusline":{"agents":{}}}'
+  '{"statusline":{"agents":{"stale_after":null,"keep_finished":null,"max_rows":null}}}'
+  '{"statusline":{"agents":{"stale_after":false,"keep_finished":"","max_rows":[]}}}'
+  '{"statusline":{"agents":{"stale_after":29,"keep_finished":86401,"max_rows":0}}}'
+  '{"statusline":{"agents":{"stale_after":1.5,"keep_finished":-1,"max_rows":21}}}'
+  '{"statusline":{"agents":{"stale_after":30,"keep_finished":0,"max_rows":20}}}'
+  '{"statusline":{"agents":{"stale_after":600,"keep_finished":120,"max_rows":3}}}'
+  '{"statusline":{"agents":"x","bar":{"width":99}}}'
+  '{"statusline":{"agents":{"max_rows":0},"bar":"x"}}'
   "$nlglyph"
   "$nlcolour"
   "$tabglyph"
@@ -1056,7 +1268,7 @@ assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[]}}')" 
 assert_eq "$LINES_BAD" "$(cp_sl_config_problems '{"statusline":{"lines":[[]]}}')" \
   'a lines array of empty lines is reported'
 assert_eq "$LINES_BAD
-statusline.lines: unknown segment \"nonsense\" (known: badge model dir git context usage weekly)" \
+statusline.lines: unknown segment \"nonsense\" (known: badge model dir git context usage weekly agents)" \
   "$(cp_sl_config_problems '{"statusline":{"lines":[["nonsense"]]}}')" \
   'a layout whose only segment is unknown is reported both ways'
 assert_eq '' "$(cp_sl_config_problems '{"statusline":{"lines":[["badge"],"junk"]}}')" \

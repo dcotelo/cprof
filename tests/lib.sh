@@ -33,6 +33,8 @@ cp_t_setup() {
   # fails and the check stays silent -- but a developer's CPROF_NO_UPDATE_CHECK
   # would then hide a regression in the tests that do write one.
   unset CPROF_NO_UPDATE_CHECK CP_UPDATE_URL
+  # The agents clock seam: a developer's shell must not pin "now" for the fixtures.
+  unset CP_AGENTS_NOW
 }
 
 cp_t_teardown() {
