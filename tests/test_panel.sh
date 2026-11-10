@@ -575,7 +575,7 @@ $PICK_PROMPT
 --header
 default (Enter applies, Esc cancels)
 --preview
-$SELF_Q config --preview default={q}" "$(argv_of 2)" 'the value picker call, flag by flag'
+$SELF_Q config --preview-pick default {q} {}" "$(argv_of 2)" 'the value picker call, flag by flag'
 assert_eq 'yes:no' "$(argv_of 1 | grep -qx -- --no-sort && echo yes || echo no):$(argv_of 2 | grep -qx -- --no-sort && echo yes || echo no)" \
   'the screen keeps row order (--no-sort); the picker ranks its matches'
 
@@ -635,6 +635,42 @@ pick 2 "cla${NL}claude-max"
 panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
 assert_eq '0:"claude-max"' "$rc:$(jqc .default)" \
   'profile: a partial query takes the highlighted choice'
+
+# --- the picker's preview runs the pick rule ------------------------------------
+# --preview-pick <id> <query> <line> must render what Enter writes: the value
+# cp_panel_pick_value (hence --apply) picks from that query and highlighted
+# line, not the raw query.
+# pp_case <id> <kind> <con> <query> <line> <want> -> ok, or what went wrong
+pp_case() {
+  local picked got want_pv
+  picked="$(cp_panel_pick_value "$2" "$3" "$4$NL$5")"
+  [ "$picked" = "$6" ] || { printf 'pick(%s|%s)=%s ' "$4" "$5" "$picked"; return; }
+  got="$(NO_COLOR=1 "$CLI" config --preview-pick "$1" "$4" "$5" 2>&1)"
+  want_pv="$(NO_COLOR=1 "$CLI" config --preview "$1=$picked" 2>&1)"
+  if [ "$got" = "$want_pv" ]; then printf 'ok '; else printf 'differ(%s|%s) ' "$4" "$5"; fi
+}
+fresh
+PALETTE="$(field statusline statusline.colors.model 5)"
+r=''
+r="$r$(pp_case statusline.colors.model color "$PALETTE" red magenta red)"
+r="$r$(pp_case statusline.colors.model color "$PALETTE" re red red)"
+r="$r$(pp_case statusline.colors.model color "$PALETTE" '' magenta magenta)"
+r="$r$(pp_case statusline.colors.model color "$PALETTE" zzz '' zzz)"
+r="$r$(pp_case statusline.bar.width integer 1..40 8 '' 8)"
+assert_eq 'ok ok ok ok ok ' "$r" 'preview-pick: a colour row previews the exact, partial and empty pick Enter writes'
+jq -n --arg a "$CP_T_TMP/cm" --arg b "$CP_T_TMP/c" '
+  {default: "claude", profiles: [{name: "claude-max", dir: $a}, {name: "claude", dir: $b}],
+   rules: [], repos: {}}' | cp_t_write_config
+r=''
+r="$r$(pp_case default profile 'claude-max claude' claude claude-max claude)"
+r="$r$(pp_case default profile 'claude-max claude' cla claude-max claude-max)"
+r="$r$(pp_case default profile 'claude-max claude' '' claude-max claude-max)"
+assert_eq 'ok ok ok ' "$r" 'preview-pick: a profile row previews the exact, partial and empty pick Enter writes'
+assert_eq 'claude-max' "$(NO_COLOR=1 "$CLI" config --preview-pick default '' claude-max 2>/dev/null | head -1)" \
+  'preview-pick: an empty profile query previews the highlighted profile, not "no default profile"'
+NO_COLOR=1 "$CLI" config --preview-pick statusline.nope x y >/dev/null 2>&1; r="$?"
+NO_COLOR=1 "$CLI" config --preview-pick default >/dev/null 2>&1; r="$r $?"
+assert_eq '2 2' "$r" 'preview-pick: an unknown id, or a missing query, is a usage error'
 
 # --- panel helpers --------------------------------------------------------------
 assert_eq 'red

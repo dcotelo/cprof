@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
 # `cprof config`: an fzf panel over the configuration. fzf owns the loop; the
-# panel is three CLI callbacks it calls back into (--rows, --preview,
-# --apply), so each one is a plain function testable without a terminal.
+# panel is CLI callbacks it calls back into (--rows, --preview,
+# --preview-pick, --apply), so each one is a plain function testable without
+# a terminal.
 #
 # A row is one line of seven tab-joined fields:
 #
@@ -556,6 +557,26 @@ cp_panel_preview() {
   return 0
 }
 
+# cp_panel_preview_pick <id> <query> <line> -> the value picker's preview: the
+# value cp_panel_pick_value picks from <query> and the highlighted <line>
+# (empty when nothing is highlighted), previewed as cp_panel_preview does. The
+# same rule as the picker's Enter, so the pane always shows what Enter writes.
+# rc 2 for an unknown id, else cp_panel_preview's rc.
+cp_panel_preview_pick() {
+  local id="${1:-}" query="${2:-}" line="${3:-}" cfg row picked
+  cfg="$(cp_config_read)" || return 1
+  row="$(cp_panel_rows_all "$cfg" "$(cp_sl_config "$cfg")" \
+    | awk -F'\t' -v id="$id" '$2 == id { print; exit }')"
+  if [ -z "$id" ] || [ -z "$row" ]; then
+    cp_warn "config: unknown setting $id"
+    return 2
+  fi
+  picked="$(cp_panel_pick_value "$(printf '%s' "$row" | cut -f5)" \
+    "$(printf '%s' "$row" | cut -f6)" "$query
+$line")"
+  cp_panel_preview "$id=$picked"
+}
+
 # cp_panel_choices <kind> <constraint> -> what a set row's value picker
 # offers, one per line: the palette, the profiles or the segments, which the
 # row's constraint already lists space-separated. Nothing for the free-typed
@@ -604,8 +625,8 @@ cp_panel_fzf() {
 
 # cp_panel_pick_value <kind> <constraint> <picker-output> -> the value a
 # picker's Enter writes, from fzf --print-query output (the query, then the
-# highlighted choice if any). It must be the value the preview showed, and the
-# preview renders the query:
+# highlighted choice if any). The picker's preview runs this same rule
+# (cp_panel_preview_pick), so it shows the value written here:
 #   segments      always the query -- a line is several segments, an empty
 #                 query removes it, and the choices are only a reference
 #   color/profile the query when it names a choice exactly (`claude` must not
@@ -681,7 +702,7 @@ cp_panel_run() {
     out="$(cp_panel_choices "$kind" "$con" | cp_panel_fzf --print-query \
       --query "$value" --prompt "$label> " \
       --header "$id (Enter applies, Esc cancels)" \
-      --preview "$self config --preview $id={q}")"
+      --preview "$self config --preview-pick $id {q} {}")"
     rc=$?
     case "$rc" in
       0|1) ;;
@@ -695,7 +716,8 @@ cp_panel_run() {
   return 0
 }
 
-# cp_cmd_config [--rows <screen> | --preview <id>[=<value>] | --apply <arg> | undo]
+# cp_cmd_config [--rows <screen> | --preview <id>[=<value>] |
+#                --preview-pick <id> <query> [<line>] | --apply <arg> | undo]
 cp_cmd_config() {
   local sub="${1:-}" cfg
   case "$sub" in
@@ -715,6 +737,10 @@ cp_cmd_config() {
     --preview)
       [ "$#" -ge 2 ] || { cp_warn 'config: --preview needs <id>[=<value>]'; return 2; }
       cp_panel_preview "$2"
+      ;;
+    --preview-pick)
+      [ "$#" -ge 3 ] || { cp_warn 'config: --preview-pick needs <id> <query> [<line>]'; return 2; }
+      cp_panel_preview_pick "$2" "$3" "${4:-}"
       ;;
     undo) cp_panel_undo ;;
     '') cp_panel_run ;;
