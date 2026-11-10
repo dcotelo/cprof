@@ -5,6 +5,25 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.17.0]
+
+### Added
+
+- an agents segment, one row per running or just-finished subagent
+- agents settings, default layout line, and doctor reports
+- render subagent rows with a capped more-line
+- pick the visible subagents by state and age, without reading old ones
+- read one subagent's state, model and task from its own files
+- agents library with model and duration helpers
+
+### Fixed
+
+- read the agents settings only when the layout shows agents
+- never glob-expand a subagent's model id
+- list subagent files without a per-file loop
+- keep the meta model when the last assistant message is not an object
+- tolerate malformed transcript records when inspecting an agent
+
 ## [0.16.1]
 
 ### Fixed
