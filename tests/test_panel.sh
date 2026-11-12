@@ -480,8 +480,11 @@ preview default=nobody
 assert_eq '0:yes' "$rc:$(has "$(after_blank "$pv")" 'unknown profile nobody')" \
   'default preview: a profile that does not exist is reported'
 rm -f "$CP_CURL_BIN" "$(cp_usage_cache_file work)" "$CP_T_TMP/personal/.credentials.json"
-jq --arg d "$HOME/.claude-profiles/personal" '(.profiles[] | select(.name == "personal") | .dir) = $d' \
-  "$CPROF_CONFIG" | cp_t_write_config
+# Read in full first: piped straight into cp_t_write_config, the write could
+# truncate the file before jq had read it.
+cfg="$(jq --arg d "$HOME/.claude-profiles/personal" \
+  '(.profiles[] | select(.name == "personal") | .dir) = $d' "$CPROF_CONFIG")" \
+  && printf '%s\n' "$cfg" | cp_t_write_config
 preview default=personal
 # shellcheck disable=SC2088 # a literal ~: the display form under test
 assert_eq 'yes:no' "$(has "$pv" '~/.claude-profiles/personal'):$(has "$pv" "$HOME")" \
