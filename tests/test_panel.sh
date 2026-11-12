@@ -31,7 +31,7 @@ field() { row "$1" "$2" | cut -f"$3"; }
 fixture null
 assert_eq 'statusline
 default' "$(rows main | cut -f1)" 'main screen: statusline drill row and default row'
-assert_eq 'work	profile	work personal	set	set' \
+assert_eq 'work	profile	work, personal	set	set' \
   "$(row main default | cut -f3-7)" 'main screen: default row value, kind, constraint, action, state'
 assert_eq 'screen	-	drill' "$(row main statusline | cut -f4-6)" 'main screen: statusline is a drill row'
 assert_eq '3 lines' "$(field main statusline 3)" 'main screen: statusline value summarises the layout'
@@ -380,6 +380,16 @@ for b in '[]' '1' '"x"'; do
   "$CLI" config undo >/dev/null 2>&1; r="$r$?:$(same "$CPROF_CONFIG" "$CP_T_TMP/before") "
 done
 assert_eq '1:same 1:same 1:same ' "$r" 'undo refuses a backup that is JSON but not a config object'
+fixture null; cp "$CPROF_CONFIG" "$HOME/cfg.json"; printf '[]' > "$HOME/cfg.json.bak"
+err="$(CPROF_CONFIG="$HOME/cfg.json" "$CLI" config undo 2>&1 >/dev/null)"
+# shellcheck disable=SC2088 # a literal ~: the display form under test
+r="$(has "$err" '~/cfg.json.bak is not a JSON config object'):$(has "$err" "$HOME")"
+ln -sf "$HOME/cfg.json" "$HOME/cfg.json.bak"
+err="$(CPROF_CONFIG="$HOME/cfg.json" "$CLI" config undo 2>&1 >/dev/null)"
+# shellcheck disable=SC2088 # a literal ~: the display form under test
+r="$r $(has "$err" '~/cfg.json.bak is not a regular file'):$(has "$err" "$HOME")"
+assert_eq 'yes:no yes:no' "$r" 'undo warnings show the backup path the ~ way'
+rm -f "$HOME/cfg.json" "$HOME/cfg.json.bak"
 
 rm -f "$BAK"
 printf '{not json' > "$CPROF_CONFIG"; snap
@@ -447,6 +457,14 @@ assert_eq '3 1' "$(printf '%s\n' "$pv" | grep -c '^⟳ ') $(printf '%s\n' "$pv" 
 fresh
 rm -f "$CP_T_TMP/curl-called"
 printf '#!/bin/sh\ntouch "%s"\nexit 1\n' "$CP_T_TMP/curl-called" > "$CP_CURL_BIN"; chmod +x "$CP_CURL_BIN"
+# personal gets a token, so a fetch would reach curl: the control proves the
+# sentinel fires, which is what makes its silence below mean something.
+mkdir -p "$CP_T_TMP/personal"
+printf '{"claudeAiOauth":{"accessToken":"tok"}}' > "$CP_T_TMP/personal/.credentials.json"
+cp_usage_read "$(cat "$CPROF_CONFIG")" personal >/dev/null 2>&1
+assert_eq 'yes' "$([ -e "$CP_T_TMP/curl-called" ] && echo yes || echo no)" \
+  'control: a fetching read of personal does reach curl'
+rm -f "$CP_T_TMP/curl-called"
 preview default=personal
 r="$rc:$(has "$pv" 'personal'):$(has "$pv" "$CP_T_TMP/personal"):$(has "$pv" 'usage: not cached')"
 assert_eq "0:yes:yes:yes:no" "$r:$([ -e "$CP_T_TMP/curl-called" ] && echo yes || echo no)" \
@@ -457,11 +475,29 @@ preview default=work
 assert_eq "0:yes:yes:no:no" \
   "$rc:$(has "$pv" 'native'):$(has "$pv" '37%'):$(has "$pv" 'not cached'):$([ -e "$CP_T_TMP/curl-called" ] && echo yes || echo no)" \
   'default preview: a native profile, and its cached 5-hour percentage'
-assert_eq 'default profile — profile, work personal' "$(after_blank "$pv")" 'default preview: the description line'
+assert_eq 'default profile — profile, work, personal' "$(after_blank "$pv")" 'default preview: the description line'
 preview default=nobody
 assert_eq '0:yes' "$rc:$(has "$(after_blank "$pv")" 'unknown profile nobody')" \
   'default preview: a profile that does not exist is reported'
-rm -f "$CP_CURL_BIN" "$(cp_usage_cache_file work)"
+rm -f "$CP_CURL_BIN" "$(cp_usage_cache_file work)" "$CP_T_TMP/personal/.credentials.json"
+jq --arg d "$HOME/.claude-profiles/personal" '(.profiles[] | select(.name == "personal") | .dir) = $d' \
+  "$CPROF_CONFIG" | cp_t_write_config
+preview default=personal
+# shellcheck disable=SC2088 # a literal ~: the display form under test
+assert_eq 'yes:no' "$(has "$pv" '~/.claude-profiles/personal'):$(has "$pv" "$HOME")" \
+  'default preview: a directory under home shows the ~ way'
+
+# A profile name may hold a space; the picker must offer it whole.
+jq -n --arg d "$CP_T_TMP/ta" '{default: "work", profiles: [{name: "work", native: true},
+  {name: "team alpha", dir: $d}], rules: [], repos: {}}' | cp_t_write_config
+con="$(row main default | cut -f5)"
+assert_eq 'work
+team alpha' "$(cp_panel_choices profile "$con")" 'choices: a profile name with a space is one choice'
+assert_eq 'team alpha:team alpha' \
+  "$(cp_panel_pick_value profile "$con" "team alpha${NL}team alpha"):$(cp_panel_pick_value profile "$con" "team${NL}team alpha")" \
+  'pick: a spaced name is picked whole, by exact query or as the highlighted choice'
+"$CLI" config --apply 'default=team alpha' >/dev/null 2>&1
+assert_eq '"team alpha"' "$(jq -c .default "$CPROF_CONFIG")" 'and it can be applied'
 
 fresh
 preview statusline.nope=1; r="$rc"
@@ -514,6 +550,10 @@ cat > "$FZF" <<EOF
 n=\$(( \$(cat "$CP_T_TMP/fzf.n" 2>/dev/null || echo 0) + 1 ))
 printf '%s\n' "\$n" > "$CP_T_TMP/fzf.n"
 printf '%s\n' "\$SHELL" > "$CP_T_TMP/fzf.shell"
+printf '%s|%s\n' "\${FZF_DEFAULT_OPTS-unset}" "\${FZF_DEFAULT_OPTS_FILE-unset}" > "$CP_T_TMP/fzf.opts"
+# What a preview fzf SIGKILLed would leave in its TMPDIR.
+printf '%s\n' "\${TMPDIR:-}" > "$CP_T_TMP/fzf.tmpdir"
+[ -z "\${TMPDIR:-}" ] || touch "\$TMPDIR/cprof-preview.left"
 {
   printf '=== call %s\n' "\$n"
   for a in "\$@"; do printf '%s\n' "\$a"; done
@@ -542,7 +582,7 @@ PICK_PROMPT='default profile> '
 FZF_SHARED='--ansi
 --layout=reverse
 --preview-window=down:60%:wrap'
-NO_FZF='cprof config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.'
+NO_FZF='cprof: config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.'
 
 fresh
 fzf_reset
@@ -557,6 +597,21 @@ printf '{not json' > "$CPROF_CONFIG"
 fzf_reset
 panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1
 assert_eq '1:0' "$rc:$(fzf_calls)" 'malformed config: refuses to open, rc 1'
+
+fresh
+fzf_reset
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1 FZF_DEFAULT_OPTS='--select-1 --exit-0' \
+  FZF_DEFAULT_OPTS_FILE="$CP_T_TMP/fzfrc"
+assert_eq '0:unset|unset' "$rc:$(cat "$CP_T_TMP/fzf.opts")" \
+  "fzf never sees the user's FZF_DEFAULT_OPTS or FZF_DEFAULT_OPTS_FILE"
+
+PANELTMP="$CP_T_TMP/paneltmp"; mkdir -p "$PANELTMP"
+fzf_reset
+panel CP_FZF_BIN="$FZF" CP_PANEL_ASSUME_TTY=1 TMPDIR="$PANELTMP"
+w="$(cat "$CP_T_TMP/fzf.tmpdir")"
+case "$w" in "$PANELTMP"/cprof-panel.*) r=own ;; *) r="not own: $w" ;; esac
+assert_eq '0:own:gone:' "$rc:$r:$([ -e "$w" ] && echo left || echo gone):$(ls -A "$PANELTMP")" \
+  'fzf and its previews get a TMPDIR the panel owns, removed with whatever was left in it'
 
 fresh
 fzf_reset
@@ -726,9 +781,9 @@ jq -n --arg a "$CP_T_TMP/cm" --arg b "$CP_T_TMP/c" '
   {default: "claude", profiles: [{name: "claude-max", dir: $a}, {name: "claude", dir: $b}],
    rules: [], repos: {}}' | cp_t_write_config
 r=''
-r="$r$(pp_case default profile 'claude-max claude' claude claude-max claude)"
-r="$r$(pp_case default profile 'claude-max claude' cla claude-max claude-max)"
-r="$r$(pp_case default profile 'claude-max claude' '' claude-max claude-max)"
+r="$r$(pp_case default profile 'claude-max, claude' claude claude-max claude)"
+r="$r$(pp_case default profile 'claude-max, claude' cla claude-max claude-max)"
+r="$r$(pp_case default profile 'claude-max, claude' '' claude-max claude-max)"
 assert_eq 'ok ok ok ' "$r" 'preview-pick: a profile row previews the exact, partial and empty pick Enter writes'
 assert_eq 'claude-max' "$(NO_COLOR=1 "$CLI" config --preview-pick default '' claude-max 2>/dev/null | head -1)" \
   'preview-pick: an empty profile query previews the highlighted profile, not "no default profile"'
@@ -739,7 +794,9 @@ assert_eq '2 2' "$r" 'preview-pick: an unknown id, or a missing query, is a usag
 # --- panel helpers --------------------------------------------------------------
 assert_eq 'red
 green' "$(cp_panel_choices color 'red green')" 'choices: a colour row offers its palette'
-assert_eq 'work' "$(cp_panel_choices profile 'work')" 'choices: a profile row offers the profiles'
+fixture null
+assert_eq 'work
+personal' "$(cp_panel_choices profile 'ignored')" 'choices: a profile row offers the configured profiles'
 assert_eq 'model
 agents' "$(cp_panel_choices segments 'model agents')" 'choices: a lines row offers the segments'
 assert_eq '' "$(cp_panel_choices integer '1..40')$(cp_panel_choices glyph '1 char')" \

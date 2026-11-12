@@ -148,7 +148,7 @@ cp_panel_rows_all() {
        then $d else "" end) as $deff
     | row("main"; "statusline"; "statusline"; lines($n); "screen"; "-"; "drill";
           (if $sl_bad then "rejected" elif $s0 == null then "default" else "set" end)),
-      row("main"; "default"; "default profile"; $deff; "profile"; ($names | join(" "));
+      row("main"; "default"; "default profile"; $deff; "profile"; ($names | join(", "));
           "set"; (if $d == null then "default"
                  elif $deff != "" and $d == $deff then "set" else "rejected" end)),
       ($slrows[] | row("statusline"; .id; .label; .value; .kind; .con; .action; .state)),
@@ -378,13 +378,13 @@ cp_panel_undo() {
   fi
   # A link would leave the config itself a link to wherever it points.
   if [ -L "$bak" ] || [ ! -f "$bak" ]; then
-    cp_warn "config: $bak is not a regular file; not restoring it"
+    cp_warn "config: $(cp_path_display "$bak") is not a regular file; not restoring it"
     return 1
   fi
   # A config is an object: `[]` or `1` is valid JSON, but restoring it would
   # leave every other command failing on the config.
   if ! jq -e 'type == "object"' "$bak" >/dev/null 2>&1; then
-    cp_warn "config: $bak is not a JSON config object; not restoring it"
+    cp_warn "config: $(cp_path_display "$bak") is not a JSON config object; not restoring it"
     return 1
   fi
   mv "$bak" "$CP_CONFIG_PATH" || { cp_warn 'config: could not restore the backup'; return 1; }
@@ -509,7 +509,7 @@ cp_panel_preview_default() {
   printf '%s\n' "$name"
   cp_profile_exists "$cfg" "$name" || return 0
   dir="$(cp_profile_dir "$cfg" "$name")"
-  printf '%s\n' "${dir:-native}"
+  if [ -n "$dir" ]; then cp_path_display "$dir"; else printf 'native\n'; fi
   data="$(cp_usage_read_cached_only "$name" 2>/dev/null)"
   pct="$(cp_usage_pct "$data" five_hour)"
   if [ -n "$pct" ]; then
@@ -599,12 +599,20 @@ $line")"
 }
 
 # cp_panel_choices <kind> <constraint> -> what a set row's value picker
-# offers, one per line: the palette, the profiles or the segments, which the
-# row's constraint already lists space-separated. Nothing for the free-typed
-# kinds (integer, glyph), whose picker is the query line alone.
+# offers, one per line. Palette and segment names carry no space, so for those
+# the row's constraint, which lists them space-separated, is the list. A
+# profile name may hold one (`cprof add 'team alpha'`), so the profiles come
+# from the config itself, one name per line (cp_cmd_add refuses a newline in
+# a name); the row's constraint is only their comma-joined description.
+# Nothing for the free-typed kinds (integer, glyph), whose picker is the
+# query line alone.
 cp_panel_choices() {
   case "${1:-}" in
-    color|profile|segments) printf '%s\n' "${2:-}" | tr ' ' '\n' | awk 'NF' ;;
+    color|segments) printf '%s\n' "${2:-}" | tr ' ' '\n' | awk 'NF' ;;
+    profile)
+      cp_config_read 2>/dev/null \
+        | jq -r '.profiles[]? | objects | .name | strings | select(length > 0)' 2>/dev/null
+      ;;
   esac
 }
 
@@ -643,9 +651,13 @@ cp_panel_result() {
 # cp_panel_fzf <args...> -> fzf with the flags every panel call shares. The
 # one place the panel's fzf options live; each stays within fzf 0.30. fzf
 # runs --preview through $SHELL, and the self path in it is quoted with
-# bash's %q, so the callbacks run under bash whatever the login shell is.
+# bash's %q, so the callbacks run under bash whatever the login shell is. The
+# user's FZF_DEFAULT_OPTS (and the newer FZF_DEFAULT_OPTS_FILE) are dropped:
+# fzf reads them before these flags, and an inherited --select-1 or --exit-0
+# would close a picker before anything could be edited.
 cp_panel_fzf() {
-  SHELL=/bin/bash "${CP_FZF_BIN:-fzf}" --ansi --layout=reverse \
+  env -u FZF_DEFAULT_OPTS -u FZF_DEFAULT_OPTS_FILE \
+    SHELL=/bin/bash "${CP_FZF_BIN:-fzf}" --ansi --layout=reverse \
     --preview-window=down:60%:wrap "$@"
 }
 
@@ -681,13 +693,32 @@ cp_panel_pick_value() {
 # is the one thing no test can make: rows, previews and writes are the
 # callbacks, and fzf runs them through the resolved, quoted CP_SELF_PATH.
 cp_panel_run() {
-  local self tab stack screen rows out rc id label value kind con action state result='' err sel
+  local work rc
   if ! command -v "${CP_FZF_BIN:-fzf}" >/dev/null 2>&1 \
     || { [ "${CP_PANEL_ASSUME_TTY:-}" != 1 ] && ! { [ -t 0 ] && [ -t 1 ]; }; }; then
-    printf '%s\n' 'cprof config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.' >&2
+    cp_warn 'config needs fzf (brew install fzf) and a terminal. Every setting is also reachable with the cprof subcommands or by editing ~/.cprof.json; see docs/config.md.'
     return 0
   fi
   cp_config_read >/dev/null || return 1
+  # fzf cancels a preview it no longer needs by SIGKILLing the preview's
+  # process group, and no trap survives that: cp_panel_render's temp files
+  # would stay behind. So everything the panel starts gets a TMPDIR of the
+  # panel's own, and the panel removes it, whichever way it closes.
+  work="$(mktemp -d "${TMPDIR:-/tmp}/cprof-panel.XXXXXX")" || return 1
+  # shellcheck disable=SC2064 # the path is fixed now, quoted with %q
+  trap "rm -rf $(printf '%q' "$work")" EXIT
+  trap 'exit 130' HUP INT TERM
+  TMPDIR="$work" cp_panel_loop
+  rc=$?
+  rm -rf "$work"
+  trap - EXIT HUP INT TERM
+  return "$rc"
+}
+
+# cp_panel_loop -> cp_panel_run's screens: rows, fzf, dispatch, until Esc on
+# the main screen (rc 0) or a failure (rc 1).
+cp_panel_loop() {
+  local self tab stack screen rows out rc id label value kind con action state result='' err sel
   self="$(printf '%q' "$CP_SELF_PATH")"
   tab="$(printf '\t')"
   # A stack of screens, space-separated (screen names carry no space).

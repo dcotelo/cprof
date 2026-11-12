@@ -8,7 +8,9 @@ remembering key names.
 It needs [fzf](https://github.com/junegunn/fzf) (`brew install fzf`) and a
 terminal. Without either, `cprof config` prints a message saying so and exits
 with status 0; every setting is still reachable through the subcommands and by
-editing the JSON file, so nothing depends on the panel.
+editing the JSON file, so nothing depends on the panel. The panel ignores
+`FZF_DEFAULT_OPTS`: an inherited `--select-1` or `--exit-0` would close a
+picker before you could edit anything.
 
 ## What it edits
 
