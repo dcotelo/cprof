@@ -50,8 +50,100 @@ cp_share_target_dir() {
   printf '%s\n' "$dir"
 }
 
+# cp_share_check <dir>: how far a shared profile has drifted from the source.
+# One line per asset the source has, "<asset><TAB><state>", in CP_SHARED_ASSETS
+# order, where state is
+#   ok       a link to the source's copy
+#   drifted  a regular file or directory where that link should be -- what a
+#            settings save that writes a temp file and renames it over the link
+#            leaves behind
+#   missing  nothing there: the asset appeared in the source after the share
+#   foreign  a link, but to somewhere else
+# A profile with no link into the source at all is not shared, so it prints
+# nothing: that covers --isolated, unshare, the source itself, and a directory
+# that does not exist. Reads only link targets and file types; never fails.
+cp_share_check() {
+  local dir="${1:-}" src asset target state rows='' linked=0
+  src="$(cp_share_source)"
+  [ -d "$dir" ] && [ -d "$src" ] || return 0
+  [ "$(cd "$dir" && pwd -P)" = "$(cd "$src" && pwd -P)" ] && return 0
+  for asset in $CP_SHARED_ASSETS; do
+    [ -e "$src/$asset" ] || continue
+    target="$dir/$asset"
+    if [ -L "$target" ]; then
+      if [ "$(readlink "$target")" = "$src/$asset" ]; then
+        state=ok; linked=1
+      else
+        state=foreign
+      fi
+    elif [ -e "$target" ]; then
+      state=drifted
+    else
+      state=missing
+    fi
+    rows="$rows$asset	$state
+"
+  done
+  [ "$linked" = 1 ] || return 0
+  printf '%s' "$rows"
+}
+
+# cp_share_drift_summary <dir>: the assets of a shared profile that are not
+# following the source, as one phrase each joined with ", " -- e.g.
+# "settings.json (replaced by a file), CLAUDE.md (not linked)" -- or nothing
+# when the profile is healthy or not shared. Asset names come from
+# CP_SHARED_ASSETS, never from the filesystem, so the text is safe to print.
+cp_share_drift_summary() {
+  local dir="${1:-}" asset state out='' phrase
+  while IFS='	' read -r asset state; do
+    case "$state" in
+      drifted)
+        if [ -d "$dir/$asset" ]; then phrase='replaced by a directory'; else phrase='replaced by a file'; fi ;;
+      missing) phrase='not linked' ;;
+      foreign) phrase='links elsewhere' ;;
+      *) continue ;;
+    esac
+    out="${out:+$out, }$asset ($phrase)"
+  done <<EOF
+$(cp_share_check "$dir")
+EOF
+  [ -z "$out" ] || printf '%s\n' "$out"
+}
+
+# cp_share_key_diff <old> <source-copy>: what a settings file moved aside had
+# that the source copy does not, by top-level key name only -- values can hold
+# tokens, so they are never printed, and neither are nested names. Prints
+# "differs from ~/.claude in: a, b; only in the old copy: c", or "matches
+# ~/.claude", or nothing when either file is not a single JSON object. A key
+# that is not plain printable ASCII is counted rather than echoed, so a crafted
+# name cannot drive the terminal.
+cp_share_key_diff() {
+  local old="${1:-}" new="${2:-}"
+  [ -r "$old" ] && [ -r "$new" ] || return 0
+  # shellcheck disable=SC2016  # a jq program, not shell
+  jq -r -n --slurpfile o "$old" --slurpfile n "$new" '
+    def plain: explode | all(. > 32 and . < 127);
+    def names: (map(select(plain)) | join(", ")) as $shown
+      | (map(select(plain | not)) | length) as $hidden
+      | if $hidden == 0 then $shown
+        elif $shown == "" then "\($hidden) unprintable key(s)"
+        else "\($shown) and \($hidden) unprintable key(s)" end;
+    if ($o | length) != 1 or ($n | length) != 1
+       or ($o[0] | type) != "object" or ($n[0] | type) != "object" then empty
+    else
+      $o[0] as $a | $n[0] as $b
+      | [$a | keys[] as $k | select(($b | has($k)) and $b[$k] != $a[$k]) | $k] as $differ
+      | [$a | keys[] as $k | select($b | has($k) | not) | $k] as $only
+      | if ($differ | length) == 0 and ($only | length) == 0 then "matches ~/.claude"
+        else [ (if ($differ | length) > 0 then "differs from ~/.claude in: \($differ | names)" else empty end),
+               (if ($only | length) > 0 then "only in the old copy: \($only | names)" else empty end) ]
+             | join("; ")
+        end
+    end' 2>/dev/null
+}
+
 cp_cmd_share() {
-  local cfg name="${1:-}" dir src asset target moved rows=''
+  local cfg name="${1:-}" dir src asset target moved rows='' notes='' diff
   cfg="$(cp_config_read)" || return 1
   src="$(cp_share_source)"
   dir="$(cp_share_target_dir "$cfg" "$name")" || return $?
@@ -89,6 +181,15 @@ cp_cmd_share() {
       ln -s "$src/$asset" "$target" || return 1
       rows="$rows$asset	linked (previous kept as $(basename "$moved"))
 "
+      # A settings file that drifted may hold changes made from inside the
+      # profile; name the keys, so nothing is lost without being seen.
+      case "$asset" in
+        *.json)
+          diff="$(cp_share_key_diff "$moved" "$src/$asset")"
+          [ -z "$diff" ] || notes="$notes$(basename "$moved"): $diff
+"
+          ;;
+      esac
       continue
     fi
     ln -s "$src/$asset" "$target" || return 1
@@ -104,6 +205,7 @@ cp_cmd_share() {
     printf 'ASSET\tRESULT\n'
     printf '%s' "$rows"
   } | cp_table
+  [ -z "$notes" ] || printf '%s' "$notes"
 }
 
 cp_cmd_unshare() {
