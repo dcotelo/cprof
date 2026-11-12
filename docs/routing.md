@@ -115,6 +115,28 @@ They are symlinks, so installing a plugin or editing settings once applies to
 every profile with nothing to re-sync. Anything the profile already had is moved
 aside rather than deleted, and `unshare` removes only the links this created.
 
+**When a link breaks.** A settings save made from inside a profile can replace
+the linked `settings.json` with a regular file, and an asset created in
+`~/.claude` after the share — a first `CLAUDE.md`, say — is never linked at all.
+Either way the profile quietly stops following `~/.claude`, hooks and
+permission rules included. `cprof doctor` reports it and fails:
+
+```console
+personal: not following ~/.claude: settings.json (replaced by a file), CLAUDE.md (not linked) - run: cprof share personal
+```
+
+A session started in that profile prints the same as one warning line; it
+never relinks anything itself. Re-running `cprof share` repairs it, keeps the
+replaced file, and names the top-level keys in which that file differed from
+`~/.claude` — names only, never values, since settings can hold tokens:
+
+```console
+settings.json.moved-20261112-130926: differs from ~/.claude in: model
+```
+
+Every asset of a shared profile is checked, so a profile that should keep a
+`settings.json` of its own is better unshared than left reporting drift.
+
 | Shared | Per-profile |
 | --- | --- |
 | `settings.json`, `keybindings.json` | credentials (keychain item, or `.credentials.json` before Claude Code 2.1) |
