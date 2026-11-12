@@ -39,7 +39,13 @@ assert_eq '25h 0m' "$(cp_agents_duration 90000)" 'no day unit'
 assert_fail cp_agents_duration abc
 # --- clock seam -------------------------------------------------------------
 assert_eq '1700000000' "$(CP_AGENTS_NOW=1700000000 cp_agents_now)" 'the seam wins'
-assert_eq "$(date +%s)" "$(CP_AGENTS_NOW=junk cp_agents_now)" 'a non-numeric seam is ignored'
+# Bracketed, not compared with a second `date`: the clock can tick between the
+# two reads, which made this fail now and then in CI.
+t0="$(date +%s)"; got="$(CP_AGENTS_NOW=junk cp_agents_now)"; t1="$(date +%s)"
+case "$got" in ''|*[!0-9]*) r="not a number: $got" ;;
+  *) if [ "$got" -ge "$t0" ] && [ "$got" -le "$t1" ]; then r=now; else r="$got not in $t0..$t1"; fi ;;
+esac
+assert_eq 'now' "$r" 'a non-numeric seam is ignored'
 # --- reading one agent ------------------------------------------------------
 AG="$CP_T_TMP/sess/subagents"; mkdir -p "$AG"
 HB_TEXT='{"success":true,"message":"Report delivered to your caller."}'
