@@ -190,12 +190,51 @@ ag live '{"agentType":"E","description":"live"}' "$(r_asst m)"
 assert_eq live "$(rows | cut -f4)" '120 stale agents and one live one: exactly one row'
 # The per-tick cost must not grow with session history: with the same 120
 # stale agents, only the live one is ever handed to cp_agents_inspect.
+# shellcheck disable=SC2329  # the shadow is called by cp_agents_rows
 cp_agents_inspect() { printf '%s\n' "$1" >> "$CP_T_TMP/inspected"; }
 : > "$CP_T_TMP/inspected"
 rows > /dev/null
 # shellcheck source=/dev/null
 . "$(dirname "$0")/../scripts/lib/agents.sh"   # the real cp_agents_inspect again
 assert_eq "$AG/agent-live.jsonl" "$(cat "$CP_T_TMP/inspected")" 'stale agents are never inspected'
+
+# #50: inside the window but past keep_finished, an agent whose meta already
+# says finished or stoppedByUser is settled without reading its transcript.
+fresh
+ag fold "$MF" "$(r_asst m)"; ageboth fold 300                  # finished, ended 300 s ago
+ag sold "$MS" "$(r_asst m)"; ageboth sold 300                  # stopped, ended 300 s ago
+ag frec "$MF" "$(r_asst m)"; ageboth frec 30                   # finished, still shown
+# Finished by meta: the end is the meta's mtime, not the transcript's.
+ag fjm "$MF" "$(r_asst m)"; age "$AG/agent-fjm.jsonl" 300; age "$AG/agent-fjm.meta.json" 45
+# Stopped: the end is the later of the two mtimes, so the meta's 60 s keeps it.
+ag smix "$MS" "$(r_asst m)"; age "$AG/agent-smix.jsonl" 300; age "$AG/agent-smix.meta.json" 60
+ag live '{"agentType":"E","description":"live"}' "$(r_asst m)"
+# Mentions the key but is not a JSON object: left to inspect, which skips it.
+printf '%s\n' '{"finished":true,' > "$AG/agent-mbad.meta.json"
+printf '%s\n' "$(r_asst m)" > "$AG/agent-mbad.jsonl"; ageboth mbad 300
+# Says "finished" only inside a string; its state comes from the transcript.
+ag mstr '{"agentType":"E","description":"until \"finished\": true"}' "$(r_asst m)" "$(r_hb)"; ageboth mstr 300
+# Pretty-printed over several lines, as a meta file may be.
+printf '{\n  "agentType": "E",\n  "finished": true\n}\n' > "$AG/agent-fpre.meta.json"
+printf '%s\n' "$(r_asst m)" > "$AG/agent-fpre.jsonl"; ageboth fpre 300
+assert_eq 'running	live
+finished	Find callers
+finished	Find callers
+stopped	Find callers' "$(rows | cut -f1,4)" 'pre-filter: the rows shown are unchanged'
+# shellcheck disable=SC2329  # the shadow is called by cp_agents_rows
+cp_agents_inspect() { printf '%s\n' "${1##*/}" >> "$CP_T_TMP/inspected"; }
+: > "$CP_T_TMP/inspected"
+rows > /dev/null
+inspected="$(sort "$CP_T_TMP/inspected" | tr '\n' ' ')"
+: > "$CP_T_TMP/inspected"
+rows 600 0 > /dev/null
+inspected0="$(sort "$CP_T_TMP/inspected" | tr '\n' ' ')"
+# shellcheck source=/dev/null
+. "$(dirname "$0")/../scripts/lib/agents.sh"   # the real cp_agents_inspect again
+assert_eq 'agent-fjm.jsonl agent-frec.jsonl agent-live.jsonl agent-mbad.jsonl agent-mstr.jsonl agent-smix.jsonl ' \
+  "$inspected" 'finished or stopped by meta and past keep_finished: never inspected'
+assert_eq 'agent-live.jsonl agent-mbad.jsonl agent-mstr.jsonl ' "$inspected0" \
+  'keep_finished 0: no agent finished or stopped by meta is inspected'
 
 fresh
 printf '%s\n' '{"agentType":"E","description":"big","model":"haiku"}' > "$AG/agent-big.meta.json"

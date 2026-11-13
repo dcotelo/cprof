@@ -5,6 +5,12 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.18.2]
+
+### Changed
+
+- settle finished agents from their meta, not their transcripts
+
 ## [0.18.1]
 
 ### Fixed
