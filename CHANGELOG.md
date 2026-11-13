@@ -5,6 +5,12 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.18.1]
+
+### Fixed
+
+- report and repair a shared profile that stopped following ~/.claude
+
 ## [0.18.0]
 
 ### Added
