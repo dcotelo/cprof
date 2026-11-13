@@ -9,6 +9,17 @@
 # processes carefully: one jq pass for the payload metadata, one for the usage
 # figures, and two git calls only when a working tree is actually there.
 
+# Every segment name the resolver knows, space-joined. One copy:
+# cp_sl_config and cp_sl_config_problems both read it as their `known` list,
+# and the config panel offers it as the segments a line may hold, so the
+# three cannot disagree.
+CP_SL_SEGMENTS='badge model dir git context usage weekly agents'
+# The one lines report that is advice rather than a rejection: the resolver
+# keeps an agents segment that shares a line. One copy, because
+# cp_sl_config_problems emits it and the config panel must recognise it to
+# let such a layout be written.
+CP_SL_AGENTS_SHARED_MSG='statusline.lines: agents shares a line with other segments; its rows print below that line'
+
 # cp_sl_meta_fields: a Claude Code statusline payload on stdin -> either
 # nothing at all, or exactly two tab-separated fields, the model display name
 # and the current directory. Callers read both with `cut`, which yields an
@@ -147,8 +158,9 @@ cp_sl_config() {
     --argjson weekly "$d_weekly" \
     --arg model "$d_model" --arg dir "$d_dir" --arg git "$d_git" \
     --arg branch "$d_branch" --arg label "$d_label" \
-    --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" '
-    def known: ["badge","model","dir","git","context","usage","weekly","agents"];
+    --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" \
+    --arg segs "$CP_SL_SEGMENTS" '
+    def known: $segs | split(" ");
     # Nothing below character 32 in a value that is kept. These five lines are
     # read by their delimiters, and an invisible character collides with them:
     # a tab shifts every field after it on its row -- so the directory colour
@@ -339,8 +351,9 @@ EOF
     --arg fill "$d_fill" --arg empty "$d_empty" --argjson width "$d_width" \
     --argjson warn "$d_warn" --argjson crit "$d_crit" \
     --argjson weekly "$d_weekly" \
-    --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" "$esc_def"'
-    def known: ["badge","model","dir","git","context","usage","weekly","agents"];
+    --argjson stale "$d_stale" --argjson keep "$d_keep" --argjson max "$d_max" \
+    --arg segs "$CP_SL_SEGMENTS" --arg shared "$CP_SL_AGENTS_SHARED_MSG" "$esc_def"'
+    def known: $segs | split(" ");
     # The resolver rules, as cp_sl_config states them, so that a value is
     # judged by what the resolver did with it and not by a second reading.
     def clean($v): ($v|type) == "string" and (($v|explode|map(select(. < 32))|length) == 0);
@@ -438,7 +451,7 @@ EOF
                       | map(select((map(select(. == "agents")) | length) > 0
                                    and (map(select(. != "agents")) | length) > 0))
                       | length ) > 0
-                 then "statusline.lines: agents shares a line with other segments; its rows print below that line"
+                 then $shared
                  else empty end
           else empty end ),
         ( (ifnull($s.bar; {})) as $b

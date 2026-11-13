@@ -5,11 +5,24 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
-## [0.17.1]
+## [0.18.0]
+
+### Added
+
+- an fzf panel over the statusline block and the default profile
+- preview the real statusline for a candidate value
+- apply a setting with a one-step backup and cprof config undo
+- panel rows for the statusline block and the default profile
 
 ### Fixed
 
-- report and repair a shared profile that stopped following ~/.claude
+- undo refuses a backup that is not a config object
+- an unchanged value writes nothing and keeps the backup
+- the picker's preview shows the value Enter will write
+- the panel writes the value it previewed
+- preview renders for a profile even from a plain terminal
+- the shared-line advisory does not block a lines edit
+- never drop a backup, and reject a bad value on an already-rejected setting
 
 ## [0.17.0]
 

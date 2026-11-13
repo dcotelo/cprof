@@ -105,7 +105,8 @@ the plugin-only path and updating.
 
 **Docs** · [Routing](docs/routing.md) · [Install details](docs/install.md) ·
 [Commands](docs/commands.md) · [Statusline](docs/statusline.md) ·
-[Usage and fallback](docs/usage.md) · [Safety](docs/security.md)
+[Config panel](docs/config.md) · [Usage and fallback](docs/usage.md) ·
+[Safety](docs/security.md)
 
 ## Quickstart
 
@@ -194,6 +195,7 @@ any setting it rejects rather than failing quietly. See
 | [Install details](docs/install.md) | The plugin-only path, what the installer writes, updating, uninstalling |
 | [Commands](docs/commands.md) | Every subcommand and what it does |
 | [Statusline](docs/statusline.md) | Segments, layout, bars, thresholds, the colour palette, and what `cprof doctor` reports |
+| [Config panel](docs/config.md) | `cprof config`: the fzf panel for the statusline and default profile, its live preview, and `cprof config undo` |
 | [Usage and fallback](docs/usage.md) | Usage headroom, the 5-hour and 7-day windows, and fallback accounts |
 | [Safety](docs/security.md) | Keychain snapshots, what `cprof` never touches, and the security assessment |
 | [Contributing](CONTRIBUTING.md) | Development setup, conventions, dependency policy, releasing |

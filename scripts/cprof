@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -u
 
-CP_VERSION='0.17.1'
+CP_VERSION='0.18.0'
 # The plugin's own marketplace and scoped name, consumed by cp_cmd_update.
 # 'update' always targets this specific listing — it is not something a user
 # configures, so it lives next to CP_VERSION rather than in ~/.cprof.json.
@@ -25,6 +25,11 @@ while [ -L "$CP_SELF" ]; do
   esac
 done
 CP_LIB_DIR="$(cd "$(dirname "$CP_SELF")/lib" 2>/dev/null && pwd -P)"
+# The resolved script itself, absolute: the config panel hands it to fzf as
+# the command its callbacks run, and fzf runs them from a fresh shell where a
+# relative path or an unresolved link could name a different cprof.
+# shellcheck disable=SC2034 # consumed by lib/panel.sh
+CP_SELF_PATH="$(cd "$(dirname "$CP_SELF")" 2>/dev/null && pwd -P)/$(basename "$CP_SELF")"
 unset CP_SELF CP_LINK
 if [ -z "$CP_LIB_DIR" ]; then
   printf 'unset CLAUDE_CONFIG_DIR\n'
@@ -49,6 +54,8 @@ fi
 . "$CP_LIB_DIR/statusline.sh"
 # shellcheck source=lib/agents.sh
 . "$CP_LIB_DIR/agents.sh"
+# shellcheck source=lib/panel.sh
+. "$CP_LIB_DIR/panel.sh"
 # shellcheck source=lib/fallback.sh
 . "$CP_LIB_DIR/fallback.sh"
 # shellcheck source=lib/share.sh
@@ -87,6 +94,7 @@ usage:
                                     branch, context and usage bars. --stdin reads Claude
                                     Code's payload, without which only the account and
                                     the cached usage can be filled in
+  cprof config [undo]               interactive panel for the statusline and default profile (needs fzf)
   cprof update                      refresh the marketplace, then update this plugin
   cprof remove <name> [--purge]
   cprof version
@@ -117,6 +125,7 @@ case "$cmd" in
   doctor)  cp_cmd_doctor "$@" ;;
   usage)   cp_cmd_usage "$@" ;;
   statusline) cp_cmd_statusline "$@" ;;
+  config)  cp_cmd_config "$@" ;;
   update)  cp_cmd_update "$@" ;;
   remove)  cp_cmd_remove "$@" ;;
   version|--version|-v) printf 'cprof %s\n' "$CP_VERSION" ;;
