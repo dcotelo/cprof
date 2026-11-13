@@ -110,11 +110,12 @@ EOF
   [ -z "$out" ] || printf '%s\n' "$out"
 }
 
-# cp_share_key_diff <old> <source-copy>: what a settings file moved aside had
-# that the source copy does not, by top-level key name only -- values can hold
+# cp_share_key_diff <old> <source-copy>: how a settings file moved aside
+# differed from the source copy, by top-level key name only -- values can hold
 # tokens, so they are never printed, and neither are nested names. Prints
-# "differs from ~/.claude in: a, b; only in the old copy: c", or "matches
-# ~/.claude", or nothing when either file is not a single JSON object. A key
+# "differs from ~/.claude in: a, b; only in the old copy: c; only in ~/.claude:
+# d" (each part only when it has names), "matches ~/.claude" when all three are
+# empty, or nothing when either file is not a single JSON object. A key
 # that is not plain printable ASCII is counted rather than echoed, so a crafted
 # name cannot drive the terminal.
 cp_share_key_diff() {
@@ -134,9 +135,12 @@ cp_share_key_diff() {
       $o[0] as $a | $n[0] as $b
       | [$a | keys[] as $k | select(($b | has($k)) and $b[$k] != $a[$k]) | $k] as $differ
       | [$a | keys[] as $k | select($b | has($k) | not) | $k] as $only
-      | if ($differ | length) == 0 and ($only | length) == 0 then "matches ~/.claude"
+      | [$b | keys[] as $k | select($a | has($k) | not) | $k] as $missing
+      | if ($differ | length) == 0 and ($only | length) == 0 and ($missing | length) == 0
+        then "matches ~/.claude"
         else [ (if ($differ | length) > 0 then "differs from ~/.claude in: \($differ | names)" else empty end),
-               (if ($only | length) > 0 then "only in the old copy: \($only | names)" else empty end) ]
+               (if ($only | length) > 0 then "only in the old copy: \($only | names)" else empty end),
+               (if ($missing | length) > 0 then "only in ~/.claude: \($missing | names)" else empty end) ]
              | join("; ")
         end
     end' 2>/dev/null

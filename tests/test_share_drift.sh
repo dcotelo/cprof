@@ -117,6 +117,18 @@ out="$("$CLI" share personal 2>&1)"
 case "$out" in *'matches ~/.claude'*) r=yes ;; *) r="no: $out" ;; esac
 assert_eq 'yes' "$r" 'an old copy identical to ~/.claude says so'
 
+# An old copy missing keys ~/.claude has does not "match" it.
+rm "$P/settings.json"; printf '{}\n' > "$P/settings.json"
+out="$("$CLI" share personal 2>&1)"
+case "$out" in
+  *'matches ~/.claude'*) r="claimed a match: $out" ;;
+  *'only in ~/.claude: model, permissions, theme'*) r=yes ;;
+  *) r="no: $out" ;;
+esac
+assert_eq 'yes' "$r" 'share names keys only ~/.claude has, and does not call that a match'
+case "$out" in *'Bash(rm'*|*opus*|*dark*) r=leaked ;; *) r=clean ;; esac
+assert_eq 'clean' "$r" 'the source side stays keys-only too'
+
 # A key carrying a control character is not echoed into the terminal.
 rm "$P/settings.json"
 printf '{"theme":"dark","bad\\u001b[31mkey":1}\n' > "$P/settings.json"
