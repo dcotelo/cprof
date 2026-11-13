@@ -12,6 +12,8 @@
 | `cprof color <name> <colour>` | Set it directly; `auto` returns to the hashed colour |
 | `cprof color --text on\|off` | Whether the statusline badge's name is coloured too; on by default |
 | `cprof default <name>` | Set the default profile |
+| `cprof config` | Open an fzf panel over the statusline settings and the default profile, with a live preview and immediate writes; needs fzf and a terminal. See [Config panel](config.md) |
+| `cprof config undo` | Restore `~/.cprof.json.bak`, the file as it was before the panel's last write; one step deep |
 | `cprof pin [<name>] \| pin --clear` | Pin or unpin this repository |
 | `cprof rule add <path> <name>` | Route a directory tree to a profile |
 | `cprof rules` / `rule list` | Rules in the order resolution consults them |

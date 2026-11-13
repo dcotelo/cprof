@@ -35,6 +35,9 @@ cp_t_setup() {
   unset CPROF_NO_UPDATE_CHECK CP_UPDATE_URL
   # The agents clock seam: a developer's shell must not pin "now" for the fixtures.
   unset CP_AGENTS_NOW
+  # The config panel seams: a developer's shell must not pick the fzf binary or
+  # pretend to a terminal for the fixtures.
+  unset CP_FZF_BIN CP_PANEL_ASSUME_TTY
 }
 
 cp_t_teardown() {

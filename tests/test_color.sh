@@ -43,6 +43,13 @@ assert_eq 'work' "$(CP_COLOR_ON=1 cp_colorize bogus work)" 'no wrap for an unkno
 assert_eq "$(printf '\033[31mwork\033[0m')" \
           "$(CP_COLOR_ON=1 cp_colorize red work)"         'wraps when on'
 
+# --- the named colours -------------------------------------------------------
+assert_eq 'red green yellow blue magenta cyan bright-red bright-green bright-yellow bright-blue bright-magenta bright-cyan' \
+  "$(cp_color_names | tr '\n' ' ' | sed 's/ $//')" 'cp_color_names: the palette, then its bright- variants'
+unnamed=''
+for c in $(cp_color_names); do [ -n "$(cp_color_code "$c")" ] || unnamed="$unnamed $c"; done
+assert_eq '' "$unnamed" 'cp_color_names: every name has an SGR code'
+
 # --- auto assignment ---------------------------------------------------------
 first="$(cp_color_auto work)"
 assert_eq "$first" "$(cp_color_auto work)"        'auto is stable across calls'

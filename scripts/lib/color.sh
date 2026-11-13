@@ -29,6 +29,16 @@ cp_color_code() {
   esac
 }
 
+# cp_color_names -> every colour name cp_color_code accepts, one per line: the
+# palette, then its bright- variants. The single enumeration of the named
+# colours: the `cprof color` picker offers these, and the config panel offers
+# them (plus the statusline's own `dim`) for the statusline colours.
+cp_color_names() {
+  local c
+  for c in $CP_COLOR_PALETTE; do printf '%s\n' "$c"; done
+  for c in $CP_COLOR_PALETTE; do printf 'bright-%s\n' "$c"; done
+}
+
 # Whether colour should be emitted at all. NO_COLOR set to any value, empty
 # included, disables it — that is the published contract, not an oversight.
 cp_color_enabled() {
@@ -213,8 +223,7 @@ cp_color_pick() {
     return 2
   fi
 
-  entries="auto $CP_COLOR_PALETTE"
-  for c in $CP_COLOR_PALETTE; do entries="$entries bright-$c"; done
+  entries="auto $(cp_color_names | tr '\n' ' ')"
   # shellcheck disable=SC2086 # entries is a space-joined list; splitting it into args is the point
   set -- $entries
   count=$#
