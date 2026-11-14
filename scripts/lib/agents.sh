@@ -186,10 +186,46 @@ cp_agents_rows() {
           }
         }')"
   [ -n "$cands" ] || return 0
+  # Pre-filter (#50): an agent whose meta says stoppedByUser or finished has
+  # its state from meta alone, and its end from the mtimes above, so whether
+  # keep_finished still shows it needs no transcript read. One awk reads every
+  # candidate's meta, flattened to one line keyed by its jsonl path (a newline
+  # in valid JSON is whitespace), and passes on only those that mention either
+  # key; one jq then parses each line on its own, so a malformed meta cannot
+  # run into its neighbour -- it is left unflagged, and inspect skips it as
+  # before. A tick with no such meta costs the awk and no jq.
+  local flagged nl
+  nl='
+'
+  # shellcheck disable=SC2016  # a jq program, not shell
+  flagged="$(printf '%s\n' "$cands" | awk -F '\t' '
+      { p = $1; m = p; sub(/\.jsonl$/, ".meta.json", m); s = ""
+        while ((getline l < m) > 0) s = s " " l
+        close(m)
+        if (s ~ /"(finished|stoppedByUser)"/) print p "\t" s }' 2>/dev/null)"
+  if [ -n "$flagged" ]; then
+    flagged="$(printf '%s\n' "$flagged" | jq -R -r '
+        split("\t") as $f | ($f[1:] | join("\t") | try fromjson catch null) as $m
+        | if ($m | type) != "object" then empty
+          elif $m.stoppedByUser == true then "\($f[0])\ts"
+          elif $m.finished == true then "\($f[0])\tf"
+          else empty end' 2>/dev/null)"
+  fi
   local path birth jm mm size whole line state mid mfin start end dur ts
   printf '%s\n' "$cands" | while IFS="$tab" read -r path birth jm mm size; do
     [ -n "$path" ] || continue
     case "$jm$mm" in '' | *[!0-9]*) continue ;; esac
+    # The same end inspect's state would give below: stopped ends at the later
+    # mtime, finished-by-meta at the meta mtime.
+    case "$nl$flagged$nl" in
+      *"$nl$path${tab}s$nl"*)
+        end="$jm"; [ "$mm" -gt "$end" ] && end="$mm"
+        [ "$keep" -gt 0 ] && [ $((now - end)) -le "$keep" ] || continue
+        ;;
+      *"$nl$path${tab}f$nl"*)
+        [ "$keep" -gt 0 ] && [ $((now - mm)) -le "$keep" ] || continue
+        ;;
+    esac
     whole=0; [ "${size:-0}" -le 65536 ] 2>/dev/null && whole=1
     line="$(cp_agents_inspect "$path" "${path%.jsonl}.meta.json" "$whole")" || continue
     # Split by hand: model or agentType may be empty, and read would collapse

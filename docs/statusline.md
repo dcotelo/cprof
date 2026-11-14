@@ -256,7 +256,10 @@ statusline.lines: agents shares a line with other segments; its rows print below
 
 The statusline reads only the subagents' own files, under a
 `subagents` directory beside the session's transcript, and only the tail of
-those that are recent (a subagent's file can run to megabytes). It never opens
+those that are recent (a subagent's file can run to megabytes). A subagent
+whose own metadata already says it finished or was stopped, and that ended
+longer ago than `keep_finished`, is settled from that small file alone, so a
+wave of finished agents costs one `jq` call rather than one per agent. It never opens
 the main session transcript, which can run to megabytes and is re-read by Claude Code itself every few seconds. With
 no payload there is nothing to read and the segment prints nothing.
 
