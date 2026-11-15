@@ -74,10 +74,12 @@ cp_ver_lt() {
 
 # The newest cprof version installed as a plugin, or empty when none is.
 # Reads each manifest rather than trusting the directory name, and ignores one
-# it cannot parse: a corrupt manifest is not evidence of a version.
+# it cannot parse: a corrupt manifest is not evidence of a version. A plugin
+# keeps its manifest in .claude-plugin/ at its root, which is where Claude
+# Code's cache has it too: <cache>/<marketplace>/cprof/<version>/.claude-plugin/.
 cp_plugin_version() {
   local f v newest=''
-  for f in "$HOME"/.claude/plugins/cache/*/cprof/*/plugin.json; do
+  for f in "$HOME"/.claude/plugins/cache/*/cprof/*/.claude-plugin/plugin.json; do
     [ -r "$f" ] || continue
     v="$(jq -r '.version // empty' "$f" 2>/dev/null)" || continue
     cp_ver_parseable "$v" || continue

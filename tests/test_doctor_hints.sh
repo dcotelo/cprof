@@ -104,12 +104,14 @@ mk_path_cprof() {   # $1 = what `cprof version` prints; '' = no binary at all
     > "$CP_T_TMP/bin/cprof"
   chmod +x "$CP_T_TMP/bin/cprof"
 }
+# The layout Claude Code's cache really has: the manifest in .claude-plugin/
+# at the root of each installed version, as in this repository.
 mk_plugin() {       # $@ = versions to install in the plugin cache
   rm -rf "$HOME/.claude/plugins/cache"
   for v in "$@"; do
-    mkdir -p "$HOME/.claude/plugins/cache/dcotelo/cprof/$v"
+    mkdir -p "$HOME/.claude/plugins/cache/dcotelo/cprof/$v/.claude-plugin"
     printf '{"name":"cprof","version":"%s"}\n' "$v" \
-      > "$HOME/.claude/plugins/cache/dcotelo/cprof/$v/plugin.json"
+      > "$HOME/.claude/plugins/cache/dcotelo/cprof/$v/.claude-plugin/plugin.json"
   done
 }
 PATH="$CP_T_TMP/bin:$PATH"
@@ -130,6 +132,13 @@ case "$out" in
 esac
 assert_eq 'yes' "$r" 'the newest installed plugin wins, not the last globbed'
 
+# A manifest at the version root is not where Claude Code keeps it; reading
+# only that path is how this check went blind on every real install.
+mk_path_cprof 'cprof 0.9.0'; mk_plugin
+mkdir -p "$HOME/.claude/plugins/cache/dcotelo/cprof/0.13.0"
+printf '{"name":"cprof","version":"0.13.0"}\n' > "$HOME/.claude/plugins/cache/dcotelo/cprof/0.13.0/plugin.json"
+assert_eq '' "$(cp_plugin_version)" 'a manifest outside .claude-plugin/ is not read'
+
 mk_path_cprof 'cprof 0.13.0'; mk_plugin 0.13.0
 assert_eq '' "$(cp_skew_problems)" 'matching versions report nothing'
 
@@ -141,7 +150,7 @@ assert_eq '' "$(CP_CPROF_BIN='' cp_skew_problems)" \
   'a plugin-only install reports nothing'
 
 mk_path_cprof 'cprof 0.9.0'; mk_plugin 0.13.0
-printf 'not json\n' > "$HOME/.claude/plugins/cache/dcotelo/cprof/0.13.0/plugin.json"
+printf 'not json\n' > "$HOME/.claude/plugins/cache/dcotelo/cprof/0.13.0/.claude-plugin/plugin.json"
 assert_eq '' "$(cp_skew_problems)" 'an unparseable plugin.json advises nothing'
 
 mk_path_cprof 'cprof (dev build)'; mk_plugin 0.13.0
