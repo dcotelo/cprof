@@ -40,6 +40,15 @@ however it got into the config — can address a path outside that directory.
 `add` also refuses a name that is `.`, `..`, contains `/`, or contains a
 control character.
 
+The statusline renders text it did not write: the model name and directory
+from Claude Code's payload, and each subagent's type, model and description
+from its records. None of it reaches the terminal carrying a control character
+below 32 (ESC among them), DEL, a C1 control (U+0080-U+009F, where U+009B is a
+one-character escape sequence on some terminals), or a bidi embedding,
+override or isolate (U+202A-U+202E, U+2066-U+2069), which would reorder the
+rest of the line. A payload field carrying one is dropped whole; a subagent's
+text has them removed.
+
 Every write to that state — the config, the usage cache, a fallback marker, and
 the credential files a fallback swap overwrites — goes through a temporary file
 beside its target and an atomic `mv`, so an interrupted write leaves the

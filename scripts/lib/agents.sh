@@ -4,6 +4,7 @@
 # file owns reading a session's subagent records and shortening what it finds
 # for a narrow terminal. It never opens the parent transcript, which can run
 # to megabytes and is re-read by Claude Code itself every few seconds.
+# It needs CP_SL_UNSAFE_JQ from statusline.sh, sourced before it.
 
 # cp_agents_now: prints the current epoch seconds. $CP_AGENTS_NOW stands in for
 # the clock when it is all digits, so tests can pin "now"; anything else is
@@ -89,11 +90,13 @@ cp_agents_inspect() {
     # The text a subagent returns as its last act, byte for byte. Equality, not
     # a substring match: a tool_result that merely quotes it must not count.
     def hb: "{\"success\":true,\"message\":\"Report delivered to your caller.\"}";
-    # Strip characters below 32 (ESC, tab, newline) so nothing in a transcript or
-    # meta file can drive the terminal or break the tab-joined line, then cut to
-    # 60 characters: keep 59 and an ellipsis. Anything not a string is empty.
+    # Strip every code point `unsafe` names (CP_SL_UNSAFE_JQ: controls such as
+    # ESC, tab and newline, DEL, C1, bidi overrides) so nothing in a transcript
+    # or meta file can drive the terminal, reorder the row or break the
+    # tab-joined line, then cut to 60 characters: keep 59 and an ellipsis.
+    # Anything not a string is empty.
     def clean: if type == "string"
-      then (explode | map(select(. >= 32)) | implode) | if length > 60 then .[0:59] + "…" else . end
+      then (explode | map(select(unsafe | not)) | implode) | if length > 60 then .[0:59] + "…" else . end
       else "" end;
     # message.content as a list of items; a plain string is one text item. A
     # record whose message is not an object has no items rather than failing.
@@ -143,7 +146,7 @@ cp_agents_inspect() {
     | [$state, ($meta.agentType | clean), ($model | clean), ($meta.description | clean),
        (if $meta.finished == true then "1" else "0" end)] | join("\t")'
   tail -c 65536 "$jsonl" 2>/dev/null \
-    | jq -R -s -r --slurpfile m "$meta" --argjson whole "$whole" "$prog" 2>/dev/null
+    | jq -R -s -r --slurpfile m "$meta" --argjson whole "$whole" "$CP_SL_UNSAFE_JQ$prog" 2>/dev/null
   [ "${PIPESTATUS[1]}" -eq 0 ] || return 1
 }
 

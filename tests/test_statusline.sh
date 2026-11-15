@@ -47,7 +47,6 @@ assert_eq "	/tmp" "$(meta "$payload201")" \
 # escaping, which covers only tab, newline, carriage return and backslash. It
 # must be rejected by s() itself, the same way an over-long string already
 # is: the whole field drops to empty, never a partial or escaped value.
-DEL="$(printf '\177')"
 esc_model_payload="$(jq -cn '{model:{display_name:("Opus" + ([27] | implode) + "5")}, cwd:"/tmp/x"}')"
 assert_eq "	/tmp/x" "$(meta "$esc_model_payload")" \
   'an ESC in model.display_name yields an empty model field'
@@ -60,17 +59,35 @@ assert_eq "	/tmp/x" "$(meta "$ctrl1_payload")" \
 ctrl7_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:("/tmp" + ([7] | implode) + "/dir")}')"
 assert_eq "Opus 5	" "$(meta "$ctrl7_payload")" \
   'control byte 7 (bell) in the directory yields an empty directory field'
-# The rule stops at "below 32", matching the resolver's own cutoff on this
-# branch: DEL (127) cannot start a terminal escape sequence by itself, and a
-# lone right-to-left override reorders one field's glyphs rather than
-# repainting the screen on every tick the way ESC does, so neither is worth
-# widening the payload rule beyond the configured-value precedent.
-del_payload="$(jq -cn '{model:{display_name:("Opus" + ([127] | implode) + "5")}, cwd:"/tmp/x"}')"
-assert_eq "Opus${DEL}5	/tmp/x" "$(meta "$del_payload")" \
-  'DEL is left alone: the rule matches the below-32 cutoff, not below-128'
-rtl_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:("/tmp/" + ([8238] | implode) + "dir")}')"
-assert_eq "Opus 5	/tmp/$(printf '\xe2\x80\xae')dir" "$(meta "$rtl_payload")" \
-  'a right-to-left override in the directory is left alone too'
+# The rule (CP_SL_UNSAFE_JQ) also drops DEL, the C1 range and the bidi
+# controls (#51): U+009B is a one-character CSI on a terminal that honours
+# 8-bit controls, and a right-to-left override reorders the rest of the line,
+# segments after the field included. Each drops its field whole, as ESC does.
+uc() { jq -cn --argjson model "$1" --argjson dir "$2" \
+  '{model:{display_name:("Op" + ([$model[]] | implode) + "us")}, cwd:("/tmp/" + ([$dir[]] | implode) + "d")}'; }
+assert_eq "	/tmp/xd" "$(meta "$(uc '[127]' '[120]')")" \
+  'DEL in model.display_name yields an empty model field'
+assert_eq "	/tmp/xd" "$(meta "$(uc '[155]' '[120]')")" \
+  'U+009B (8-bit CSI) in model.display_name yields an empty model field'
+assert_eq "	/tmp/xd" "$(meta "$(uc '[8238]' '[120]')")" \
+  'a right-to-left override in model.display_name yields an empty model field'
+assert_eq "Opxus	" "$(meta "$(uc '[120]' '[127]')")" \
+  'DEL in the directory yields an empty directory field'
+assert_eq "Opxus	" "$(meta "$(uc '[120]' '[155]')")" \
+  'U+009B in the directory yields an empty directory field'
+assert_eq "Opxus	" "$(meta "$(uc '[120]' '[8238]')")" \
+  'a right-to-left override in the directory yields an empty directory field'
+# Every edge of every range: the first and last code point of each is
+# dropped, and the neighbour on either side is kept.
+for cp in 31 127 128 159 8234 8238 8294 8297; do
+  assert_eq "	/tmp/xd" "$(meta "$(uc "[$cp]" '[120]')")" \
+    "code point $cp in model.display_name is dropped"
+done
+for cp in 32 126 160 8233 8239 8293 8298; do
+  got="$(meta "$(uc "[$cp]" '[120]')" | cut -f1)"
+  assert_eq "Op$(jq -rn --argjson c "$cp" '[$c] | implode')us" "$got" \
+    "code point $cp in model.display_name is kept"
+done
 # and the rule does not overreach: ordinary values still render, space and
 # non-ASCII included
 space_payload="$(jq -cn '{model:{display_name:"Opus 5"}, cwd:"/tmp/my dir"}')"
@@ -88,6 +105,12 @@ sl_out="$(printf '%s' "$esc_both_payload" | NO_COLOR=1 "$CLI" statusline --stdin
 ctrlcount="$(printf '%s' "$sl_out" | LC_ALL=C od -An -v -tu1 | tr -s ' ' '\n' | awk 'NF && $1 < 32 && $1 != 10')"
 assert_eq '' "$ctrlcount" \
   'a statusline rendered from a payload with ESC in both fields carries zero raw control bytes'
+# and the same for the wider rule: DEL, an 8-bit CSI and a right-to-left
+# override in the payload leave no trace in the rendered line
+uni_payload="$(jq -cn --arg dir "$CP_T_TMP" '{model:{display_name:("Opus" + ([155] | implode) + "5" + ([127] | implode))}, cwd:($dir + ([8238] | implode))}')"
+sl_out="$(printf '%s' "$uni_payload" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+assert_eq '' "$(printf '%s' "$sl_out" | jq -R -r 'explode[] | select(. == 127 or . == 155 or . == 8238)')" \
+  'a statusline rendered from a payload with DEL, U+009B and U+202E carries none of them'
 
 # --- what to show for a directory ------------------------------------------
 assert_eq 'cprof' "$(cp_sl_dir_label /Users/x/dev/cprof)" 'the last path segment names the directory'

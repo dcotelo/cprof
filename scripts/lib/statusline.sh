@@ -20,14 +20,28 @@ CP_SL_SEGMENTS='badge model dir git context usage weekly agents'
 # let such a layout be written.
 CP_SL_AGENTS_SHARED_MSG='statusline.lines: agents shares a line with other segments; its rows print below that line'
 
+# CP_SL_UNSAFE_JQ: a jq definition, `unsafe`, true for a code point that text
+# from an untrusted source (the payload, a subagent's meta or transcript) must
+# not carry into a statusline: the C0 controls below 32 (ESC among them), DEL,
+# the C1 controls U+0080-U+009F (U+009B is a one-character CSI on a terminal
+# that honours 8-bit controls), and the bidi embeddings, overrides and
+# isolates U+202A-U+202E and U+2066-U+2069, which reorder the rest of the line
+# they land in. One copy, prepended to each program that needs it, so that
+# every caller applies the same rule. A comparison per code point, not a
+# regex: jq 1.5 has none.
+CP_SL_UNSAFE_JQ='def unsafe: . < 32 or . == 127 or (. >= 128 and . <= 159)
+  or (. >= 8234 and . <= 8238) or (. >= 8294 and . <= 8297);'
+
 # cp_sl_meta_fields: a Claude Code statusline payload on stdin -> either
 # nothing at all, or exactly two tab-separated fields, the model display name
 # and the current directory. Callers read both with `cut`, which yields an
 # empty field either way, so a malformed payload needs no special case here.
+# A field carrying any code point CP_SL_UNSAFE_JQ names is dropped whole, as
+# an over-long one is, never shown partly or escaped.
 cp_sl_meta_fields() {
-  jq -r '
+  jq -r "$CP_SL_UNSAFE_JQ"'
     def s(v): if (v|type) == "string" and (v|length) > 0 and (v|length) <= 200
-                and ((v|explode|map(select(. < 32))|length) == 0)
+                and ((v|explode|map(select(unsafe))|length) == 0)
               then v else "" end;
     [s(.model.display_name), s(.workspace.current_dir // .cwd)] | @tsv
   ' 2>/dev/null
