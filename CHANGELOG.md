@@ -5,6 +5,12 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.18.3]
+
+### Fixed
+
+- read the plugin manifest from .claude-plugin/, where installs keep it
+
 ## [0.18.2]
 
 ### Changed

@@ -38,8 +38,8 @@ file_mode() { stat -f '%OLp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null; 
 cached() { [ -f "$CPROF_STATE_DIR/update.json" ] && echo 1 || echo 0; }
 drop_plugin() { rm -rf "${HOME:?}/.claude/plugins/cache/m"; }
 add_plugin() {
-  mkdir -p "$HOME/.claude/plugins/cache/m/cprof/$1"
-  printf '{"version":"%s"}\n' "$1" > "$HOME/.claude/plugins/cache/m/cprof/$1/plugin.json"
+  mkdir -p "$HOME/.claude/plugins/cache/m/cprof/$1/.claude-plugin"
+  printf '{"version":"%s"}\n' "$1" > "$HOME/.claude/plugins/cache/m/cprof/$1/.claude-plugin/plugin.json"
 }
 
 # ------------------------------------------------- the tag is the only source
