@@ -5,6 +5,12 @@ release workflow reads its notes from the section matching the tag.
 
 ## [Unreleased]
 
+## [0.18.3]
+
+### Fixed
+
+- drop DEL, C1 and bidi controls from untrusted text, not only < 32
+
 ## [0.18.2]
 
 ### Changed

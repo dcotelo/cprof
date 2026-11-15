@@ -89,6 +89,11 @@ assert_eq claude-opus-5-5 "$(insp part 0 | cut -f3)" 'a partial first line is di
 # hostile and long strings
 ag hos "$(jq -cn '{agentType:("Ex"+([27]|implode)+"[31mplore"),description:("a"+([9,10]|implode)+"b")}')" "$(r_asst claude-opus-5-5)"
 assert_eq "Ex[31mplore	ab" "$(insp hos | cut -f2,4)" 'characters below 32 are dropped (ESC, tab, newline)'
+# DEL, C1 and bidi controls go too (#51), by the rule cp_sl_meta_fields uses;
+# an NBSP (160), just past the C1 range, stays.
+ag uni "$(jq -cn '{agentType:("E"+([127]|implode)+"x"),description:("a"+([155]|implode)+"b"+([8238]|implode)+"c"+([8297]|implode)+"d"+([160]|implode)+"e")}')" "$(r_asst claude-opus-5-5)"
+assert_eq "Ex	abcd$(printf '\302\240')e" "$(insp uni | cut -f2,4)" \
+  'DEL, U+009B and the bidi controls are dropped from the type and description; NBSP stays'
 ag long "$(jq -cn --arg d "$(printf 'é%.0s' $(seq 1 70))" '{agentType:"E",description:$d}')" "$(r_asst x)"
 assert_eq "$(printf 'é%.0s' $(seq 1 59))…" "$(insp long | cut -f4)" 'multibyte description cut to 59 characters plus an ellipsis'
 ag ok60 "$(jq -cn --arg d "$(printf 'x%.0s' $(seq 1 60))" '{agentType:"E",description:$d}')" "$(r_asst x)"
