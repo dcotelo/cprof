@@ -42,6 +42,100 @@ seconds with its error output discarded, so a warning printed there would be
 invisible and endless — which is why a rejected setting falls back quietly
 instead, and `cprof doctor` is where you find out about it.
 
+## Setup
+
+Installing the plugin does not turn the statusline on. Plugin manifests cannot
+declare a statusline, so it takes one step of your own: point `statusLine` in
+`~/.claude/settings.json` at a small script. Until then `cprof doctor` says
+`statusLine is not set in ~/.claude/settings.json - the statusline is off`.
+
+**Check what you already have first** — the next step replaces it:
+
+```bash
+jq -r '.statusLine.command // "none"' ~/.claude/settings.json
+```
+
+If that says `none`, write the script and point `settings.json` at it. If it
+names another statusline, [compose them](#compose-with-another-statusline)
+instead.
+
+```bash
+cat > ~/.claude/statusline.sh <<'SL'
+#!/usr/bin/env bash
+seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
+[ -r "$seg" ] && bash "$seg" --full
+exit 0   # a test as the last command would exit non-zero and fail the statusline
+SL
+chmod +x ~/.claude/statusline.sh
+
+f=~/.claude/settings.json; [ -f "$f" ] || printf '{}\n' > "$f"
+cp "$f" "$f.bak" \
+  && jq '.statusLine = {type:"command",command:"bash \"$HOME/.claude/statusline.sh\"",refreshInterval:5}' "$f" > "$f.new" \
+  && cat "$f.new" > "$f" && rm -f "$f.new"
+```
+
+Your other settings survive — `jq` sets one key and the previous file is kept at
+`settings.json.bak`. The last step is `cat … >`, not `mv`: when `settings.json`
+is a symlink — a shared profile's, or one a dotfiles tool manages — `mv` would
+replace the link with a regular file, and the profile would quietly stop
+following `~/.claude`, its hooks and `permissions.deny` rules included. `cat`
+writes through the link. That write is not atomic, which is what the `.bak` is
+for.
+
+Resolving the segment at call time means plugin updates do not break the
+statusline; the segment finds its own CLI relative to itself, so no
+environment variable is required.
+
+Without `--full`, `statusline/segment.sh` behaves exactly as it always has —
+one line, the badge plus, with `--stdin`, the context and usage bars — and
+touches stdin only when told to. `--full` hands the whole render above to
+`cprof statusline`, reading stdin itself whenever it isn't a terminal.
+
+### One wiring, every shared profile
+
+`cprof add` shares by default, which makes a profile's `settings.json` a link
+to `~/.claude/settings.json`, so wiring it once there turns the statusline on
+in every shared profile, and in the native one, whose directory is
+`~/.claude` itself. A profile added with `--isolated` has its own
+`settings.json` and needs the same step run against it. To see which are still
+links:
+
+```bash
+ls -l ~/.claude-profiles/*/settings.json
+```
+
+A link that has become a regular file no longer follows `~/.claude`; `cprof
+doctor` reports it and `cprof share <name>` repairs it (#52). `doctor` checks
+the settings file of the profile active where you run it, so its answer about
+`statusLine` can differ between directories.
+
+### Compose with another statusline
+
+Point `settings.json` at a wrapper that captures the payload once and pipes a
+copy to each statusline. Another plugin's script lives in the same versioned
+plugin cache as cprof's, so resolve it the same way — newest version, at call
+time, skipped when missing:
+
+```bash
+#!/usr/bin/env bash
+payload="$(cat)"
+newest() { { ls -1 "$HOME"/.claude/plugins/cache/*/"$1"/*/"$2" ; } 2>/dev/null | sort -V | tail -1; }
+other=$(newest <plugin> <path/to/statusline.sh>)
+seg=$(newest cprof statusline/segment.sh)
+# The order is yours: here the other plugin's line first, then cprof's.
+[ -r "$other" ] && printf '%s' "$payload" | bash "$other"
+[ -r "$seg" ] && printf '%s' "$payload" | bash "$seg" --full
+exit 0
+```
+
+`--full` reads stdin whenever one is there, the same way `--stdin` always has.
+`doctor` recognises a wrapper like this by looking inside it, so it is not
+reported as foreign.
+
+Neither entry point fails a statusline: a missing `jq`, an unreadable config,
+an absent `git`, or a missing CLI prints nothing, or as much of the line as
+it can, and exits 0.
+
 ## Configuration
 
 `cprof config` opens a panel that edits these settings with a live preview; see
@@ -363,62 +457,6 @@ worth seeing, since it means something else set `CLAUDE_CONFIG_DIR`. The stock
 directory, but an exported `CLAUDE_CONFIG_DIR` pointing there is still the
 native profile, and is named as such.
 
-Plugin manifests cannot declare a statusline, so wire it in `~/.claude/settings.json`
-yourself, pointing at a small script of your own.
-
-**Check what you already have first** — the next step replaces it:
-
-```bash
-jq -r '.statusLine.command // "none"' ~/.claude/settings.json
-```
-
-If that says `none`, write the script and point `settings.json` at it:
-
-```bash
-cat > ~/.claude/statusline.sh <<'SL'
-#!/usr/bin/env bash
-seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
-[ -r "$seg" ] && bash "$seg" --full
-exit 0   # a test as the last command would exit non-zero and fail the statusline
-SL
-chmod +x ~/.claude/statusline.sh
-
-f=~/.claude/settings.json; [ -f "$f" ] || printf '{}\n' > "$f"
-cp "$f" "$f.bak" && jq '.statusLine = {type:"command",command:"bash \"$HOME/.claude/statusline.sh\"",refreshInterval:5}' "$f" > "$f.new" && mv "$f.new" "$f"
-```
-
-Your other settings survive — `jq` sets one key and the previous file is kept at
-`settings.json.bak`. Resolving the segment at call time means plugin updates do
-not break the statusline; the segment finds its own CLI relative to itself, so no
-environment variable is required.
-
-Without `--full`, `statusline/segment.sh` behaves exactly as it always has —
-one line, the badge plus, with `--stdin`, the context and usage bars — and
-touches stdin only when told to. `--full` hands the whole render above to
-`cprof statusline`, reading stdin itself whenever it isn't a terminal.
-
-<details>
-<summary><strong>Already running a statusline?</strong> Compose them.</summary>
-
-Point `settings.json` at a wrapper that prints cprof's lines first and hands
-the payload on. `--full` reads stdin whenever one is there, the same way
-`--stdin` always has, so composing means capturing the payload once and
-piping a copy to each consumer:
-
-```bash
-#!/usr/bin/env bash
-payload="$(cat)"
-seg=$({ ls -1 "$HOME"/.claude/plugins/cache/*/cprof/*/statusline/segment.sh ; } 2>/dev/null | sort -V | tail -1)
-[ -r "$seg" ] && printf '%s' "$payload" | bash "$seg" --full
-printf '%s' "$payload" | your-existing-statusline
-```
-
-</details>
-
-Neither entry point fails a statusline: a missing `jq`, an unreadable config,
-an absent `git`, or a missing CLI prints nothing, or as much of the line as
-it can, and exits 0.
-
 ## When the line is empty
 
 `cprof doctor` reports the causes that produce no output at all:
@@ -430,6 +468,13 @@ cprof on PATH is 0.9.0; the installed plugin is 0.13.0 - run: brew upgrade dcote
 statusLine in ~/.claude/settings.json is set but does not reference cprof - see docs/statusline.md
 active profile here: work
 ```
+
+**No `statusLine` at all.** The most common one: the plugin is installed but
+nothing points Claude Code at it, because installing a plugin cannot turn a
+statusline on. When the cprof plugin is installed, `doctor` reports
+`statusLine is not set in <file> - the statusline is off` and points at
+[Setup](#setup). It does not fail on this, and without the plugin it says
+nothing — then an unset `statusLine` is a choice.
 
 **A CLI older than the plugin.** The two halves update through different
 channels — the CLI through Homebrew or the curl installer, the plugin through
@@ -445,7 +490,7 @@ the segment resolves the CLI beside itself, not through `PATH`.
 **A `statusLine` pointing somewhere else.** `doctor` names the settings file
 and says the command does not reference `cprof`. A wrapper script of your own
 counts: when the command names a readable file, `doctor` looks inside it one
-level, so the setup above — whose command line says only
+level, so the [setup](#setup) — whose command line says only
 `bash "$HOME/.claude/statusline.sh"` — is recognised by the script's contents
 rather than reported. It does not fail on this and
 does not quote the command back — running another statusline is a choice, and

@@ -66,9 +66,10 @@ claude() { eval "$(cprof env)"; command claude "$@"; }
 ```
 
 The Claude Code plugin is optional and adds the ambient parts — a warning when
-you walk into a directory expecting a different account, `/profile`, and the
+you walk into a directory expecting a different account, `/profile`, and a
 statusline — the account, the model, the directory and its branch, and bars
-for the context window and the usage window:
+for the context window and the usage window. The statusline is off until you
+turn it on, which is [one step](docs/statusline.md#setup):
 
 ```bash
 claude plugin marketplace add dcotelo/cprof
@@ -156,6 +157,11 @@ never in a running session, because credentials are read at process start.
 Nothing was moved or re-signed-in along the way: `--native` adopts your existing
 login where it already lives, and step 3's `login` writes only inside the new
 profile's own directory.
+
+One thing step 1 does not do: the plugin's statusline stays off until
+`statusLine` in `~/.claude/settings.json` points at it, a step of its own in
+[Statusline setup](docs/statusline.md#setup). Run it once in `~/.claude` and
+every shared profile has it; `cprof doctor` tells you when it is missing.
 
 ## What you get
 

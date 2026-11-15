@@ -928,21 +928,36 @@ cp_sl_wiring_names_cprof() {
   return 1
 }
 
-# cp_sl_wiring_problems <settings-file>
+# cp_sl_wiring_absent <shown-path>: the advisory for an unset statusLine. One
+# copy, for both the missing file and the missing key.
+cp_sl_wiring_absent() {
+  printf 'statusLine is not set in %s - the statusline is off; see docs/statusline.md#setup\n' "${1:-}"
+}
+
+# cp_sl_wiring_problems <settings-file> [plugin-installed]
 #
 # What Claude Code's `statusLine` is pointed at. `type` is the discriminator
 # Claude Code requires, and "command" is its only value, so anything else
 # leaves the statusline unrun however good the command is -- which is why the
 # type is checked before the command it would run.
 #
-# Silent when the command names cprof and when nothing is configured at all — not configuring one is a choice, and so is
-# running a different one, so this reports rather than fails.
+# Silent when the command names cprof. Running a different one is a choice, so
+# this reports rather than fails. No `statusLine` at all (or no settings file)
+# is reported only when [plugin-installed] is 1: for someone who installed the
+# plugin, an unset key is far more likely a missed setup step than a choice,
+# since installing a plugin cannot turn a statusline on. Without the plugin it
+# stays silent.
 #
 # The configured command is a JSON string that can hold anything, so jq returns
 # only a classification and the command itself is never echoed back. Quoting it
 # would put an attacker-chosen byte sequence in a terminal.
 cp_sl_wiring_problems() {
-  local f="${1:-}" cls shown cmd
+  local f="${1:-}" plugin="${2:-0}" cls shown cmd
+  shown="$(cp_path_display "$f" | LC_ALL=C tr -d '\000-\037\177')"
+  if [ ! -e "$f" ]; then
+    [ "$plugin" = 1 ] && cp_sl_wiring_absent "$shown"
+    return 0
+  fi
   [ -r "$f" ] || return 0
   cls="$(jq -r '
     if (has("statusLine") | not) then "absent"
@@ -959,8 +974,11 @@ cp_sl_wiring_problems() {
     cmd="$(jq -r '.statusLine.command' "$f" 2>/dev/null)"
     cp_sl_wiring_names_cprof "$cmd" && cls='ours'
   fi
-  shown="$(cp_path_display "$f" | LC_ALL=C tr -d '\000-\037\177')"
   case "$cls" in
+    absent)
+      [ "$plugin" = 1 ] && cp_sl_wiring_absent "$shown"
+      return 0
+      ;;
     foreign)
       printf 'statusLine in %s is set but does not reference cprof - see docs/statusline.md\n' \
         "$shown"
