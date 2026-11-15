@@ -108,7 +108,12 @@ assert_eq '' "$ctrlcount" \
 # and the same for the wider rule: DEL, an 8-bit CSI and a right-to-left
 # override in the payload leave no trace in the rendered line
 uni_payload="$(jq -cn --arg dir "$CP_T_TMP" '{model:{display_name:("Opus" + ([155] | implode) + "5" + ([127] | implode))}, cwd:($dir + ([8238] | implode))}')"
-sl_out="$(printf '%s' "$uni_payload" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"
+sl_out="$(printf '%s' "$uni_payload" | NO_COLOR=1 "$CLI" statusline --stdin 2>/dev/null)"; rc=$?
+# An empty render would pass the check below by printing nothing at all, so
+# the render must succeed and still name the account before it is scanned.
+assert_eq 0 "$rc" 'a payload with DEL, U+009B and U+202E still renders, exit 0'
+case "$sl_out" in *work*) r=yes ;; *) r="no: $sl_out" ;; esac
+assert_eq yes "$r" 'and the line still names the account'
 assert_eq '' "$(printf '%s' "$sl_out" | jq -R -r 'explode[] | select(. == 127 or . == 155 or . == 8238)')" \
   'a statusline rendered from a payload with DEL, U+009B and U+202E carries none of them'
 
