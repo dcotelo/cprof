@@ -8,7 +8,8 @@ usage feature also needs `curl`, which every supported macOS ships.
 
 **Two pieces, and you can take either alone.** `brew` installs the CLI on
 `PATH`; the plugin installs the parts that only exist inside a Claude Code
-session — the `SessionStart` warning, `/profile`, and the statusline segment.
+session — the `SessionStart` warning, `/profile`, and the statusline segment,
+which stays off until you [wire it](statusline.md#setup).
 The CLI is what the shell function needs, so brew alone is a working setup; the
 plugin alone is not.
 

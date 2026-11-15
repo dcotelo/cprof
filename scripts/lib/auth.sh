@@ -166,7 +166,7 @@ cp_cmd_login() {
 }
 
 cp_cmd_doctor() {
-  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets problems skew sl_dir drift
+  local cfg names name st logged active ms left_days status=0 usage_data pct CP_COLOR_ON=0 resets problems skew sl_dir sl_plugin drift
   cfg="$(cp_config_read)" || return 1
   # cp_usage_render (usage.sh) reads CP_COLOR_ON through bash's dynamic
   # scoping, the same cross-file pattern cp_colorize already relies on.
@@ -248,9 +248,13 @@ cp_cmd_doctor() {
   # reasons outside the machine.
   cp_update_problems
   # Claude Code reads settings from the config directory of the profile a
-  # session here would use, so that is the file worth reporting on.
+  # session here would use, so that is the file worth reporting on. An unset
+  # statusLine is worth a word only when the plugin that provides one is
+  # installed; like every wiring report, it never changes the status.
   sl_dir="$(cp_profile_dir "$cfg" "${active:-}")"
-  cp_sl_wiring_problems "${sl_dir:-$HOME/.claude}/settings.json"
+  sl_plugin=0
+  [ -n "$(cp_plugin_version)" ] && sl_plugin=1
+  cp_sl_wiring_problems "${sl_dir:-$HOME/.claude}/settings.json" "$sl_plugin"
   printf 'active profile here: %s\n' "${active:-none}"
   return "$status"
 }

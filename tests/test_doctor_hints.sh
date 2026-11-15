@@ -168,6 +168,23 @@ assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS")" 'a missing settings file is 
 
 printf '{"model":"opus"}\n' > "$SETTINGS"
 assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS")" 'no statusLine key is silent'
+assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS" 0)" 'and so it is when the plugin is not installed'
+
+# With the plugin installed, an unset statusLine is a missed setup step (#55):
+# installing a plugin cannot turn a statusline on, so say how.
+ABSENT_MSG="statusLine is not set in $(cp_path_display "$SETTINGS") - the statusline is off; see docs/statusline.md#setup"
+assert_eq "$ABSENT_MSG" "$(cp_sl_wiring_problems "$SETTINGS" 1)" \
+  'no statusLine key with the plugin installed points at the setup'
+rm -f "$SETTINGS"
+assert_eq "$ABSENT_MSG" "$(cp_sl_wiring_problems "$SETTINGS" 1)" \
+  'and so does no settings file at all'
+printf '{"statusLine":{"type":"command","command":"cprof statusline --stdin"}}\n' > "$SETTINGS"
+assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS" 1)" \
+  'a statusLine that is ours stays silent with the plugin installed'
+printf '{"statusLine":{"type":"command","command":"bash /nowhere/other.sh"}}\n' > "$SETTINGS"
+assert_eq '1' "$(cp_sl_wiring_problems "$SETTINGS" 1 | grep -c .)" \
+  'and a foreign one is reported once, not also as unset'
+printf '{"model":"opus"}\n' > "$SETTINGS"
 
 printf '{"statusLine":{"type":"command","command":"bash /nowhere/other.sh"}}\n' > "$SETTINGS"
 assert_eq '1' "$(cp_sl_wiring_problems "$SETTINGS" | grep -c .)" \
@@ -193,6 +210,17 @@ jq -n --arg c 'bash ~/.claude/statusline.sh' \
   '{statusLine:{type:"command",command:$c}}' > "$SETTINGS"
 assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS")" \
   'and the same wrapper written with a tilde'
+
+# The compose wrapper in docs/statusline.md, taken from the page itself so the
+# example and this check cannot drift apart: it too is accepted.
+DOC="${CLI%/scripts/cprof}/docs/statusline.md"
+awk '/^### Compose with another statusline/{c=1} c && /^```bash$/{p=1; next} p && /^```$/{exit} p' \
+  "$DOC" > "$WRAP"
+assert_ok grep -q 'newest cprof statusline/segment.sh' "$WRAP"
+jq -n --arg c 'bash "$HOME/.claude/statusline.sh"' \
+  '{statusLine:{type:"command",command:$c}}' > "$SETTINGS"
+assert_eq '' "$(cp_sl_wiring_problems "$SETTINGS" 1)" \
+  'the documented compose wrapper is accepted through its contents'
 
 printf '#!/usr/bin/env bash\nprintf "something else\\n"\n' > "$WRAP"
 assert_eq '1' "$(cp_sl_wiring_problems "$SETTINGS" | grep -c .)" \
@@ -286,6 +314,25 @@ assert_eq 'yes' "$r" 'doctor reports a statusLine pointing away from cprof'
 assert_eq '0' "$rc" 'but does not fail: another statusline is a choice'
 
 rm -f "$HOME/.claude/settings.json"
+out="$("$CLI" doctor 2>&1)"; rc=$?
+case "$out" in
+  *'statusLine is not set in ~/.claude/settings.json'*'docs/statusline.md#setup'*) r=yes ;;
+  *) r="no: $out" ;;
+esac
+assert_eq 'yes' "$r" 'doctor says the statusline is off when the plugin is installed and nothing is wired'
+assert_eq '0' "$rc" 'but does not fail for it: the rest of the install works'
+
+mk_plugin
+out="$("$CLI" doctor 2>&1)"; rc=$?
+case "$out" in
+  *statusLine*) r="noisy: $out" ;;
+  *) r=quiet ;;
+esac
+assert_eq 'quiet' "$r" 'without the plugin an unset statusLine is a choice, and doctor says nothing'
+
+mk_plugin 0.13.0
+printf '{"statusLine":{"type":"command","command":"cprof statusline --stdin"}}\n' \
+  > "$HOME/.claude/settings.json"
 out="$("$CLI" doctor 2>&1)"; rc=$?
 assert_eq '0' "$rc" 'a clean setup still exits zero'
 case "$out" in
